@@ -1,0 +1,25 @@
+{
+  "name": "open-artifact",
+  "displayName": "Open Artifact",
+  "version": "0.1.0",
+  "description": "Make slide decks, design canvases and whiteboards you view, edit, comment on and export in one local page; comments come back to the agent.",
+  "logo": "assets/icon.png",
+  "author": {
+    "name": "Jim Liu 宝玉",
+    "url": "https://github.com/JimLiu"
+  },
+  "homepage": "https://github.com/JimLiu/open-artifacts",
+  "repository": "https://github.com/JimLiu/open-artifacts",
+  "license": "Apache-2.0",
+  "keywords": [
+    "artifacts",
+    "slides",
+    "design",
+    "whiteboard"
+  ],
+  "suggestedPrompts": [
+    "/open-artifact slides a 6-slide pitch for this project",
+    "/open-artifact design three landing page options",
+    "/open-artifact whiteboard map this repo's architecture"
+  ]
+}

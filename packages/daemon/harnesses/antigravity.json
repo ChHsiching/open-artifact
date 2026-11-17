@@ -1,0 +1,22 @@
+{
+  "name": "antigravity",
+  "title": "Antigravity",
+  "agentName": "Antigravity",
+  "level": "L2",
+  "entry": "mcp",
+  "plugin": "open-artifact",
+  "mcp": {
+    "command": "node",
+    "args": [
+      "${PLUGIN_ROOT}/skills/open-artifact/scripts/open-artifact.mjs",
+      "mcp",
+      "--harness",
+      "antigravity"
+    ]
+  },
+  "skillsDir": "~/.gemini/config/skills",
+  "wake": [
+    "inbox"
+  ],
+  "open": "browser"
+}

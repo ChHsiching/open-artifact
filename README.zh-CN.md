@@ -69,7 +69,7 @@ claude plugin install open-artifact@open-artifact
 ```
 
 插件会添加 `Artifact`、`ArtifactData` 和 `ArtifactComments` 三个 MCP 工具、这个 skill，以及把页面评论带回会话的
-hooks。Codex / ChatGPT 桌面版、Cursor、GitHub Copilot、网页版 ChatGPT 和 DeepSeek Harness 各有自己的插件，
+hooks。Codex / ChatGPT 桌面版、Cursor、GitHub Copilot、Antigravity、网页版 ChatGPT 和 DeepSeek Harness 各有自己的插件，
 见 [plugins/README.md](plugins/README.md)。
 
 ### 2. 作为 skill 给其他 Agent 用

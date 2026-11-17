@@ -11,6 +11,7 @@ every type, with each type's own editor and comments inside. `/open-artifact sli
 | [`codex/`](codex/README.md) | Codex (CLI, app) and ChatGPT desktop | MCP tools, skill, hooks | at session start, with the next message, at the end of a turn |
 | [`cursor/`](cursor/README.md) | Cursor (editor) | MCP tools, skill, hooks | at session start, and at the end of a turn as a follow-up message |
 | [`copilot/`](copilot/README.md) | GitHub Copilot CLI, VS Code agent mode (Copilot harness) | MCP tools, skill, hooks | at session start, with the next message (CLI), at the end of a turn |
+| [`antigravity/`](antigravity/README.md) | Google Antigravity (`agy` CLI, app) | MCP tools, skill, hooks | at session start, before each model call, at the end of a turn (the turn goes on) |
 | [`dsh/`](dsh/package.json) | DeepSeek Harness | native tools, the Open Artifact sidebar page, comment cards, `/open-artifact` | right away: a new turn when the session idles, added to the running turn otherwise (a full adapter, L3) |
 | [`chatgpt/`](chatgpt/README.md) | ChatGPT on the web | MCP tools over HTTPS, a card | in the next tool result, or when the person presses "Send comments to ChatGPT" on the card |
 | [`../skills/open-artifact/`](../skills/open-artifact/SKILL.md) | any other agent that reads skills | the command line | in the result of any call, or by `wait` |
@@ -44,7 +45,7 @@ that folder; `build-plugins.mjs` leaves it alone.
   bridge's calls are tied to it) and prints the messages that wait, in the app's own hook format: Claude Code and
   Codex `hookSpecificOutput.additionalContext` and Stop `decision: "block"`; Cursor `additional_context` and stop
   `followup_message`; Copilot `additionalContext`, `userPromptTransformed` → `modifiedTransformedPrompt`, and
-  `agentStop` `decision: "block"`.
+  `agentStop` `decision: "block"`; Antigravity `injectSteps` system messages and Stop `decision: "continue"`.
 - **Harness profiles** (`packages/daemon/harnesses/<name>.json`) give the page the agent's name ("Ask Claude",
   "Ask Codex", …) and the session variable.
 
@@ -54,5 +55,5 @@ that folder; `build-plugins.mjs` leaves it alone.
 |---|---|
 | Claude Code 2.1.318 | `claude plugin validate` passes for the plugin and the marketplace. A headless run with `--plugin-dir` lists the types through the plugin's MCP tools; with a page request queued for the session, the SessionStart hook handed it to Claude, which edited the board. |
 | GitHub Copilot CLI 1.0.105 | A run with `--plugin-dir`: the plugin's MCP server and hooks load (`${PLUGIN_ROOT}` expands in the hook command); a queued page request reached Copilot, which edited the board. |
-| Codex, Cursor | Not installed here: the hook output for their events was checked by running the hook command with each app's input; the plugin manifests follow their documentation and the Codex plugins installed on this computer. |
+| Codex, Cursor, Antigravity | Not installed here: the hook output for their events was checked by running the hook command with each app's input; the plugin manifests follow their documentation (Antigravity: antigravity.google/docs/build-plugins and /docs/hooks) and the Codex plugins installed on this computer. |
 | ChatGPT | The connector was driven over MCP (initialize, tools, the card resource, publish with files, read, ShowArtifact, comments in the next result, a wrong path, a foreign Origin); the card was rendered with a stand-in `window.openai`. Not tried in ChatGPT itself. |

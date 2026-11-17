@@ -70,8 +70,8 @@ Then, in a session:
 ```
 
 The plugin adds the `Artifact`, `ArtifactData` and `ArtifactComments` MCP tools, the skill, and hooks that bring
-page comments back into the session. Codex / ChatGPT desktop, Cursor, GitHub Copilot, ChatGPT on the web and
-DeepSeek Harness have their own plugins. See [plugins/README.md](plugins/README.md).
+page comments back into the session. Codex / ChatGPT desktop, Cursor, GitHub Copilot, Antigravity, ChatGPT on the
+web and DeepSeek Harness have their own plugins. See [plugins/README.md](plugins/README.md).
 
 ### 2. As a skill for any other agent
 

@@ -1,0 +1,25 @@
+{
+  "open-artifact-comments": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "node ./skills/open-artifact/scripts/open-artifact.mjs hook SessionStart --harness antigravity",
+        "timeout": 30
+      }
+    ],
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "node ./skills/open-artifact/scripts/open-artifact.mjs hook PreInvocation --harness antigravity",
+        "timeout": 30
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "node ./skills/open-artifact/scripts/open-artifact.mjs hook Stop --harness antigravity",
+        "timeout": 30
+      }
+    ]
+  }
+}

@@ -295,8 +295,11 @@ async function hook(event: string | undefined): Promise<void> {
     input = {};
   }
   const harness = flag('harness', process.env.OPEN_ARTIFACT_HARNESS ?? 'mcp');
-  const session = (input.session_id ?? input.sessionId ?? input.conversation_id ?? sessionFromEnv(harness) ?? null) as string | null;
-  const roots = Array.isArray(input.workspace_roots) ? (input.workspace_roots as unknown[]) : [];
+  const session = (input.session_id ?? input.sessionId ?? input.conversation_id ?? input.conversationId ?? sessionFromEnv(harness) ?? null) as
+    | string
+    | null;
+  // Cursor `workspace_roots`; Antigravity `workspacePaths` (its hooks run in the plugin's folder, not the workspace).
+  const roots = [input.workspace_roots, input.workspacePaths].flatMap((list) => (Array.isArray(list) ? (list as unknown[]) : []));
   const workspace = String(input.cwd ?? roots[0] ?? process.cwd());
   const canonical = HOOK_EVENTS[event] ?? event;
   const running = await readDaemon();
@@ -305,26 +308,34 @@ async function hook(event: string | undefined): Promise<void> {
   const body = await api<{ messages?: string[] }>(state, 'hook', { event: canonical, harness, session, workspace, pids: ancestors(process.ppid, 4) }).catch(() => ({ messages: [] }));
   const messages = body.messages ?? [];
   if (!messages.length) return;
-  const answer = hookAnswer(event, messages.join('\n\n'), input);
+  const answer = hookAnswer(event, messages.join('\n\n'), input, harness);
   if (answer) out(answer);
 }
 
 /**
  * Each harness's own hook event names, as the daemon's (Claude Code's and Codex's names are the daemon's own):
  * Cursor `sessionStart` `postToolUse` `stop`; GitHub Copilot `sessionStart` `userPromptTransformed` `postToolUse`
- * `agentStop`. Not Cursor's `beforeSubmitPrompt` or Copilot's `userPromptSubmitted`: their output never reaches the
- * model, and the daemon hands a hook the messages it waits with, so a plugin must not install them.
+ * `agentStop`; Antigravity `SessionStart` `PreInvocation` `Stop`. Not Cursor's `beforeSubmitPrompt` or Copilot's
+ * `userPromptSubmitted`: their output never reaches the model, and the daemon hands a hook the messages it waits
+ * with, so a plugin must not install them.
  */
 const HOOK_EVENTS: Record<string, string> = {
   sessionStart: 'SessionStart',
   userPromptTransformed: 'UserPromptSubmit',
   postToolUse: 'UserPromptSubmit',
+  PreInvocation: 'UserPromptSubmit',
   stop: 'Stop',
   agentStop: 'Stop',
 };
 
 /** What a hook prints so its harness gives the model the waiting messages, in that harness's own shape. */
-function hookAnswer(event: string, text: string, input: Record<string, unknown>): unknown {
+function hookAnswer(event: string, text: string, input: Record<string, unknown>, harness = ''): unknown {
+  if (harness === 'antigravity') {
+    // Antigravity shares Claude Code's event names but not its output: steps to add to the conversation, and
+    // `decision: "continue"` on Stop, whose reason it adds as a system message.
+    if (event === 'Stop') return { decision: 'continue', reason: text };
+    return { injectSteps: [{ systemMessage: { systemMessage: text } }] };
+  }
   switch (event) {
     case 'Stop': // Claude Code, Codex
     case 'agentStop': // GitHub Copilot: another turn, with the reason as its prompt
