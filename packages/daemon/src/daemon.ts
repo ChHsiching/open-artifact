@@ -59,6 +59,7 @@ import {
 import { HarnessHub, systemBrowse, type PollParams } from './harness.ts';
 import { Inbox } from './inbox.ts';
 import { callerFromRequest, handleMcp, type McpMessage, type McpReply } from './mcp.ts';
+import { nudgeSession } from './nudge.ts';
 import { ensureDir, expandHome, files, inside, openArtifactHome, readJson, writeJson } from './paths.ts';
 import { ACTION_CALL_MS, TypeServers } from './servers.ts';
 import { loadSettings } from './settings.ts';
@@ -439,6 +440,7 @@ export class Daemon extends EventEmitter<{ exit: [] }> {
       viewUrl: (id) => this.viewUrl(id),
       log,
       emit: (event) => this.broadcast(event),
+      nudge: (target, payload) => void nudgeSession(target, payload.artifact, { log }),
     });
     this.servers = new TypeServers({ daemonUrl: () => this.origin, tokenFor: (typeId) => this.typeToken(typeId), log });
     this.tools = new Tools({

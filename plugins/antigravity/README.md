@@ -27,3 +27,9 @@ tool call until you choose to always allow it.
 Comments sent from the page reach the agent at session start, before its next model call (`PreInvocation`, so also
 in the middle of a turn), or, when they arrive as it finishes, by keeping it going (`Stop` with
 `decision: "continue"`). The hooks add them as system messages.
+
+While the conversation is idle, the daemon starts a turn in it with the app's own command line
+(`agentapi send-message <conversation> <text>`, found at `~/.gemini/antigravity/bin/agentapi`, or set
+`OPEN_ARTIFACT_ANTIGRAVITY_AGENTAPI`), pointed at the running app by its hub file in
+`~/.gemini/antigravity/daemon/`; that turn's hooks then hand over the comments. When the app is not running, the
+comments wait for the conversation's next turn.

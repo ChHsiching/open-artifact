@@ -58,6 +58,10 @@ const harnesses = [
   ['claude-code', 'CLAUDECODE', 'CLAUDE_CODE_SESSION_ID'],
   ['codex', 'CODEX_THREAD_ID', 'CODEX_THREAD_ID'],
 ];
+// A plugin's MCP server and hooks name their harness with `--harness`: that wins over the variables, so an app started
+// from inside another agent's session (and holding its variables) does not take that session for its own.
+const named = process.argv.indexOf('--harness');
+if (named > 1 && process.argv[named + 1] && !env.OPEN_ARTIFACT_HARNESS) env.OPEN_ARTIFACT_HARNESS = process.argv[named + 1];
 for (const [name, marker, sessionVariable] of harnesses) {
   if (env.OPEN_ARTIFACT_HARNESS ? env.OPEN_ARTIFACT_HARNESS !== name : !env[marker]) continue;
   env.OPEN_ARTIFACT_HARNESS = name;

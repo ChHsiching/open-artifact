@@ -83,6 +83,39 @@ test('wake: items in the merge window go out as one delivery', async () => {
   for (const result of results) assert.equal(result.via, 'live');
 });
 
+test('wake: an inbox wake nudges its session; a live one does not', async () => {
+  const owner: SessionRef = { harness: 'antigravity', session: 'conv-nudge', workspace: null };
+  const nudged: Array<{ target: SessionRef; artifact: string }> = [];
+  const make = (live: LiveDelivery): { store: ArtifactStore; wake: WakeRouter } => {
+    const store = new ArtifactStore();
+    const wake = new WakeRouter({
+      store,
+      inbox: new Inbox(),
+      live: () => live,
+      viewUrl: (id) => `http://127.0.0.1:1/a/${id}`,
+      log: () => undefined,
+      mergeMs: 20,
+      nudge: (target, payload) => nudged.push({ target, artifact: payload.artifact }),
+    });
+    return { store, wake };
+  };
+  const idle = make({ deliver: async () => null });
+  const queued = idle.store.create({ root: join(tempDir('open-artifact-root-'), 'n'), type: 'design', owner, title: 'Nudged' });
+  assert.equal((await idle.wake.ask(queued.id, 'Shorter, please')).via, 'inbox');
+  assert.equal(nudged.length, 1);
+  assert.deepEqual(nudged[0]!.target, owner);
+  assert.match(nudged[0]!.artifact, new RegExp(queued.id));
+
+  const orphan = idle.store.create({ root: join(tempDir('open-artifact-root-'), 'o'), type: 'design', title: 'Orphan' });
+  await idle.wake.ask(orphan.id, 'Anyone?');
+  assert.equal(nudged.length, 1, 'no owner, nobody to nudge');
+
+  const live = make({ deliver: async () => 'delivered' });
+  const shown = live.store.create({ root: join(tempDir('open-artifact-root-'), 'l'), type: 'design', owner, title: 'Live' });
+  assert.equal((await live.wake.ask(shown.id, 'Hi')).via, 'live');
+  assert.equal(nudged.length, 1, 'delivered live, no nudge');
+});
+
 test('wake: with nobody live it waits in the owner inbox, or the unowned one', async () => {
   const { store, inbox, wake } = router({ deliver: async () => null });
   const owned = store.create({ root: join(tempDir('open-artifact-root-'), 'a'), type: 'design', owner, title: 'Owned' });

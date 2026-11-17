@@ -6,7 +6,9 @@
  *
  * 1. **live**: the owner's adapter is connected and takes `wake.deliver`;
  * 2. **inbox**: queued for the session, taken when it attaches, on its next
- *    tool call, or by a wait (which takes it at once: `via: 'wait'`).
+ *    tool call, or by a wait (which takes it at once: `via: 'wait'`). A
+ *    session whose harness hands over its inbox only while a turn runs is then
+ *    nudged (`nudge`), which starts a turn there.
  */
 
 import {
@@ -52,6 +54,8 @@ export interface WakeRouterOptions {
   viewUrl: (id: string) => string;
   log: (line: string) => void;
   emit?: (event: LibraryEvent) => void;
+  /** Wakes an idle session after its wake went to the inbox (see `nudge.ts`); not awaited. */
+  nudge?: (target: SessionRef, payload: WakePayload) => void;
   /** Merge window, ms. Default `$OPEN_ARTIFACT_WAKE_MERGE_MS`, else the protocol's. */
   mergeMs?: number;
 }
@@ -158,6 +162,7 @@ export class WakeRouter {
     const key = (target && sessionKeyOf(target)) || UNOWNED_KEY;
     const { taken } = inbox.append(key, { kind: 'wake', ...payload });
     log(`wake ${id} -> inbox ${key}${taken ? ' (taken by a wait)' : ''}`);
+    if (!taken && target) this.options.nudge?.(target, payload);
     const via: WakeVia = taken ? 'wait' : 'inbox';
     emit?.({ type: 'wake/state', artifactId: id, via });
     return { via };
