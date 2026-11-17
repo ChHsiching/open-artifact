@@ -25,7 +25,8 @@ then run **Developer: Reload Window**. A team can instead import the repository 
 Comments sent from the page reach the agent at the start of a chat, after any tool call it makes (as added context,
 which also ties a resumed chat's Open Artifact calls to it), or at the end of its turn as a follow-up message (up to 10
 in a row). Cursor's hooks cannot add them to the message you send, so while the agent is idle they arrive during or
-at the end of its next turn; say "check the comments" to have them read at once.
+at the end of its next turn; say "check the comments" to have them read at once. Cursor offers no way to start a turn in an idle chat from outside
+(nothing like `codex queue`), so the daemon cannot wake it.
 
 The Cursor CLI (`cursor-agent -p`) runs the plugin's `sessionStart` (for a new chat, not on `--resume`) and
 `postToolUse` hooks, but not `stop`: there, comments come with the next tool call, in tool results, and through `wait`.
