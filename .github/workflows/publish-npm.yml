@@ -1,0 +1,52 @@
+# Publishes the npm packages (scripts/build-npm.mjs, scripts/publish-npm.mjs): the @open-artifact/* libraries,
+# @open-artifact/cli and dsh-open-artifact. Each version npm already has is skipped, so bump the versions you want
+# released, then push a tag (v0.2.0) or run the workflow by hand.
+#
+# npm signs in by trusted publishing (OIDC): each package names this repository and this file as its trusted
+# publisher on npmjs.com (`npm trust github <package> --file publish-npm.yml --repo JimLiu/open-artifact --allow-publish`).
+# No npm token is stored here, and npm adds provenance.
+name: Publish to npm
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: Show what would be published, without publishing
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: publish-npm
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          cache: npm
+
+      # Trusted publishing needs npm 11.5.1 or later.
+      - run: npm install -g npm@11
+
+      - run: npm ci
+
+      - name: Build
+        run: |
+          npm run build
+          node scripts/build-skill.mjs
+          node scripts/build-npm.mjs
+
+      - name: Publish
+        run: node scripts/publish-npm.mjs ${{ inputs.dry-run && '--dry-run' || '' }}

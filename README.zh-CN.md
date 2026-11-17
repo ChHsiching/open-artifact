@@ -135,6 +135,14 @@ npm run e2e          # 端到端测试：用 CLI 和 Chrome 驱动构建好的�
 node scripts/build-wasm.mjs   # 需要 cargo + wasm32-unknown-unknown、wasm-bindgen、wasm-opt
 ```
 
+### 发布到 npm
+
+`node scripts/build-npm.mjs` 把要发布的包整理到 `dist/npm/`：`@open-artifact/*` 库包（编译成 JavaScript，带类型声明）、
+`@open-artifact/cli`（自带 daemon 的 `open-artifact` 命令）和 `dsh-open-artifact`。发布新版时，先把要发的包的版本号改高，
+再推送一个 tag（如 `v0.2.0`），[Publish to npm](.github/workflows/publish-npm.yml) 工作流就会构建并发布 npm 上还没有的
+版本，用的是 trusted publishing。在本机运行 `node scripts/publish-npm.mjs` 效果相同（可以先加 `--dry-run` 看看）；
+新包第一次发布后，用 `--trust` 把这个工作流设为它的 trusted publisher。
+
 ## 仓库结构
 
 | 路径 | 内容 |

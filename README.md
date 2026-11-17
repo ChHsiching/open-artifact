@@ -139,6 +139,15 @@ so you only need Rust when you change a crate:
 node scripts/build-wasm.mjs   # needs cargo + wasm32-unknown-unknown, wasm-bindgen, wasm-opt
 ```
 
+### Releasing to npm
+
+`node scripts/build-npm.mjs` stages the npm packages in `dist/npm/`: the `@open-artifact/*` libraries (compiled to
+JavaScript with type declarations), `@open-artifact/cli` (the `open-artifact` command with the daemon vendored) and
+`dsh-open-artifact`. To release, raise the versions you want out and push a tag (`v0.2.0`); the
+[Publish to npm](.github/workflows/publish-npm.yml) workflow builds and publishes every version npm does not have yet,
+by trusted publishing. `node scripts/publish-npm.mjs` does the same from a computer (`--dry-run` to look first), and
+`--trust` sets the workflow as a new package's trusted publisher after its first publish.
+
 ## Repository layout
 
 | Path | Contents |
