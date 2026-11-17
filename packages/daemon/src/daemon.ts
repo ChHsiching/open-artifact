@@ -1647,7 +1647,7 @@ ${rows ? `<ul>\n${rows}\n</ul>` : '<p>No artifacts yet. Ask an agent to make one
       return sendJson(res, 400, { jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } });
     }
     const caller = callerFromRequest(req, this.harnesses);
-    const one = (message: McpMessage): Promise<McpReply | null> => handleMcp(message, { tools: this.tools, caller, version: VERSION });
+    const one = (message: McpMessage): Promise<McpReply | null> => handleMcp(message, { tools: this.tools, caller, version: VERSION, workspaceOf: (ref) => this.harnesses.workspaceOf(ref) });
     if (Array.isArray(body)) {
       const out = (await Promise.all(body.map(one))).filter((reply): reply is McpReply => reply !== null);
       if (out.length) return sendJson(res, 200, out);

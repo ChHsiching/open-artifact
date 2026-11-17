@@ -21,7 +21,7 @@
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const skillDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -49,6 +49,14 @@ if (bin === vendoredBin) {
   folder('OPEN_ARTIFACT_HOME_DIR', join(vendor, 'home'));
   folder('OPEN_ARTIFACT_BUILTIN_TYPES', join(vendor, 'artifact-types'));
   folder('OPEN_ARTIFACT_HARNESS_PROFILES', join(vendor, 'harnesses'));
+}
+
+// The plugin this skill came in (`<plugin>/skills/open-artifact`): an agent app may start the plugin's MCP server and
+// hooks in that folder, which is never where the person works.
+const pluginDir = resolve(skillDir, '..', '..');
+const PLUGIN_FILES = ['plugin.json', '.claude-plugin', '.cursor-plugin', '.mcp.json', 'mcp.json', 'mcp_config.json'];
+if (!env.OPEN_ARTIFACT_PLUGIN_DIR && basename(dirname(skillDir)) === 'skills' && PLUGIN_FILES.some((name) => existsSync(join(pluginDir, name)))) {
+  env.OPEN_ARTIFACT_PLUGIN_DIR = pluginDir;
 }
 
 // ---------------------------------------------------------------- who is calling

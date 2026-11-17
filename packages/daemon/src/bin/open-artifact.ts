@@ -15,8 +15,8 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
-import { resolve as resolvePath } from 'node:path';
+import { readFileSync, realpathSync } from 'node:fs';
+import { resolve as resolvePath, sep } from 'node:path';
 import { createInterface } from 'node:readline';
 import type { DaemonState, SessionRef, ToolCallResult } from '@open-artifact/protocol';
 import { api, ensureDaemon, readDaemon } from '../client.ts';
@@ -70,6 +70,30 @@ function caller(): SessionRef {
 }
 
 /** This process's ancestors' pids (a hook's parent may be a shell the harness started). */
+/**
+ * This process's folder as the caller's workspace, unless it is a plugin's own folder: agent apps (Codex, Antigravity)
+ * start a plugin's MCP server and hooks there, and what is made must not land in the plugin. The skill's launcher
+ * names its plugin (`OPEN_ARTIFACT_PLUGIN_DIR`); the apps name theirs too.
+ */
+function ownWorkspace(): string | null {
+  const real = (dir: string): string => {
+    try {
+      return realpathSync(dir);
+    } catch {
+      return resolvePath(dir);
+    }
+  };
+  const cwd = real(process.cwd());
+  const env = process.env;
+  const plugins = [env.OPEN_ARTIFACT_PLUGIN_DIR, env.PLUGIN_ROOT, env.CLAUDE_PLUGIN_ROOT, env.CURSOR_PLUGIN_ROOT].filter((dir): dir is string => !!dir);
+  return plugins.some((dir) => {
+    const root = real(dir);
+    return cwd === root || cwd.startsWith(root + sep);
+  })
+    ? null
+    : process.cwd();
+}
+
 function ancestors(start = process.ppid, depth = 4): number[] {
   const pids: number[] = [];
   let pid = start;
@@ -117,7 +141,7 @@ function watchWakes(options: {
   depth?: number;
 }): void {
   const pids = ancestors(process.ppid, options.depth ?? 2);
-  let mine: SessionRef | null = options.session ? { harness: options.harness, session: options.session, workspace: process.cwd() } : null;
+  let mine: SessionRef | null = options.session ? { harness: options.harness, session: options.session, workspace: ownWorkspace() } : null;
   const pending = new Map<string, ReturnType<typeof setTimeout>>();
   const resolveMine = async (state: DaemonState): Promise<SessionRef | null> => {
     if (mine) return mine;
@@ -212,12 +236,13 @@ async function mcpBridge(): Promise<void> {
   const channel = argv.includes('--channel') || process.env.OPEN_ARTIFACT_CHANNEL === '1';
   if (argv.includes('--channel')) argv.splice(argv.indexOf('--channel'), 1);
   const session = sessionFromEnv(harness);
+  const workspace = ownWorkspace();
   let state: DaemonState = await ensureDaemon();
   const headers = (): Record<string, string> => ({
     'Content-Type': 'application/json',
     Authorization: `Bearer ${state.token}`,
     'X-Open-Artifact-Harness': harness,
-    'X-Open-Artifact-Workspace': encodeURIComponent(process.cwd()),
+    ...(workspace ? { 'X-Open-Artifact-Workspace': encodeURIComponent(workspace) } : {}),
     'X-Open-Artifact-PPID': ancestors(process.ppid, 2).join(','),
     ...(session ? { 'X-Open-Artifact-Session': session } : {}),
   });
@@ -300,7 +325,8 @@ async function hook(event: string | undefined): Promise<void> {
     | null;
   // Cursor `workspace_roots`; Antigravity `workspacePaths` (its hooks run in the plugin's folder, not the workspace).
   const roots = [input.workspace_roots, input.workspacePaths].flatMap((list) => (Array.isArray(list) ? (list as unknown[]) : []));
-  const workspace = String(input.cwd ?? roots[0] ?? process.cwd());
+  const named = input.cwd ?? roots[0];
+  const workspace = typeof named === 'string' && named ? named : ownWorkspace();
   const canonical = HOOK_EVENTS[event] ?? event;
   const running = await readDaemon();
   if (!running && canonical !== 'SessionStart') return;

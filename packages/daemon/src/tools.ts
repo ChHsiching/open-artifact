@@ -7,6 +7,7 @@
 
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import {
   ARTIFACT_PANELS,
@@ -440,9 +441,12 @@ export class Tools {
     };
   }
 
-  /** The folder of a new or adopted artifact: `folder` (relative to the workspace), else `<workspace>/<artifactsDir>/<slug>`. */
+  /**
+   * The folder of a new or adopted artifact: `folder` (relative to the workspace), else `<workspace>/<artifactsDir>/<slug>`.
+   * A caller with no known workspace gets the home folder, never the daemon's own folder (which may be a plugin's).
+   */
   resolveFolder(folder: string | undefined, caller: SessionRef, title?: string): string {
-    const base = caller.workspace ? resolve(caller.workspace) : process.cwd();
+    const base = caller.workspace ? resolve(caller.workspace) : homedir();
     if (folder) return resolve(base, folder);
     const dir = join(base, this.o.settings().artifactsDir || 'artifacts');
     const slug = slugify(title);

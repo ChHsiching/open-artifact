@@ -48,6 +48,7 @@ import {
 } from '@open-artifact/protocol';
 import type { Inbox } from './inbox.ts';
 import { files, readJson, writeJson } from './paths.ts';
+import { codexThreadWorkspace } from './codex.ts';
 import { sessionKeyOf } from './store.ts';
 import type { WebSocketConnection } from './ws.ts';
 
@@ -477,9 +478,22 @@ export class HarnessHub extends EventEmitter<{ changed: [] }> {
   remember(ref: SessionRef, extra: { title?: string } = {}): string | null {
     const key = sessionKeyOf(ref);
     if (!key) return null;
-    this.known[key] = { ...(this.known[key] ?? {}), ...ref, ...extra, seenAt: new Date().toISOString() };
+    const before = this.known[key];
+    // A call that does not know the folder keeps the one a hook said.
+    this.known[key] = { ...(before ?? {}), ...ref, workspace: ref.workspace ?? before?.workspace ?? null, ...extra, seenAt: new Date().toISOString() };
     this.persist();
     return key;
+  }
+
+  /**
+   * The folder session `ref` works in, when the call does not say: the one its hook said (`sessions.json`), else, for
+   * Codex, the thread's own record.
+   */
+  workspaceOf(ref: SessionRef): string | null {
+    if (ref.workspace) return ref.workspace;
+    if (!ref.session) return null;
+    const key = sessionKeyOf(ref);
+    return (key ? this.known[key]?.workspace : null) ?? (ref.harness === 'codex' ? codexThreadWorkspace(ref.session) : null);
   }
 
   /** A session ref registered for one of these process ids (hooks, attaches). */

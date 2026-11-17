@@ -26,9 +26,10 @@ export interface McpMeta {
   workspace?: string;
 }
 
-/** Finds a session from process ids (the Harness hub). */
+/** Finds a session from process ids, and a session's folder (the Harness hub). */
 export interface PidLookup {
   byPid(pids: number[]): SessionRef | null;
+  workspaceOf?(ref: SessionRef): string | null;
 }
 
 const header = (request: IncomingMessage, name: string): string | undefined => {
@@ -82,7 +83,10 @@ export interface McpReply {
 }
 
 /** One JSON-RPC message → its answer (`null` for a notification). */
-export async function handleMcp(message: McpMessage, context: { tools: McpTools; caller: SessionRef; version: string }): Promise<McpReply | null> {
+export async function handleMcp(
+  message: McpMessage,
+  context: { tools: McpTools; caller: SessionRef; version: string; workspaceOf?: (ref: SessionRef) => string | null },
+): Promise<McpReply | null> {
   const { id, method, params } = message ?? {};
   const reply = (result: unknown): McpReply | null => (id === undefined ? null : { jsonrpc: '2.0', id, result });
   const fail = (code: number, text: string): McpReply | null => (id === undefined ? null : { jsonrpc: '2.0', id, error: { code, message: text } });
@@ -106,6 +110,8 @@ export async function handleMcp(message: McpMessage, context: { tools: McpTools;
       const meta = params?._meta ?? {};
       const metaSession = meta.sessionId ?? meta.threadId;
       const who: SessionRef = { ...caller, ...(metaSession ? { session: metaSession } : {}) };
+      // A bridge started in a plugin's folder names no folder: the session's own, when the daemon knows it.
+      if (!who.workspace) who.workspace = context.workspaceOf?.(who) ?? null;
       const result = await tools.call(String(params?.name ?? ''), params?.arguments ?? {}, who);
       const isError = !!result?.error && Object.keys(result).filter((k) => k !== 'messages').length === 1;
       const { messages, ...rest } = result ?? {};

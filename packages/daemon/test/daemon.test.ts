@@ -1,6 +1,6 @@
 import { TEST_HOME, tempDir, until } from './helpers.ts';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { request } from 'node:http';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
@@ -98,6 +98,44 @@ test('Artifact quickstart and publish make a design artifact from the built-in r
   assert.deepEqual(record.owner, { harness: 'dsh', session: 'mcp-1', workspace });
   assert.match(String(made.instructions), /# This artifact/);
   assert.ok(String(made.instructions).length > 500, 'carries the SKILL.md body');
+});
+
+test('MCP from a plugin folder: the session’s folder, from its hook or its Codex thread record', async () => {
+  // Codex starts a plugin's MCP server in the plugin's folder: the bridge names no folder, only the thread in `_meta`.
+  const call = async (thread: string, args: Record<string, unknown>): Promise<ToolCallResult> => {
+    const response = await mcp(
+      { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'Artifact', arguments: args, _meta: { threadId: thread } } },
+      { 'X-Open-Artifact-Harness': 'codex' },
+    );
+    const body = (await response.json()) as { result: { content: Array<{ text: string }>; isError: boolean } };
+    assert.equal(body.result.isError, false, body.result.content[0]?.text);
+    return JSON.parse(body.result.content[0]!.text) as ToolCallResult;
+  };
+  const publish = async (thread: string, title: string): Promise<string> => {
+    const types = (await call(thread, { action: 'quickstart', intent: 'design' })).types as Array<{ type_url: string }>;
+    const made = await call(thread, { action: 'publish', type_url: types[0]!.type_url, title });
+    return daemon.store.require(artifactIdOf(String(made.url))!).root;
+  };
+
+  // A trusted hook said where the thread works.
+  const hooked = tempDir('open-artifact-hooked-');
+  await api(state, 'hook', { event: 'SessionStart', harness: 'codex', session: 'thread-hooked', workspace: hooked, pids: [] });
+  // A later hook that does not know the folder keeps it.
+  await api(state, 'hook', { event: 'Stop', harness: 'codex', session: 'thread-hooked', workspace: null, pids: [] });
+  assert.ok((await publish('thread-hooked', 'Hooked')).startsWith(join(hooked, 'artifacts')));
+
+  // No hook ran (Codex runs plugin hooks only once trusted): the thread's rollout file names its folder.
+  const codexHome = tempDir('open-artifact-codex-');
+  const rolled = tempDir('open-artifact-rolled-');
+  const day = join(codexHome, 'sessions', '2026', '11', '17');
+  mkdirSync(day, { recursive: true });
+  writeFileSync(join(day, 'rollout-2026-11-17T10-00-00-thread-rolled.jsonl'), `${JSON.stringify({ type: 'session_meta', payload: { id: 'thread-rolled', cwd: rolled } })}\n{"type":"x"}\n`);
+  process.env.CODEX_HOME = codexHome;
+  try {
+    assert.ok((await publish('thread-rolled', 'Rolled')).startsWith(join(rolled, 'artifacts')));
+  } finally {
+    delete process.env.CODEX_HOME;
+  }
 });
 
 test('GET /a/<id> injects the boot object into the Shell', async () => {
