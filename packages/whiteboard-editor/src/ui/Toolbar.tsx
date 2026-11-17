@@ -2,15 +2,15 @@
  * The tool bar at the foot of the board and its trays.
  *
  * Left to right: Select, Hand, then (for editors) Text, Section, Sticky,
- * Draw, Shapes, Stickers, Turn into; the comment toggle; and pinned at the
- * right end, Ask (the agent). A viewer gets Select and Hand only.
+ * Draw, Shapes, Stickers; the comment toggle; and pinned at the right end,
+ * past a divider, the "Ask <agent>" pill. A viewer gets Select and Hand only.
  *
  * Draw and Shapes remember their last pick; while one of their tools is on,
  * a tray above the bar offers the rest (pen/arrow and ink colors; every
  * shape kind and the table). Clicking the active tool again puts it down.
  */
 
-import { MessageSquare, Sparkles } from 'lucide-react';
+import { MessageCircle } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   INK_COLOR_NAMES,
@@ -19,7 +19,6 @@ import {
   themedInkColor,
   type HexColor,
 } from '@open-artifact/whiteboard-core';
-import { cn } from '@open-artifact/ui';
 import { DRAW_TOOLS, MORE_SHAPE_KINDS, BASIC_SHAPE_KINDS, shapesButtonTools, toolPickForShapeKind, modKey, toolShortcutKey, type ToolName, type ToolPick } from '../lib/tools.ts';
 import { addBoardInk, removeBoardInk } from '../services/commands.ts';
 import { insertFiles } from '../services/files.ts';
@@ -33,8 +32,7 @@ import { useTool, type StickerChoice } from '../state/tool.ts';
 import { useNarrowTouch } from './hooks.ts';
 import { ShapeKindIcon, TOOL_ICONS, ToolPickIcon, toolPickLabel } from './icons.tsx';
 import { StickerPicker } from './StickerPicker.tsx';
-import { TurnIntoButton } from './TurnInto.tsx';
-import { Card, ChromeDivider, ChromePopover, SwatchRow, TipGroup, ToolButton, type Swatch } from './chrome.tsx';
+import { Card, ChromeButton, ChromeDivider, ChromePopover, SwatchRow, Tip, TipGroup, ToolButton, type Swatch } from './chrome.tsx';
 
 /** File types the picture picker accepts. */
 export const PICTURE_ACCEPT = 'image/png,image/jpeg,image/gif,image/webp,image/svg+xml,video/mp4,video/webm,video/quicktime';
@@ -147,21 +145,17 @@ function BoardToolbar({ touch }: { touch: boolean }) {
             onClick={() => pickFromButton(shapesButtonPick)}
           />
           <StickerButton keysOn={keysOn} onUpload={() => fileInput.current?.click()} />
-          {agent.available ? <TurnIntoButton /> : null}
         </>
       ) : null}
       {canComment ? (
-        <>
-          <ChromeDivider />
-          <ToolButton
-            label="Comment"
-            tip={commentMode ? 'Comment mode is on: click the board to comment' : 'Comment'}
-            icon={<MessageSquare aria-hidden="true" />}
-            shortcut={keysOn ? 'C' : undefined}
-            pressed={commentMode}
-            onClick={() => useTool.getState().setCommentMode(!commentMode)}
-          />
-        </>
+        <ToolButton
+          label="Comment"
+          tip={commentMode ? 'Comment mode is on: click the board to comment' : 'Comment'}
+          icon={<MessageCircle aria-hidden="true" />}
+          shortcut={keysOn ? 'C' : undefined}
+          pressed={commentMode}
+          onClick={() => useTool.getState().setCommentMode(!commentMode)}
+        />
       ) : null}
       {showAsk ? (
         <>
@@ -173,19 +167,16 @@ function BoardToolbar({ touch }: { touch: boolean }) {
   );
 }
 
-/** "Ask <agent>": opens the Ask panel about the board. */
+/** "Ask <agent>": a text pill that opens the Ask panel about the board. */
 function AskButton({ name, busy }: { name: string; busy: boolean }) {
   const open = useAsk((state) => state.open);
   return (
-    <ToolButton
-      label={`Ask ${name}`}
-      tip={busy ? `${name} is working on the board` : `Ask ${name} about the board`}
-      icon={<Sparkles aria-hidden="true" className={cn(busy && 'animate-pulse')} />}
-      shortcut={`${modKey()}K`}
-      pressed={open}
-      onClick={() => useAsk.getState().toggle()}
-      className="text-chrome-accent"
-    />
+    <Tip label={busy ? `${name} is working on the board` : `Ask ${name} about the board`} shortcut={`${modKey()}K`} side="top">
+      <ChromeButton size="xl" pressed={open} className="gap-1.5 bg-chrome-hover px-3 hover:bg-chrome-line" onClick={() => useAsk.getState().toggle()}>
+        {busy ? <span aria-hidden="true" className="size-1.5 shrink-0 animate-pulse rounded-full bg-warning" /> : null}
+        Ask {name}
+      </ChromeButton>
+    </Tip>
   );
 }
 

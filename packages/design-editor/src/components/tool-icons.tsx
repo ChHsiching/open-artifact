@@ -91,10 +91,3 @@ export const LineIcon = (): ReactNode => (
     <path d="M4.75 15.25 15.25 4.75" />
   </Glyph>
 );
-
-/** Comment: a round speech bubble, its corner at the lower left (the comment pointer's shape). */
-export const CommentIcon = (): ReactNode => (
-  <Glyph>
-    <path d="M3.75 16.25V10a6.25 6.25 0 1 1 6.25 6.25H3.75Z" />
-  </Glyph>
-);

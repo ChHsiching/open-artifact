@@ -5,7 +5,7 @@
 
 
 
-import { MessageSquare, MessageSquarePlus } from 'lucide-react';
+import { MessageCircle } from 'lucide-react';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { CommentThread } from '@open-artifact/runtime';
 import { AllComments, CommentComposer, CommentPopover, CommentsLayer, ThreadCard, type AgentBadge } from '@open-artifact/editor-kit/react';
@@ -51,11 +51,11 @@ export function CommentBadge({ focus, className }: { focus: Focus; className?: s
     >
       {count ? (
         <>
-          <MessageSquare className="size-3" />
+          <MessageCircle className="size-3" />
           {count}
         </>
       ) : (
-        <MessageSquarePlus className="size-3.5" />
+        <MessageCircle className="size-3.5" />
       )}
     </button>
   );

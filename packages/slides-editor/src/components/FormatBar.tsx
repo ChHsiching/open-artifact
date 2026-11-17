@@ -34,7 +34,7 @@ import {
   Link2,
   List,
   ListOrdered,
-  MessageSquarePlus,
+  MessageCircle,
   Underline,
   Unlink,
 } from 'lucide-react';
@@ -386,7 +386,7 @@ function SelectionActions({ comment }: { comment: (() => ReturnType<typeof eleme
       {canComment() && comment ? (
         <Tip label="Comment on this element">
           <ChromeButton square aria-label="Comment" onClick={() => useComments.getState().setDraft(comment())}>
-            <MessageSquarePlus {...ICON} />
+            <MessageCircle {...ICON} />
           </ChromeButton>
         </Tip>
       ) : null}

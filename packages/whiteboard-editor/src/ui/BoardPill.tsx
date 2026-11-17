@@ -7,7 +7,7 @@
  */
 
 import { LIVE_MESSAGES } from '@open-artifact/whiteboard-core';
-import { ChevronDown, CloudOff, Loader2, Lock, MessageSquare, TriangleAlert } from 'lucide-react';
+import { ChevronDown, CloudOff, Loader2, Lock, MessageCircle, TriangleAlert } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { MAX_ZOOM, ZOOM_PRESETS, zoomPercent } from '../lib/camera.ts';
 import { modKey } from '../lib/tools.ts';
@@ -44,7 +44,7 @@ export function BoardPill() {
       {lockLabel ? (
         <Tip label={lockLabel === 'Comment only' ? 'Comment only: you can add and reply to comments, not change the board' : 'View only'}>
           <span role="img" aria-label={lockLabel} className="flex h-7 items-center px-1.5 text-chrome-muted">
-            {lockLabel === 'Comment only' ? <MessageSquare className="size-3.5" aria-hidden="true" /> : <Lock className="size-3.5" aria-hidden="true" />}
+            {lockLabel === 'Comment only' ? <MessageCircle className="size-3.5" aria-hidden="true" /> : <Lock className="size-3.5" aria-hidden="true" />}
           </span>
         </Tip>
       ) : null}

@@ -7,7 +7,7 @@
  */
 
 import { memo, useRef, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
-import { AlertTriangle, EyeOff, MessageSquare } from 'lucide-react';
+import { AlertTriangle, EyeOff, MessageCircle } from 'lucide-react';
 import { cn } from '@open-artifact/ui';
 import { useDeck } from '../state/deck.ts';
 import { useCommentCounts, useOrder, usePeersBySlide } from '../state/outline.ts';
@@ -97,7 +97,7 @@ const RailThumb = memo(function RailThumb({ id, index, comments, peers, dragging
           </div>
           {comments ? (
             <span className="pointer-events-none absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center gap-0.5 rounded-full bg-chrome-accent px-1 text-[10px] font-medium text-white">
-              <MessageSquare className="size-2.5" />
+              <MessageCircle className="size-2.5" />
               {comments}
             </span>
           ) : null}
