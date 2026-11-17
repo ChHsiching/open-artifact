@@ -231,7 +231,7 @@ const ARTIFACT_SCHEMA: ToolInputSchema = {
     open: {
       type: 'string',
       enum: ['after_first_write', 'now'],
-      description: 'publish without url: after_first_write opens the page for the person once your first write lands; now opens it at once. Omitted: open it yourself.',
+      description: "publish without url: after_first_write opens the page in your app once your first write lands; now opens it at once. Where your app cannot show pages by itself the result says so: open view_url in your app's built-in browser, if you have one.",
     },
     related: { type: 'boolean', description: 'quickstart: list existing artifacts the recommended type can build on, such as design systems (default true).' },
     path: { type: 'string', description: 'read: one file or folder under the root (omitted: the record and the file list).' },
@@ -312,7 +312,7 @@ export const TOOL_DESCRIPTIONS: Record<ToolName, string> = {
     '- list {scope: "mine" | "all" | "types", type?, query?}: find existing artifacts, or the installed types.',
     "- publish {type_url, title, folder?, open?}: create an artifact; the result carries its root folder and the type's instructions. publish {url, files, if_match?, check?}: write files when you have no file tools of your own.",
     "- read {url, path? | paths?}: the artifact's record, files and actions, or some of its files with their sha256. read {type_url}: a type's instructions, before creating.",
-    '- open {url, panel?}: show it to the person, once its content is written. panel "share" or "export" opens its Share panel or Export tab for them.',
+    '- open {url, panel?}: show it to the person in the computer\'s browser (or the app, when it shows pages), once its content is written. When your app has a built-in browser, open view_url there instead. panel "share" or "export" opens its Share panel or Export tab for them.',
     "- call {url, name, args?}: run one of the type's actions (check, upload, ...). A long one answers {task, pending: true}; its result comes later as a message.",
     '- adopt {url | folder}: take over an artifact, or add an existing folder. Only when the person asks.',
     "- share {url}: whether it is shared on the local network, and its links. Only the person changes that, in the page's Share panel.",

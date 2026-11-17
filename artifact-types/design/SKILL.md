@@ -26,7 +26,8 @@ soon as you write it.
 "open-artifact://type/design", title}`; its result gives the canvas's `url` (`open-artifact://artifact/<id>`), its `root`
 and how the commands below map onto the tool. There, `open-artifact check` is `Artifact {action: "call", url,
 name: "check"}`, `open-artifact upload` is `{action: "call", url, name: "upload", args: {file}}`, and the page
-is shown with `Artifact {action: "open", url}`: never run `open-artifact open`, `serve`, `wait` or `stop` under a
+is shown as the create result says (its `view_url` in your app's built-in browser when you have one, else
+`Artifact {action: "open", url}`): never run `open-artifact open`, `serve`, `wait` or `stop` under a
 host. You still write the files yourself, with your file tool, under `<root>/project/`.
 
 ## Which canvas
@@ -101,7 +102,8 @@ asked.
 5. **The index and the first artboard.** Write `project/canvas.json` (the one you read, else a new one
    with `createdOnFiles`): `title`, a `boards` entry and an `order` slot for every planned artboard,
    `launch`, your `notes`, the install record. Then the first artboard. Then show the page so the
-   person can watch the rest arrive: with the Artifact tool, `Artifact {action: "open", url}`;
+   person can watch the rest arrive: with the Artifact tool, as the create result says (`view_url` in your
+   app's built-in browser when you have one, else `Artifact {action: "open", url}`);
    otherwise run `open-artifact open <root> --type design --json` and give the person its `url` once (if you
    have a built-in browser or preview pane, open it there too).
 6. **The rest, one at a time**, in `order`: write one artboard, then the next; never write two artboards

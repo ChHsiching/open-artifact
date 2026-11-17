@@ -27,5 +27,11 @@ folder, so the daemon looks the thread's folder up: from its hook, or from the t
 
 Comments sent from the page reach the thread that made the artifact at session start, with your next message, or,
 when they arrive while Codex works, by keeping its turn going (the Stop hook). Without the hooks they come with the
-thread's next Open Artifact tool call. Codex cannot be woken while idle: send
-a message ("check the comments"), or let the agent wait for them (`ArtifactComments {action: "wait"}`).
+thread's next Open Artifact tool call. While the thread is idle, the daemon queues a short message for it with
+`codex queue --thread <id> --message …` (the `codex` the ChatGPT app carries, else the one on the `PATH`;
+`$OPEN_ARTIFACT_CODEX_BIN` names another). The desktop app runs a queued message as soon as the thread is idle (tried
+with a thread open in the ChatGPT app), which starts a turn that handles the comments. A thread run only from the
+command line (`codex exec`) gets it the next time it is resumed.
+
+The page opens in the app's built-in browser, which the agent opens with the page's `view_url`, not in the
+computer's browser.

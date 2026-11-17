@@ -193,7 +193,7 @@ test('create lists the actions from the type server and says what comes next', a
   );
   const instructions = String(made.instructions);
   assert.ok(instructions.includes('  - greet: Say hello — Artifact {action: "call", url, name: "greet", args: {name}}'));
-  assert.ok(instructions.includes('Write the content first, then run check, then open it'));
+  assert.ok(instructions.includes("Write the content first, then run check, then show it: open view_url in your app's built-in browser"));
   assert.match(String(made.next), /name: "check"/);
 
   const bare = await tool('Artifact', { action: 'publish', title: 'No type' });
@@ -474,7 +474,7 @@ test('open on create: after_first_write needs an app that shows pages; a bad val
   assert.equal(made.error, undefined, JSON.stringify(made.error));
   assert.equal(made.open, undefined, 'no app here can show pages');
   assert.match(String(made.note), /cannot show pages/);
-  assert.match(String(made.next), /then open it\./);
+  assert.match(String(made.next), /then show it: open view_url in your app's built-in browser/);
 
   const bad = await tool('Artifact', { action: 'publish', type_url: 'open-artifact://type/greeter', title: 'Bad open', open: 'later' });
   assert.equal(bad.error?.code, 'invalid_argument');

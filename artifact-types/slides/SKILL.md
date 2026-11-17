@@ -29,7 +29,8 @@ you write it.
 "open-artifact://type/slides", title}`; its result gives the deck's `url` (`open-artifact://artifact/<id>`), its `root`
 and how the commands below map onto the tool. There, `open-artifact check` is `Artifact {action: "call", url,
 name: "check"}`, `open-artifact upload` is `{action: "call", url, name: "upload", args: {file: "<absolute
-path>"}}`, and the page is shown with `Artifact {action: "open", url}`: never run `open-artifact open`, `serve`,
+path>"}}`, and the page is shown as the create result says (its `view_url` in your app's built-in browser when you
+have one, else `Artifact {action: "open", url}`): never run `open-artifact open`, `serve`,
 `wait` or `stop` under a host. You still write the files yourself, with your file tool, under
 `<root>/project/`.
 
@@ -128,7 +129,8 @@ asked.
    and the install record. Then `project/deck.css` with step 1's palette and type as `--variables` and
    the classes your repeated layouts use (an installed system's tokens declared there too). Then the
    cover slide. Then show the page so the person can watch the rest
-   arrive: with the Artifact tool, `Artifact {action: "open", url}`; otherwise run
+   arrive: with the Artifact tool, as the create result says (`view_url` in your app's built-in browser when you
+   have one, else `Artifact {action: "open", url}`); otherwise run
    `open-artifact open <root> --type slides --json` and give the person its `url` once (if you have a built-in
    browser or preview pane, open it there too).
 5. **The rest, in `order`**, a few slides per step (three at most): each slide shows on the page as its

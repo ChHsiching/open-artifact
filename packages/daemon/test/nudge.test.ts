@@ -54,3 +54,22 @@ test('nudgeSession: sends the message to the conversation through agentapi', asy
     delete process.env.OPEN_ARTIFACT_ANTIGRAVITY_AGENTAPI;
   }
 });
+
+test('nudgeSession: queues the message for a Codex thread', async () => {
+  const calls: Array<{ command: string; args: string[] }> = [];
+  const run: NudgeRun = async (command, args) => {
+    calls.push({ command, args });
+    return null;
+  };
+  process.env.OPEN_ARTIFACT_CODEX_BIN = '/bin/codex-test';
+  try {
+    const url = 'open-artifact://artifact/art_2';
+    assert.equal(await nudgeSession({ harness: 'codex', session: 'thread-1', workspace: '/w' }, url, { run }), true);
+    assert.deepEqual(calls, [{ command: '/bin/codex-test', args: ['queue', '--thread', 'thread-1', '--message', nudgeText(url)] }]);
+    assert.equal(await nudgeSession({ harness: 'codex', session: null, workspace: '/w' }, url, { run }), false);
+    assert.equal(await nudgeSession({ harness: 'codex', session: 'thread-1', workspace: null }, url, { run: async () => new Error('exit 2') }), false);
+    assert.equal(calls.length, 1);
+  } finally {
+    delete process.env.OPEN_ARTIFACT_CODEX_BIN;
+  }
+});

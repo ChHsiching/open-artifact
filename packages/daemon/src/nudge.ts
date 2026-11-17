@@ -5,12 +5,14 @@
  *
  * - `antigravity`: `agentapi send-message <conversationId> <text>`, the Antigravity app's own command line, pointed at
  *   the running app by its hub file (`~/.gemini/antigravity/daemon/hub_<port>.json`).
+ * - `codex`: `codex queue --thread <threadId> --message <text>`, Codex's own queue of messages for a thread
+ *   (`~/.codex/queue_1.sqlite`); the desktop app runs a queued message as soon as the thread is idle.
  */
 
 import { execFile } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 import type { SessionRef } from '@open-artifact/protocol';
 
 /** How long a nudge command may run, ms. */
@@ -75,9 +77,23 @@ function agentapi(home: string): { command: string; args: string[] } | null {
   return null;
 }
 
-/** The message a nudge starts the turn with; the hook adds the waiting messages themselves. */
+/** The `codex` command: `$OPEN_ARTIFACT_CODEX_BIN`, the one the ChatGPT desktop app carries, else `codex` on the PATH. */
+function codex(): string | null {
+  const named = process.env.OPEN_ARTIFACT_CODEX_BIN;
+  if (named) return named;
+  const app = '/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex';
+  if (process.platform === 'darwin' && existsSync(app)) return app;
+  for (const dir of (process.env.PATH ?? '').split(delimiter)) {
+    for (const name of process.platform === 'win32' ? ['codex.cmd', 'codex.exe'] : ['codex']) {
+      if (dir && existsSync(join(dir, name))) return join(dir, name);
+    }
+  }
+  return null;
+}
+
+/** The message a nudge starts the turn with; the hook, or the next tool call, adds the waiting messages themselves. */
 export function nudgeText(artifact: string): string {
-  return `Open Artifact: the person sent comments or requests from ${artifact}. They come with this message; handle them (ArtifactComments {action: "read", url: "${artifact}"} shows them too).`;
+  return `Open Artifact: the person sent comments or requests from ${artifact}. They come with this message or your next Open Artifact tool call; handle them (ArtifactComments {action: "read", url: "${artifact}"} shows them too).`;
 }
 
 /**
@@ -85,9 +101,21 @@ export function nudgeText(artifact: string): string {
  * session, the app not running, or the command failed).
  */
 export async function nudgeSession(ref: SessionRef, artifact: string, options: NudgeOptions = {}): Promise<boolean> {
-  if (ref.harness !== 'antigravity' || !ref.session) return false;
-  const home = options.home ?? homedir();
+  if (!ref.session) return false;
   const log = options.log ?? (() => undefined);
+  const run = options.run ?? defaultRun;
+  if (ref.harness === 'codex') {
+    const bin = codex();
+    if (!bin) {
+      log(`nudge codex:${ref.session}: no codex command`);
+      return false;
+    }
+    const error = await run(bin, ['queue', '--thread', ref.session, '--message', nudgeText(artifact)], process.env);
+    log(`nudge codex:${ref.session}: ${error ? `failed: ${error.message}` : 'queued'}`);
+    return !error;
+  }
+  if (ref.harness !== 'antigravity') return false;
+  const home = options.home ?? homedir();
   const hub = antigravityHub(home, options.alive);
   const bin = agentapi(home);
   if (!hub || !bin) {
@@ -95,7 +123,7 @@ export async function nudgeSession(ref: SessionRef, artifact: string, options: N
     return false;
   }
   const env = { ...process.env, ANTIGRAVITY_LS_ADDRESS: hub.address, ANTIGRAVITY_CSRF_TOKEN: hub.csrf };
-  const error = await (options.run ?? defaultRun)(bin.command, [...bin.args, 'send-message', ref.session, nudgeText(artifact)], env);
+  const error = await run(bin.command, [...bin.args, 'send-message', ref.session, nudgeText(artifact)], env);
   log(`nudge antigravity:${ref.session}: ${error ? `failed: ${error.message}` : 'sent'}`);
   return !error;
 }

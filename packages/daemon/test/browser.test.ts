@@ -1,4 +1,4 @@
-import { tempDir, until } from './helpers.ts';
+import { tempDir } from './helpers.ts';
 
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
@@ -43,13 +43,16 @@ test('browser: open shows the page in the browser for a plugin harness, and nowh
   assert.equal(browsed.length, count);
 });
 
-test('browser: open "after_first_write" opens the page once the content lands', async () => {
+test('browser: a page never opens in the computer\'s browser by itself; the agent opens it, in its built-in browser first', async () => {
+  // Agent apps with a browser of their own (Codex, Cursor, Claude) show the page there: a second copy in the
+  // computer's browser would be in the way.
   const made = await create(plugin, 'Later board');
-  assert.equal(made.open, 'after_first_write');
+  assert.equal(made.open, undefined);
+  assert.match(String(made.note), /Nothing opens by itself here.*built-in browser/);
+  assert.match(String(made.next), /open view_url in your app's built-in browser.*Artifact \{action: "open", url\}/);
   const count = browsed.length;
   writeFileSync(join(made.root, 'board.json'), '{}');
-  await until(() => browsed.length > count, 8000);
-  assert.equal(browsed.at(-1), made.view_url);
-  // The first board was opened by hand: its wait for the first write was dropped, so it opened once.
+  await new Promise((done) => setTimeout(done, 3000)); // longer than the daemon's poll and settle for a first write
+  assert.equal(browsed.length, count);
   assert.equal(browsed.filter((u) => u.startsWith(boardView)).length, 1);
 });
