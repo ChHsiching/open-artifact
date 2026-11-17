@@ -27,7 +27,8 @@ node scripts/build-plugins.mjs     # builds the skill, then dist/plugins/<name>/
 ```
 
 `dist/plugins/` is then a marketplace folder for Claude Code (`.claude-plugin/marketplace.json`), Codex
-(`.agents/plugins/marketplace.json`) and Cursor (`.cursor-plugin/marketplace.json`), with one installable folder per
+(`.agents/plugins/marketplace.json`), Cursor (`.cursor-plugin/marketplace.json`) and the Copilot CLI
+(`.github/plugin/marketplace.json`), with one installable folder per
 plugin. Each plugin carries the skill with the daemon vendored in `skills/open-artifact/vendor/` (about 40 MB, most
 of it the types' editors); it needs Node.js 22 or later on the computer.
 
@@ -56,7 +57,7 @@ that folder; `build-plugins.mjs` leaves it alone.
 | | |
 |---|---|
 | Claude Code 2.1.318 | `claude plugin validate` passes for the plugin and the marketplace. A headless run with `--plugin-dir` lists the types through the plugin's MCP tools; with a page request queued for the session, the SessionStart hook handed it to Claude, which edited the board. |
-| GitHub Copilot CLI 1.0.105 | A run with `--plugin-dir`: the plugin's MCP server and hooks load (`${PLUGIN_ROOT}` expands in the hook command); a queued page request reached Copilot, which edited the board. |
+| GitHub Copilot CLI 1.0.105 | A run with `--plugin-dir`: the plugin's MCP server and hooks load (`${PLUGIN_ROOT}` expands in the hook command); a queued page request reached Copilot, which edited the board. With 1.0.112, `copilot plugin marketplace add ./dist/plugins` and `copilot plugin install open-artifact@open-artifact` (under a scratch `HOME`) enable the Copilot plugin from `dist/plugins/copilot`. |
 | Antigravity 2.32.1 (app) | Installed by copying `dist/plugins/antigravity` to `~/.gemini/config/plugins/open-artifact/` (no `agy` CLI here, so no `agy plugin validate`), conversations started with the app's `agentapi`. The skill is listed; after an app restart the MCP server loads as `open-artifact_open-artifact` and `Artifact {action: "list", scope: "types"}` returns the types (Antigravity asks the person to allow the call). With page messages queued for the conversation, `SessionStart` started the daemon and registered the `conversationId`, `PreInvocation` added them as a system message, and `Stop` kept the turn going once with them as its reason. |
 | Codex, Cursor | Not installed here: the hook output for their events was checked by running the hook command with each app's input; the plugin manifests follow their documentation and the Codex plugins installed on this computer. |
 | ChatGPT | The connector was driven over MCP (initialize, tools, the card resource, publish with files, read, ShowArtifact, comments in the next result, a wrong path, a foreign Origin); the card was rendered with a stand-in `window.openai`. Not tried in ChatGPT itself. |

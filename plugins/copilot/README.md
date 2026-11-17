@@ -9,8 +9,12 @@ folders of files that open in one local page where you view, edit and comment: `
 Copilot CLI:
 
 ```bash
-copilot plugin install /path/to/open-artifacts/dist/plugins/copilot
+copilot plugin marketplace add /path/to/open-artifacts/dist/plugins
+copilot plugin install open-artifact@open-artifact
 ```
+
+Copilot reads the marketplace from `.github/plugin/marketplace.json` and loads the plugin from the folder in place,
+so a rebuild takes effect in the next session.
 
 (or try it in one session: `copilot --plugin-dir /path/to/open-artifacts/dist/plugins/copilot`).
 

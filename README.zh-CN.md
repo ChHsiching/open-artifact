@@ -61,7 +61,7 @@ node scripts/build-plugins.mjs      # 生成 dist/plugins/，一个插件市场�
 | [Claude Code](plugins/claude-code/README.md)（CLI、桌面版、IDE） | `claude plugin marketplace add ./dist/plugins`，再 `claude plugin install open-artifact@open-artifact` |
 | [Codex](plugins/codex/README.md)（CLI、应用）和 ChatGPT 桌面版 | `codex plugin marketplace add ./dist/plugins`，再到 `/plugins`（CLI）或 Plugins 标签页（应用）里安装 **Open Artifact** |
 | [Cursor](plugins/cursor/README.md) | 把 `dist/plugins/cursor` 复制到 `~/.cursor/plugins/local/open-artifact`，再运行 **Developer: Reload Window** |
-| [GitHub Copilot](plugins/copilot/README.md) CLI | `copilot plugin install ./dist/plugins/copilot`（直接装这个文件夹。Copilot 会提示这种安装方式已弃用，但不要把 `./dist/plugins` 加成 Copilot 插件市场，那样装上的是 Claude Code 版插件） |
+| [GitHub Copilot](plugins/copilot/README.md) CLI | `copilot plugin marketplace add ./dist/plugins`，再 `copilot plugin install open-artifact@open-artifact` |
 | VS Code 里的 [GitHub Copilot](plugins/copilot/README.md) | 打开 `chat.plugins.enabled`，运行 **Chat: Install Plugin from Source**，选 `dist/plugins/copilot` |
 | [Antigravity](plugins/antigravity/README.md) | `agy plugin install ./dist/plugins/antigravity`（或者把这个文件夹复制到 `~/.gemini/config/plugins/open-artifact/`），然后重启应用 |
 | [网页版 ChatGPT](plugins/chatgpt/README.md) | 运行连接器，套一层 HTTPS 隧道，再在 ChatGPT 里添加为自定义 MCP 服务器（步骤见它的 README） |

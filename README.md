@@ -62,7 +62,7 @@ Then install it in your agent app. The commands below run from the repository fo
 | [Claude Code](plugins/claude-code/README.md) (CLI, desktop, IDE) | `claude plugin marketplace add ./dist/plugins`, then `claude plugin install open-artifact@open-artifact` |
 | [Codex](plugins/codex/README.md) (CLI, app) and ChatGPT desktop | `codex plugin marketplace add ./dist/plugins`, then install **Open Artifact** from `/plugins` (CLI) or the Plugins tab (app) |
 | [Cursor](plugins/cursor/README.md) | copy `dist/plugins/cursor` to `~/.cursor/plugins/local/open-artifact`, then **Developer: Reload Window** |
-| [GitHub Copilot](plugins/copilot/README.md) CLI | `copilot plugin install ./dist/plugins/copilot` (from the folder: Copilot warns such installs are deprecated, but `./dist/plugins` as a Copilot marketplace would install the Claude Code plugin) |
+| [GitHub Copilot](plugins/copilot/README.md) CLI | `copilot plugin marketplace add ./dist/plugins`, then `copilot plugin install open-artifact@open-artifact` |
 | [GitHub Copilot](plugins/copilot/README.md) in VS Code | turn on `chat.plugins.enabled`, then **Chat: Install Plugin from Source** and pick `dist/plugins/copilot` |
 | [Antigravity](plugins/antigravity/README.md) | `agy plugin install ./dist/plugins/antigravity` (or copy the folder to `~/.gemini/config/plugins/open-artifact/`), then restart the app |
 | [ChatGPT on the web](plugins/chatgpt/README.md) | run the connector, put it behind an HTTPS tunnel and add it as a custom MCP server (steps in its README) |

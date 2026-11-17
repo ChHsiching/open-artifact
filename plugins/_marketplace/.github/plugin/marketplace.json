@@ -1,0 +1,16 @@
+{
+  "name": "open-artifact",
+  "owner": {
+    "name": "Jim Liu 宝玉"
+  },
+  "metadata": {
+    "description": "Open Artifact: decks, design canvases, and whiteboards you comment on, with comments sent back to the agent."
+  },
+  "plugins": [
+    {
+      "name": "open-artifact",
+      "source": "./copilot",
+      "description": "Decks, design canvases, and whiteboards you view, edit and comment on in one local page, with comments sent back to the agent."
+    }
+  ]
+}
