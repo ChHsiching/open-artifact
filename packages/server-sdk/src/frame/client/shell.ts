@@ -872,7 +872,7 @@ type Any = any;
         cap: (method, arg) => cap('comments', method, arg),
         sendToAgent,
         refresh: refreshThreads,
-        agent: () => ({ available: !!session?.agent?.available, name: agentName() }),
+        agent: () => ({ available: !!session?.agent?.available, name: agentName(), ...(session?.agent?.wakesIdle === false ? { wakesIdle: false } : {}) }),
         activeChanged: () => pushThreads(),
         listChanged: (open) => setList(open),
         modeChanged: (on) => setMode(on),

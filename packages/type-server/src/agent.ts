@@ -194,9 +194,31 @@ export async function sendToAgent(options: {
   return { status: (await isWaiterPresent(root)) ? 'delivered' : 'queued' };
 }
 
-/** The agent status the page shows. */
-export async function agentStatus(root: string, daemon: TypeApi | null, busy: boolean): Promise<AgentStatus> {
-  return { available: Boolean(daemon) || (await isWaiterPresent(root)), busy, name: 'Agent' };
+/** How long the daemon's word on an artifact's agent (its name, whether it is woken) is kept, ms. */
+const PRESENCE_MS = 5_000;
+const presences = new Map<string, { at: number; value: Promise<{ name?: string; wakesIdle?: boolean }> }>();
+
+/** The daemon's word on the agent of artifact `id`: its name, and whether an idle session is woken. */
+function presenceOf(daemon: TypeApi, id: string, now = Date.now()): Promise<{ name?: string; wakesIdle?: boolean }> {
+  const kept = presences.get(id);
+  if (kept && now - kept.at < PRESENCE_MS) return kept.value;
+  const value = daemon.presence(id).then(
+    (p) => ({ ...(p.agentName ? { name: p.agentName } : {}), ...(typeof p.wakesIdle === 'boolean' ? { wakesIdle: p.wakesIdle } : {}) }),
+    () => ({}),
+  );
+  presences.set(id, { at: now, value });
+  return value;
+}
+
+/** The agent status the page shows; with the daemon and the artifact's id, the agent's own name and whether it is woken. */
+export async function agentStatus(root: string, daemon: TypeApi | null, busy: boolean, id?: string): Promise<AgentStatus> {
+  const said = daemon && id ? await presenceOf(daemon, id) : {};
+  return {
+    available: Boolean(daemon) || (await isWaiterPresent(root)),
+    busy,
+    name: said.name || 'Agent',
+    ...(said.wakesIdle === false ? { wakesIdle: false } : {}),
+  };
 }
 
 /* -------------------------------------------------------------------------- */

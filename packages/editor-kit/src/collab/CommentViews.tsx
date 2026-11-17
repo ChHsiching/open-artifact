@@ -21,7 +21,7 @@ import { EdgePiles, edgePiles, stackPins } from './cds/edge-piles.tsx';
 import { CommentsLayer, InLayer } from './cds/layer.tsx';
 import { commentMarkdown } from './cds/markdown.tsx';
 import { commentTime } from './cds/time.ts';
-import { openMessageCount, type CommentsController } from './comments.ts';
+import { openMessageCount, queuedNote, type CommentsController } from './comments.ts';
 import { ALL_COMMENTS_RIGHT } from './CommentList.tsx';
 import { screenBox, toScreenPoint, toWorldPoint, type AnchorState, type Box, type Camera, type PinPlace, type Point } from './pins.ts';
 
@@ -43,7 +43,10 @@ export const COMMENT_CURSOR = `url("data:image/svg+xml,${BUBBLE_SVG.replace(/[ '
 export interface AgentBadge {
   available: boolean;
   name: string;
+  /** false: an idle agent is not woken (Cursor); what is sent waits until the person next talks to it. */
+  wakesIdle?: boolean;
 }
+
 
 /** Stops surface gestures from starting inside comment UI. */
 const stop = (event: { stopPropagation(): void }): void => event.stopPropagation();
@@ -833,7 +836,7 @@ function ThreadCardBody<A>({ comments, agent, thread, state, maxHeight, onClose 
               {commentMarkdown(message.text)}
             </Comment>
           ))}
-          {working ? <Comment authorName={agent.name} agent working={working} footnote={working === 'queued' ? 'Waiting for the agent' : 'Working…'} /> : null}
+          {working ? <Comment authorName={agent.name} agent working={working} footnote={working === 'queued' ? queuedNote(agent) : 'Working…'} /> : null}
         </Replies>
       ) : null}
     </CommentCard>

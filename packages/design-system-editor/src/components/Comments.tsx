@@ -65,7 +65,8 @@ export function CommentBadge({ focus, className }: { focus: Focus; className?: s
 function useAgentBadge(): AgentBadge {
   const available = useAgent((s) => s.status.available);
   const name = useAgent((s) => s.status.name);
-  return useMemo(() => ({ available, name }), [available, name]);
+  const wakesIdle = useAgent((s) => s.status.wakesIdle);
+  return useMemo(() => ({ available, name, wakesIdle }), [available, name, wakesIdle]);
 }
 
 /** Under the top bar (48px) with the panel's 12px gap. */

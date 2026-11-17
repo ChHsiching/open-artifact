@@ -519,6 +519,16 @@ export class HarnessHub extends EventEmitter<{ changed: [] }> {
     return harnessProfile(harness).agentName || 'Agent';
   }
 
+  /**
+   * Whether the daemon can start a turn in an idle session of the harness: a connected adapter that takes wakes can,
+   * else the profile says (`wakesIdle: false` for apps with no way in, such as Cursor).
+   */
+  wakesIdle(harness: string | null | undefined): boolean {
+    if (!harness) return true;
+    for (const conn of this.connections) if (conn.authed && conn.harness === harness && conn.caps.wake) return true;
+    return harnessProfile(harness).wakesIdle !== false;
+  }
+
   /** Live state of a session. */
   statusOf(ref: SessionRef | null | undefined): { live: boolean; status: OwnerStatus } {
     const session = ref ? this.sessions.get(sessionKeyOf(ref) ?? '') : undefined;

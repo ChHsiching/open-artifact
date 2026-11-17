@@ -7,5 +7,6 @@
   "plugin": "open-artifact",
   "wake": [
     "inbox"
-  ]
+  ],
+  "wakesIdle": false
 }

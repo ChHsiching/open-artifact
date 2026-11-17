@@ -39,7 +39,8 @@ export function agentStateLabel(thread: CommentThread): string | undefined {
 export function useAgentBadge(): AgentBadge {
   const available = useAgent((state) => state.available);
   const name = useAgent((state) => state.name);
-  return useMemo(() => ({ available, name }), [available, name]);
+  const wakesIdle = useAgent((state) => state.wakesIdle);
+  return useMemo(() => ({ available, name, wakesIdle }), [available, name, wakesIdle]);
 }
 
 /** Every comment pin in view, the open card and the composer. */

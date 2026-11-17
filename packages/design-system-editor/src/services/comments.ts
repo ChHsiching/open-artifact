@@ -63,6 +63,7 @@ export const systemComments = createComments<CommentTarget>({
     return Boolean(s?.isOwner && s.agent);
   },
   agentName: () => useAgent.getState().status.name || 'the agent',
+  agentWakesIdle: () => useAgent.getState().status.wakesIdle,
   noun: 'design system',
   maxThreads: 500,
 });

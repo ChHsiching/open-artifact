@@ -39,6 +39,8 @@ export interface CommentsAdapter<A> {
   canSendToAgent(): boolean;
   /** The agent's name in toasts. */
   agentName?(): string;
+  /** false: the agent is not woken while it idles, so the toast tells the person to message it. */
+  agentWakesIdle?(): boolean | undefined;
   /** The viewer's name (the new comment's pin shows their initials; default `You`). */
   viewerName?(): string;
   /** Comment mode turned on or off (end text editing, pick the select tool…). */
@@ -134,6 +136,18 @@ export interface CommentsController<A> {
 }
 
 /** Open (unresolved) thread count. */
+/** Under a thread sent to the agent that has not taken it yet; one that is not woken while it idles needs a message. */
+export function queuedNote(agent: { name: string; wakesIdle?: boolean }): string {
+  return agent.wakesIdle === false ? `${agent.name} gets this on its next turn: send it a message to start one` : 'Waiting for the agent';
+}
+
+/** The toast after a thread goes to the agent; one that is not woken while it idles needs a message from the person. */
+export function sentNotice(name: string, wakesIdle: boolean | undefined): { title: string; description?: string } {
+  return wakesIdle === false
+    ? { title: `Sent to ${name}`, description: `${name} gets it on its next turn. If it is idle, send it a message there to start one.` }
+    : { title: `Sent to ${name}` };
+}
+
 export function openCount(threads: readonly CommentThread[]): number {
   return threads.filter((t) => t.status === 'open').length;
 }
@@ -348,7 +362,7 @@ export function createComments<A>(adapter: CommentsAdapter<A>): CommentsControll
       if (adapter.sendToAgent) return thread ? adapter.sendToAgent(thread, anchorOf(thread)) : false;
       try {
         put(await capability.sendToAgent(id));
-        notify({ title: `Sent to ${adapter.agentName?.() || 'the agent'}` });
+        notify(sentNotice(adapter.agentName?.() || 'the agent', adapter.agentWakesIdle?.()));
         return true;
       } catch (error) {
         failed(error);

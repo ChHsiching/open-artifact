@@ -57,6 +57,7 @@ export const designComments = createComments<DesignAnchor>({
   canComment: () => session().viewer.role !== 'viewer',
   canSendToAgent: () => session().viewer.role === 'owner' && Boolean(session().agent),
   agentName: () => useAgent.getState().status.name,
+  agentWakesIdle: () => useAgent.getState().status.wakesIdle,
   onModeChange(on) {
     if (!on) return;
     const view = useView.getState();

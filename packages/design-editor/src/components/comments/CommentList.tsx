@@ -17,7 +17,7 @@ export function CommentList(): ReactNode {
   return (
     <AllComments
       comments={designComments}
-      agent={{ available: agent.available, name: agent.name }}
+      agent={{ available: agent.available, name: agent.name, wakesIdle: agent.wakesIdle }}
       top={PANEL_TOP}
       hint="Press C, then click an element, an artboard or the canvas. Drag to comment on an area."
     />

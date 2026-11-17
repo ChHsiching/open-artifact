@@ -426,8 +426,9 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
 
   /** Recomputes the agent status and pushes it when it changed. */
   const refreshStatus = async (artifact: OpenArtifact): Promise<AgentStatus> => {
-    const status = await agentStatus(artifact.root, daemon, Date.now() - artifact.externalAt < BUSY_MS);
-    if (status.available !== artifact.agent.available || status.busy !== artifact.agent.busy) {
+    const status = await agentStatus(artifact.root, daemon, Date.now() - artifact.externalAt < BUSY_MS, artifact.id);
+    const was = artifact.agent;
+    if (status.available !== was.available || status.busy !== was.busy || status.name !== was.name || status.wakesIdle !== was.wakesIdle) {
       artifact.agent = status;
       emit(artifact, 'agent', status);
     }

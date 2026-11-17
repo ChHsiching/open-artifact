@@ -1273,6 +1273,7 @@ ${rows ? `<ul>\n${rows}\n</ul>` : '<p>No artifacts yet. Ask an agent to make one
       canSendSession: !!record.owner,
       busy: live.live && live.status === 'running',
       agentName: this.agentNameOf(record),
+      wakesIdle: this.harnesses.wakesIdle(record.owner?.harness),
     };
   }
 

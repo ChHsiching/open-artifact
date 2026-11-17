@@ -18,5 +18,6 @@
   "wake": [
     "inbox"
   ],
-  "open": "browser"
+  "open": "browser",
+  "wakesIdle": false
 }

@@ -221,6 +221,8 @@ export interface TypeApiPresence {
   canSendSession: boolean;
   busy: boolean;
   agentName: string;
+  /** false: an idle owner session is not woken; what is sent waits for its next turn. Left out: it is woken. */
+  wakesIdle?: boolean;
 }
 
 /** Events of `GET /api/open-artifact.type.events?ids=<id,id>` (server-sent, `event:` is the type). */

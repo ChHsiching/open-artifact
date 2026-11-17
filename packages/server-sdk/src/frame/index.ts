@@ -429,7 +429,7 @@ export class FrameSite implements Site {
       readyTimeoutS: Number(this.declaration.monitoring?.readyTimeoutS) || 60,
       me: this.me,
       comments: { available: this.grants.includes('comments'), count: this.comments.openCount() },
-      agent: { available: !!this.ctx.daemon?.available, name: this.ctx.agentName ?? null },
+      agent: { available: !!this.ctx.daemon?.available, name: this.ctx.agentName ?? null, ...(this.ctx.agentWakesIdle === false ? { wakesIdle: false } : {}) },
     };
   }
 

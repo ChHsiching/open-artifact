@@ -222,6 +222,8 @@ export interface AgentStatus {
   busy: boolean;
   /** Display name, e.g. `Agent`. */
   name: string;
+  /** false: an idle agent is not woken; what is sent waits until the person next talks to it. Left out: it is woken. */
+  wakesIdle?: boolean;
 }
 
 /** The `agent` capability. */

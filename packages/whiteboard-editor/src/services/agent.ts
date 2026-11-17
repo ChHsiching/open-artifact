@@ -16,13 +16,15 @@ export interface AgentState {
   busy: boolean;
   /** Display name, e.g. `Agent`. */
   name: string;
+  /** false: an idle agent is not woken; what is sent waits until the person next talks to it. */
+  wakesIdle?: boolean;
 }
 
 export const useAgent = create<AgentState>()(() => ({ available: false, busy: false, name: 'Agent' }));
 
 /** Follows the agent's status; returns a function that stops. */
 export function watchAgent(): () => void {
-  return watchAgentStatus(maybeSession()?.agent, (status) => useAgent.setState({ available: status.available, busy: status.busy, name: status.name || 'Agent' }));
+  return watchAgentStatus(maybeSession()?.agent, (status) => useAgent.setState({ available: status.available, busy: status.busy, name: status.name || 'Agent', wakesIdle: status.wakesIdle }));
 }
 
 /** When this page last sent the agent a request (epoch ms; 0 before the first). */

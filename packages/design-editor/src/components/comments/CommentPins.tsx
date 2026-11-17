@@ -71,7 +71,7 @@ export function CommentPins(): ReactNode {
       place={place}
       highlight={highlightOf}
       anchorAt={anchorAt}
-      agent={{ available: agent.available, name: agent.name }}
+      agent={{ available: agent.available, name: agent.name, wakesIdle: agent.wakesIdle }}
       // "More comments" tabs keep clear of the corner cards and the foot toolbar.
       insets={toolbarTop ? { top: 104 } : { top: 48, bottom: 64 }}
     />

@@ -187,6 +187,11 @@ export interface HarnessProfile {
   /** Wake routes the harness supports, in order. */
   wake: Array<'live' | 'inbox'>;
   /**
+   * false: the daemon cannot start a turn in an idle session (no adapter, monitor or command for it), so what the
+   * person sends waits for the session's next turn, which they start. Left out: it can.
+   */
+  wakesIdle?: boolean;
+  /**
    * Where the daemon shows a page the agent opens (`Artifact open`, or `open: "after_first_write"`) when no adapter
    * of the harness can (`host.open`): `browser`, the browser of this computer. Left out: nowhere; the agent gives
    * the person the link.

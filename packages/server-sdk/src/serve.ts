@@ -137,6 +137,8 @@ export interface SiteContext {
   agentHook: AgentHook;
   /** The agent's display name, when the daemon knows it. */
   agentName?: string;
+  /** false: the daemon cannot wake the agent while it idles; what is sent waits for its next turn. */
+  agentWakesIdle?: boolean;
   /** Opening another folder from a page; this skeleton does not support it. */
   open(): Promise<never>;
   /**
@@ -673,6 +675,12 @@ export class TypeServer {
     } catch {
       agentName = undefined;
     }
+    let agentWakesIdle: boolean | undefined;
+    try {
+      agentWakesIdle = (await this.daemon.presence(id)).wakesIdle;
+    } catch {
+      agentWakesIdle = undefined;
+    }
     const wake = async (body: Parameters<TypeApi['wake']>[1]): Promise<TypeApiWakeResult> => {
       const out = await this.daemon.wake(id, body);
       if (out.status === 'failed') throw new OpenArtifactError('daemon_failed', 'The agent could not be reached.');
@@ -687,6 +695,7 @@ export class TypeServer {
       local: (req) => isLoopback(req.socket.remoteAddress),
       agentHook: { thread: (view) => wake({ threads: [view] }), request: (request) => wake({ requests: [request] }) },
       ...(agentName ? { agentName } : {}),
+      ...(agentWakesIdle === false ? { agentWakesIdle } : {}),
       contentOrigin: this.options.contentHosts && CONTENT_HOST.test(`${id}.frame.localhost:${this.port}`) ? `http://${id}.frame.localhost:${this.port}` : null,
       open: async () => {
         throw new OpenArtifactError('unsupported', 'Opening another folder from a page is not supported here.');

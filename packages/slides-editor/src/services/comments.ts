@@ -20,6 +20,7 @@ import { createComments } from '@open-artifact/editor-kit';
 import { toast } from '@open-artifact/ui';
 import { deckOrder, useDeck } from '../state/deck.ts';
 import { useView } from '../state/view.ts';
+import { useAgent } from './agent.ts';
 import { maybeSession } from './session.ts';
 
 /** Where a thread sits. */
@@ -48,6 +49,8 @@ export const slidesComments = createComments<SlideAnchor>({
   canComment: commenter,
   // Anyone who may comment may hand a thread to the agent.
   canSendToAgent: commenter,
+  agentName: () => useAgent.getState().status.name,
+  agentWakesIdle: () => useAgent.getState().status.wakesIdle,
   onModeChange(on) {
     if (on) useView.getState().endTextEdit();
   },

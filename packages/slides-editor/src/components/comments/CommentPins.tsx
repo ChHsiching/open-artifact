@@ -83,7 +83,7 @@ export function CommentPins({ ctx, slide }: { ctx: StageContext; slide: Slide })
         viewport={layout.viewport}
         place={place}
         anchorAt={anchorAt}
-        agent={{ available: agent.available, name: agent.name }}
+        agent={{ available: agent.available, name: agent.name, wakesIdle: agent.wakesIdle }}
         piles={false}
       />
     </div>

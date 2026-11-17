@@ -209,6 +209,7 @@ export function mount(host: HTMLElement, bridge: FrameCommentsBridge, options: F
     canComment: () => true,
     canSendToAgent: () => bridge.agent().available,
     agentName: () => bridge.agent().name,
+    agentWakesIdle: () => bridge.agent().wakesIdle,
     // A list row or an edge tab: the page brings the thread into view, then its card opens at its pin.
     reveal: (anchor) => {
       if (anchor.id) bridge.reveal(anchor.id);
@@ -293,7 +294,7 @@ export function mount(host: HTMLElement, bridge: FrameCommentsBridge, options: F
     const listOpen = store((s) => s.listOpen);
     const all = store((s) => s.threads);
     const agentNow = bridge.agent();
-    const agent = useMemo((): AgentBadge => ({ available: agentNow.available, name: agentNow.name }), [agentNow.available, agentNow.name]);
+    const agent = useMemo((): AgentBadge => ({ available: agentNow.available, name: agentNow.name, wakesIdle: agentNow.wakesIdle }), [agentNow.available, agentNow.name, agentNow.wakesIdle]);
     const viewport = useWindowSize();
     const place = useCallback(
       (anchor: FrameAnchor): PinPlace | null => {

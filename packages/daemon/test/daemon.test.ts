@@ -238,7 +238,16 @@ test('Type API: wake with the type token', async () => {
   assert.match(waiting.at(-1)!.text, /th_1/);
 
   const presence = await fetch(`${state.url}/api/open-artifact.type.presence?id=${id}`, { headers: { Authorization: `Bearer ${daemon.typeToken('design')}` } });
-  assert.deepEqual(await presence.json(), { presence: 'offline', canSend: true, canSendSession: true, busy: false, agentName: 'Agent' });
+  assert.deepEqual(await presence.json(), { presence: 'offline', canSend: true, canSendSession: true, busy: false, agentName: 'Agent', wakesIdle: true });
+});
+
+test('Type API: presence says when an idle agent is not woken (Cursor), so the page can say what to do', async () => {
+  const presenceOf = async (id: string) =>
+    (await (await fetch(`${state.url}/api/open-artifact.type.presence?id=${id}`, { headers: { Authorization: `Bearer ${daemon.typeToken('design')}` } })).json()) as Record<string, unknown>;
+  const cursor = await presenceOf(await createDesign('Cursor deck', 'cursor-1', 'cursor'));
+  assert.equal(cursor.agentName, 'Cursor');
+  assert.equal(cursor.wakesIdle, false);
+  assert.equal((await presenceOf(await createDesign('Codex deck', 'codex-1', 'codex'))).wakesIdle, true);
 });
 
 test('Library API: writes need the token or the same origin', async () => {

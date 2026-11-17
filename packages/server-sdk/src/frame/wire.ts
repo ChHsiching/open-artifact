@@ -61,7 +61,8 @@ export interface FrameSession {
   readyTimeoutS: number;
   me: LocalUser;
   comments: { available: boolean; count: number };
-  agent: { available: boolean; name: string | null };
+  /** wakesIdle false: an idle agent is not woken; what is sent waits for its next turn. */
+  agent: { available: boolean; name: string | null; wakesIdle?: boolean };
 }
 
 export interface LocalUser {
