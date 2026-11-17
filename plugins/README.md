@@ -41,6 +41,8 @@ that folder; `build-plugins.mjs` leaves it alone.
 
 - **MCP server:** `node <plugin>/skills/open-artifact/scripts/open-artifact.mjs mcp --harness <name>`, a stdio
   bridge to the daemon's `/mcp`, which it starts when none runs.
+  The `--harness` it names wins over the session variables of other agent apps (`CLAUDECODE`, `CODEX_THREAD_ID`), which
+  an app started from inside another agent's session inherits.
 - **Hooks:** `… open-artifact.mjs hook <event> --harness <name>` registers the session (and its processes, so the MCP
   bridge's calls are tied to it) and prints the messages that wait, in the app's own hook format: Claude Code and
   Codex `hookSpecificOutput.additionalContext` and Stop `decision: "block"`; Cursor `additional_context` and stop
