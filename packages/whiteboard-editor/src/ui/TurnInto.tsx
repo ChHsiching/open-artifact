@@ -5,8 +5,9 @@
  */
 
 import { Presentation, PenTool, Repeat2 } from 'lucide-react';
+import { agentResultMessage } from '@open-artifact/editor-kit';
 import { toast } from '@open-artifact/ui';
-import { sendToAgent } from '../services/agent.ts';
+import { sendToAgent, useAgent } from '../services/agent.ts';
 import { useBoard } from '../state/board.ts';
 import { ChromeButton, ChromeMenu, ChromeMenuItem, ChromeMenuLabel } from './chrome.tsx';
 
@@ -25,7 +26,8 @@ async function turnInto(target: (typeof TARGETS)[number]): Promise<void> {
     context: { action: 'turn_into', target: target.type, board: title },
   });
   if (result.status === 'failed') toast.add({ title: 'Could not reach the agent', description: result.reason, type: 'error' });
-  else toast.add({ title: result.status === 'queued' ? 'Queued for the agent' : `Asked the agent for ${target.label}` });
+  else if (result.status === 'queued') toast.add(agentResultMessage(result, 'this board', useAgent.getState()));
+  else toast.add({ title: `Asked the agent for ${target.label}` });
 }
 
 /** The Turn into button and its menu. */

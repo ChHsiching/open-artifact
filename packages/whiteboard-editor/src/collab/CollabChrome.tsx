@@ -8,10 +8,11 @@
 
 import { LoaderCircle } from 'lucide-react';
 import { cn } from '@open-artifact/ui';
+import { useAgent } from '../services/agent.ts';
 import { usePresence } from '../state/presence.ts';
 import { Card, ChromeButton, Tip } from '../ui/chrome.tsx';
 import { AskPanel } from './AskPanel.tsx';
-import { ASK_STATUS_LABELS, isAskPending } from './ask-status.ts';
+import { askStatusLabel, isAskPending } from './ask-status.ts';
 import { useAsks, type LocalAsk } from './asks.ts';
 import { AllComments } from '@open-artifact/editor-kit/react';
 import { useAgentBadge } from './CommentPins.tsx';
@@ -30,11 +31,12 @@ function clip(text: string, max: number): string {
 /** One request's status row. */
 function AskRow({ ask }: { ask: LocalAsk }) {
   const pending = isAskPending(ask.status);
+  const wakesIdle = useAgent((state) => state.wakesIdle);
   return (
     <li className={cn('wb-ask-row', ask.fading && 'wb-ask-row-leaving')} data-status={ask.status}>
       {pending ? <LoaderCircle aria-hidden="true" className="size-3.5 shrink-0 animate-spin" /> : <span className="wb-ask-dot" aria-hidden="true" />}
       <span className="min-w-0 flex-1 truncate">{clip(ask.text, ASK_ROW_CHARS)}</span>
-      <span className="shrink-0 text-chrome-muted">{ASK_STATUS_LABELS[ask.status]}</span>
+      <span className="shrink-0 text-chrome-muted">{askStatusLabel(ask.status, wakesIdle)}</span>
     </li>
   );
 }

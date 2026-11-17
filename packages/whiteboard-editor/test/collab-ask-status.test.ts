@@ -9,6 +9,7 @@ import { describe, it } from 'node:test';
 import {
   ASK_STATUSES,
   ASK_STATUS_LABELS,
+  askStatusLabel,
   askStatusAfterClaims,
   askStatusAfterIdle,
   askStatusAfterSend,
@@ -30,6 +31,13 @@ import {
 describe('ask statuses', () => {
   it('labels every status', () => {
     for (const status of ASK_STATUSES) assert.ok(ASK_STATUS_LABELS[status].length > 0, status);
+  });
+
+  it('says a queued request waits for the next turn when the agent is not woken while it idles', () => {
+    assert.equal(askStatusLabel('queued'), 'Queued');
+    assert.equal(askStatusLabel('queued', true), 'Queued');
+    assert.equal(askStatusLabel('queued', false), 'Queued for its next turn');
+    assert.equal(askStatusLabel('working', false), ASK_STATUS_LABELS.working);
   });
 
   it('settles on done, stopped and failed only', () => {

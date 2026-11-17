@@ -160,7 +160,7 @@ export function askScopeContext(target: AskTarget): JsonRecord {
 
 /** Tells the person how the host took a request. */
 function reportResult(result: AgentSendResult): void {
-  toast.add(agentResultMessage(result, 'this board'));
+  toast.add(agentResultMessage(result, 'this board', useAgent.getState()));
 }
 
 /** Short titles of requests, by where they were made. */
@@ -246,7 +246,7 @@ export async function sendThreadToAgent(thread: CommentThread, target: AskTarget
     const sent = await comments.sendToAgent(thread.id);
     noteThreadChanged(sent);
     if (useAsks.getState().asks.get(key)?.status === 'sending') patchAsk(key, { status: threadAskStatus(sent) ?? 'queued' });
-    toast.add({ title: sent.agent?.status === 'delivered' ? 'Sent to the agent' : 'Queued for the agent' });
+    toast.add(agentResultMessage({ status: sent.agent?.status === 'delivered' ? 'delivered' : 'queued' }, 'this board', useAgent.getState()));
     const ask = useAsks.getState().asks.get(key);
     if (ask) for (const listener of [...sentListeners]) listener(ask);
     return true;

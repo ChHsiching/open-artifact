@@ -78,7 +78,7 @@ export function startPresence(): void {
 
 /** Describes a send result to the viewer. */
 function report(result: AgentSendResult): void {
-  toast.add(agentResultMessage(result, 'this design system'));
+  toast.add(agentResultMessage(result, 'this design system', useAgent.getState().status));
 }
 
 /** Describes what the viewer focused, fenced (names come from the system's files). */

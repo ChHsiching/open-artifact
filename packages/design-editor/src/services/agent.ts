@@ -112,7 +112,7 @@ export function startPresence(): void {
 
 /** Describes a send result to the viewer. */
 function reportResult(result: AgentSendResult): void {
-  toast.add(agentResultMessage(result, 'this design'));
+  toast.add(agentResultMessage(result, 'this design', useAgent.getState().status));
 }
 
 /** Sends the viewer's request about the current selection. */

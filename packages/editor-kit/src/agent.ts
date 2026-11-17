@@ -14,13 +14,23 @@ export interface AgentResultMessage {
 
 /**
  * How the host took a request, for a toast. `subject` names what the agent
- * checks next ("this design", "this deck", "this board").
+ * checks next ("this design", "this deck", "this board"). `agent` is its
+ * status: one that is not woken while it idles (`wakesIdle: false`) gets a
+ * queued request on its next turn, which the person starts.
  */
-export function agentResultMessage(result: AgentSendResult, subject: string): AgentResultMessage {
+export function agentResultMessage(
+  result: Pick<AgentSendResult, 'status' | 'reason'>,
+  subject: string,
+  agent?: Pick<AgentStatus, 'name' | 'wakesIdle'>,
+): AgentResultMessage {
   switch (result.status) {
     case 'delivered':
       return { title: 'Sent to the agent' };
     case 'queued':
+      if (agent?.wakesIdle === false) {
+        const name = agent.name || 'The agent';
+        return { title: `Queued for ${name}`, description: `${name} gets it on its next turn. If it is idle, send it a message there to start one.` };
+      }
       return { title: 'Queued for the agent', description: `It will see the request the next time it checks ${subject}.` };
     case 'staged':
       return { title: 'Request prepared', description: 'Your agent will ask before acting on it.' };

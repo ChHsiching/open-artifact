@@ -228,7 +228,7 @@ function showFollowed(slideId: string): void {
 
 /** Describes a send result to the viewer. */
 function reportResult(result: AgentSendResult): void {
-  toast.add(agentResultMessage(result, 'this deck'));
+  toast.add(agentResultMessage(result, 'this deck', useAgent.getState().status));
 }
 
 /** Sends the viewer's request with what they have selected. */

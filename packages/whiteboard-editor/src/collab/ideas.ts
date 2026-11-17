@@ -15,6 +15,7 @@
  */
 
 import { create } from 'zustand';
+import { agentResultMessage } from '@open-artifact/editor-kit';
 import { toast } from '@open-artifact/ui';
 import { createIdeaStore, watchSavedIdea, type Idea, type SyncTransport } from '@open-artifact/whiteboard-core';
 import { sendToAgent, useAgent } from '../services/agent.ts';
@@ -127,7 +128,7 @@ export async function makeIdeaOption(index: number): Promise<void> {
     context: { action: 'make', label: option.label, note: later.note, ...(standIn ? { box: standIn.id } : {}), ...(at ? { at } : {}) },
   });
   if (result.status === 'failed') toast.add({ title: 'Could not reach the agent', description: result.reason ?? '' });
-  else toast.add({ title: result.status === 'queued' ? 'Queued for the agent' : 'Sent to the agent' });
+  else toast.add(agentResultMessage(result, 'this board', useAgent.getState()));
   if (result.status !== 'failed') clearIdea();
 }
 

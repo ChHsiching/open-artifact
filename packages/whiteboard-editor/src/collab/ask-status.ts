@@ -30,6 +30,11 @@ export const ASK_STATUS_LABELS: Readonly<Record<AskStatus, string>> = {
   failed: 'Could not send',
 };
 
+/** The label of a request's status; a queued one says it waits for the next turn when the agent is not woken while it idles. */
+export function askStatusLabel(status: AskStatus, wakesIdle?: boolean): string {
+  return status === 'queued' && wakesIdle === false ? 'Queued for its next turn' : ASK_STATUS_LABELS[status];
+}
+
 /** How long a finished request stays drawn before it fades (ms). */
 export const ASK_LINGER_MS = 3000;
 
