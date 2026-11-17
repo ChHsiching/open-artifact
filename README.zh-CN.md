@@ -53,14 +53,41 @@ npm run build
 node scripts/build-plugins.mjs      # 生成 dist/plugins/，一个插件市场目录
 ```
 
-以 Claude Code 为例：
+然后把它装进你的 Agent 应用。下面的命令都在仓库根目录运行。`dist/plugins/` 里每个插件文件夹都自带 skill 和 daemon，
+电脑上需要 Node.js 22 或更高版本。
+
+| Agent 应用 | 安装方法 |
+|---|---|
+| [Claude Code](plugins/claude-code/README.md)（CLI、桌面版、IDE） | `claude plugin marketplace add ./dist/plugins`，再 `claude plugin install open-artifact@open-artifact` |
+| [Codex](plugins/codex/README.md)（CLI、应用）和 ChatGPT 桌面版 | `codex plugin marketplace add ./dist/plugins`，再到 `/plugins`（CLI）或 Plugins 标签页（应用）里安装 **Open Artifact** |
+| [Cursor](plugins/cursor/README.md) | 把 `dist/plugins/cursor` 复制到 `~/.cursor/plugins/local/open-artifact`，再运行 **Developer: Reload Window** |
+| [GitHub Copilot](plugins/copilot/README.md) CLI | `copilot plugin install ./dist/plugins/copilot`（直接装这个文件夹。Copilot 会提示这种安装方式已弃用，但不要把 `./dist/plugins` 加成 Copilot 插件市场，那样装上的是 Claude Code 版插件） |
+| VS Code 里的 [GitHub Copilot](plugins/copilot/README.md) | 打开 `chat.plugins.enabled`，运行 **Chat: Install Plugin from Source**，选 `dist/plugins/copilot` |
+| [Antigravity](plugins/antigravity/README.md) | `agy plugin install ./dist/plugins/antigravity`（或者把这个文件夹复制到 `~/.gemini/config/plugins/open-artifact/`），然后重启应用 |
+| [网页版 ChatGPT](plugins/chatgpt/README.md) | 运行连接器，套一层 HTTPS 隧道，再在 ChatGPT 里添加为自定义 MCP 服务器（步骤见它的 README） |
+| DeepSeek Harness | 把 `plugins/dsh` 文件夹添加为本地插件；`npm run build` 会构建它，应用直接链接这个文件夹 |
+
+比如 Claude Code：
 
 ```bash
 claude plugin marketplace add ./dist/plugins
 claude plugin install open-artifact@open-artifact
 ```
 
-然后在会话里输入：
+Cursor：
+
+```bash
+mkdir -p ~/.cursor/plugins/local && cp -R ./dist/plugins/cursor ~/.cursor/plugins/local/open-artifact
+```
+
+有几个应用还要多做一步：
+
+- **Codex** 要你在 `/hooks` 里批准之后才会运行插件的 hooks，每次更新后要再批准一次。
+- **Antigravity** 只在启动时加载插件的 MCP 服务器；每次调用工具都会请你允许，直到你选择始终允许。
+- 想不安装、只在一个会话里试用：`claude --plugin-dir ./dist/plugins/claude-code` 或
+  `copilot --plugin-dir ./dist/plugins/copilot`。
+
+重新构建后，再装一次（或再复制一次）就是更新。然后在新会话里输入：
 
 ```text
 /open-artifact slides a 6-slide pitch for this repo
@@ -69,8 +96,7 @@ claude plugin install open-artifact@open-artifact
 ```
 
 插件会添加 `Artifact`、`ArtifactData` 和 `ArtifactComments` 三个 MCP 工具、这个 skill，以及把页面评论带回会话的
-hooks。Codex / ChatGPT 桌面版、Cursor、GitHub Copilot、Antigravity、网页版 ChatGPT 和 DeepSeek Harness 各有自己的插件，
-见 [plugins/README.md](plugins/README.md)。
+hooks。每个应用怎样收到评论、各自测过什么，见 [plugins/README.md](plugins/README.md)。
 
 ### 2. 作为 skill 给其他 Agent 用
 
