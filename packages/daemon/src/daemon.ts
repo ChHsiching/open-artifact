@@ -1583,12 +1583,14 @@ ${rows ? `<ul>\n${rows}\n</ul>` : '<p>No artifacts yet. Ask an agent to make one
         return sendJson(res, 200, await this.tools.call(String(body.name ?? ''), body.arguments ?? {}, body.caller ?? {}));
       }
       case 'hook': {
-        // A harness hook (`open-artifact hook <event>`): remember the session and its processes, hand it what waited.
-        const body = await readJsonBody<{ harness: string; session: string; workspace: string; pids: number[] }>(req);
+        // A harness hook (`open-artifact hook <event>`): remember the session and its processes, hand it what waited
+        // (unless `take: false`: a later hook of the same turn hands it over).
+        const body = await readJsonBody<{ harness: string; session: string; workspace: string; pids: number[]; take?: boolean }>(req);
         const ref: SessionRef = { harness: String(body.harness ?? 'mcp'), session: body.session ?? null, workspace: body.workspace ?? null };
         for (const pid of Array.isArray(body.pids) ? body.pids : []) this.harnesses.registerPid(Number(pid), ref);
         this.harnesses.remember(ref);
         const keys = [sessionKeyOf(ref), sessionKeyOf({ harness: ref.harness, session: null, workspace: ref.workspace })].filter((k): k is string => !!k);
+        if (body.take === false) return sendJson(res, 200, { messages: [] });
         const messages = [...new Set(keys)].flatMap((key) => this.inbox.take(key)).map((m) => m.text);
         return sendJson(res, 200, { messages });
       }

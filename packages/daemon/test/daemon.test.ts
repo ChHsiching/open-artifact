@@ -100,6 +100,18 @@ test('Artifact quickstart and publish make a design artifact from the built-in r
   assert.ok(String(made.instructions).length > 500, 'carries the SKILL.md body');
 });
 
+test('hook: take false registers the session and leaves the messages for the next hook (Copilot\'s prompt)', async () => {
+  const ref = { harness: 'copilot', session: 'copilot-take', workspace };
+  const key = sessionKeyOf(ref)!;
+  daemon.inbox.append(key, { kind: 'wake', text: 'Rename the board' });
+  const left = await api<{ messages: string[] }>(state, 'hook', { event: 'SessionStart', ...ref, pids: [], take: false });
+  assert.deepEqual(left.messages, []);
+  assert.equal(daemon.inbox.count(key), 1);
+  const taken = await api<{ messages: string[] }>(state, 'hook', { event: 'UserPromptSubmit', ...ref, pids: [] });
+  assert.deepEqual(taken.messages, ['Rename the board']);
+  assert.equal(daemon.inbox.count(key), 0);
+});
+
 test('MCP from a plugin folder: the session’s folder, from its hook or its Codex thread record', async () => {
   // Codex starts a plugin's MCP server in the plugin's folder: the bridge names no folder, only the thread in `_meta`.
   const call = async (thread: string, args: Record<string, unknown>): Promise<ToolCallResult> => {

@@ -331,7 +331,10 @@ async function hook(event: string | undefined): Promise<void> {
   const running = await readDaemon();
   if (!running && canonical !== 'SessionStart') return;
   const state = running ?? (await ensureDaemon());
-  const body = await api<{ messages?: string[] }>(state, 'hook', { event: canonical, harness, session, workspace, pids: ancestors(process.ppid, 4) }).catch(() => ({ messages: [] }));
+  const take = !leavesForPrompt(event, input);
+  const body = await api<{ messages?: string[] }>(state, 'hook', { event: canonical, harness, session, workspace, pids: ancestors(process.ppid, 4), take }).catch(
+    () => ({ messages: [] }),
+  );
   const messages = body.messages ?? [];
   if (!messages.length) return;
   const answer = hookAnswer(event, messages.join('\n\n'), input, harness);
@@ -353,6 +356,15 @@ const HOOK_EVENTS: Record<string, string> = {
   stop: 'Stop',
   agentStop: 'Stop',
 };
+
+/**
+ * GitHub Copilot's `sessionStart` with a prompt to follow (`initialPrompt`, in the CLI) only registers the session:
+ * its `additionalContext` lasts for that run alone (a resumed session no longer has it), while `userPromptTransformed`,
+ * which runs next, puts the messages into the prompt, which the session keeps.
+ */
+function leavesForPrompt(event: string, input: Record<string, unknown>): boolean {
+  return event === 'sessionStart' && typeof input.initialPrompt === 'string' && input.initialPrompt.trim() !== '';
+}
 
 /** What a hook prints so its harness gives the model the waiting messages, in that harness's own shape. */
 function hookAnswer(event: string, text: string, input: Record<string, unknown>, harness = ''): unknown {

@@ -29,5 +29,9 @@ VS Code: turn on `chat.plugins.enabled`, then run **Chat: Install Plugin from So
 
 ## Send to agent
 
-Comments sent from the page reach Copilot at session start, with your next message (CLI), or, when they arrive while
-it works, by keeping its turn going (`agentStop`, up to 8 times in a row). The cloud agent loads no plugins.
+Comments sent from the page reach Copilot with your next message (CLI), or, when they arrive while it works, by
+keeping its turn going (`agentStop`, up to 8 times in a row). A session started or resumed with a prompt gets them
+added to that prompt (`userPromptTransformed`), which Copilot keeps in the session's history; added context from
+`sessionStart` is not kept across a resume, so `sessionStart` hands them over only when there is no prompt. Copilot
+has no way to start a turn in an idle session from outside, so the page says the comment waits for your next
+message. The cloud agent loads no plugins.
