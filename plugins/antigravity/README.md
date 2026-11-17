@@ -10,7 +10,10 @@ folders of files that open in one local page where you view, edit and comment: `
 agy plugin install /path/to/open-artifacts/dist/plugins/antigravity
 ```
 
-Check it with `agy plugin validate ./dist/plugins/antigravity` and `agy plugin list`.
+Check it with `agy plugin validate ./dist/plugins/antigravity` and `agy plugin list`. Without the CLI, copy the folder
+to `~/.gemini/config/plugins/open-artifact/`. Restart Antigravity after installing: it loads a plugin's MCP server at
+startup (the skill and hooks are picked up by new conversations). Antigravity asks you to allow each Open Artifact
+tool call until you choose to always allow it.
 
 ## What it adds
 
