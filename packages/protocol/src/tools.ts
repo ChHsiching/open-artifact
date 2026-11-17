@@ -32,6 +32,18 @@ export interface ToolDefinition {
   name: ToolName;
   description: string;
   inputSchema: ToolInputSchema;
+  /** MCP tool annotations: hints an app's approval check reads. */
+  annotations?: ToolAnnotations;
+}
+
+/** MCP tool annotations (hints, not guarantees). */
+export interface ToolAnnotations {
+  title?: string;
+  readOnlyHint?: boolean;
+  destructiveHint?: boolean;
+  idempotentHint?: boolean;
+  /** false: the tool works only on this computer's artifacts, not with an outside service. */
+  openWorldHint?: boolean;
 }
 
 /** `Artifact` actions. */
@@ -321,7 +333,17 @@ export const TOOL_DESCRIPTIONS: Record<ToolName, string> = {
   ArtifactData:
     'Read and write the document store of an artifact whose type keeps one (its instructions say so). get, list and query read documents with their sha256; set, update, delete, str_replace and batch write them. update merges fields, and {"__delete__": true} removes one; str_replace changes one passage of a long text field. Replacing or deleting an existing document needs if_match: the sha256 you read, or "*". Your writes show live on open pages.',
   ArtifactComments:
-    'Comments people leave on an artifact\'s page. read lists the threads; reply answers one (thread_id is after ";thread=" in the message), with resolve: true when it is done; resolve and reopen change a thread\'s state. Answer only threads sent to you, in one or two lines. wait blocks until the next message for this session: use it only when nothing else can wake you.',
+    'Comments the person leaves on their artifact\'s page, kept in the artifact\'s own folder on this computer (no outside service). read lists the threads; reply answers one (thread_id is after ";thread=" in the message), with resolve: true when it is done; resolve and reopen change a thread\'s state. A thread sent to you is the person asking for your answer in it, so replying there is what they asked for. Answer only threads sent to you, in one or two lines. wait blocks until the next message for this session: use it only when nothing else can wake you.',
+};
+
+/**
+ * The tools' MCP annotations. All three work only on this computer's artifact folders, so none is open-world: an
+ * app's approval check (Cursor's auto-review) would otherwise take a comment reply for a write to an outside service.
+ */
+export const TOOL_ANNOTATIONS: Record<ToolName, ToolAnnotations> = {
+  Artifact: { title: 'Artifact', openWorldHint: false },
+  ArtifactData: { title: 'Artifact data', openWorldHint: false },
+  ArtifactComments: { title: 'Artifact comments', destructiveHint: false, openWorldHint: false },
 };
 
 /** Tool definitions in MCP shape. */
@@ -329,4 +351,5 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = (Object.keys(TOOL_SCHEMAS) as 
   name,
   description: TOOL_DESCRIPTIONS[name],
   inputSchema: TOOL_SCHEMAS[name],
+  annotations: TOOL_ANNOTATIONS[name],
 }));

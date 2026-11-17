@@ -30,3 +30,7 @@ at the end of its next turn; say "check the comments" to have them read at once.
 
 The Cursor CLI (`cursor-agent -p`) runs the plugin's `sessionStart` (for a new chat, not on `--resume`) and
 `postToolUse` hooks, but not `stop`: there, comments come with the next tool call, in tool results, and through `wait`.
+
+Cursor's auto-review (Smart Mode) may stop an `ArtifactComments` reply it takes for a write to an outside service. The
+tools say they work only on this computer's artifact folders (`openWorldHint: false`); if a reply is still stopped,
+approve it on the card Cursor shows, or tell the agent to reply in the thread.
