@@ -1,0 +1,165 @@
+/**
+ * The wake router: comments and page requests sent to the agent find the
+ * artifact's owner session. Messages for one artifact that arrive within the
+ * merge window go out as one wake, rendered by the protocol's
+ * `wakeMessage`, and are delivered:
+ *
+ * 1. **live**: the owner's adapter is connected and takes `wake.deliver`;
+ * 2. **inbox**: queued for the session, taken when it attaches, on its next
+ *    tool call, or by a wait (which takes it at once: `via: 'wait'`).
+ */
+
+import {
+  OpenArtifactError,
+  WAKE_MERGE_MS,
+  WAKE_PER_MINUTE,
+  artifactUrl,
+  wakeMessage,
+  type LibraryEvent,
+  type SessionRef,
+  type WakeDeliverStatus,
+  type WakePayload,
+  type WakeRequestItem,
+  type WakeThread,
+  type WakeVia,
+} from '@open-artifact/protocol';
+import type { Inbox } from './inbox.ts';
+import { sessionKeyOf, type ArtifactStore } from './store.ts';
+
+/** Session key of the inbox that takes wakes of artifacts with no owner. */
+export const UNOWNED_KEY = 'unowned';
+
+/** How one wake ended up. */
+export interface WakeResult {
+  via: WakeVia;
+  /** The adapter's answer, for `live`. */
+  status?: WakeDeliverStatus;
+}
+
+/** What delivers a wake live: the Harness hub. */
+export interface LiveDelivery {
+  /** The adapter's answer, or `null` when no adapter can take it. */
+  deliver(ref: SessionRef, payload: WakePayload): Promise<WakeDeliverStatus | null>;
+}
+
+/** Options of {@link WakeRouter}. */
+export interface WakeRouterOptions {
+  store: ArtifactStore;
+  inbox: Inbox;
+  /** Live delivery; `null` until the hub exists. */
+  live: () => LiveDelivery | null;
+  /** The Shell address of an artifact. */
+  viewUrl: (id: string) => string;
+  log: (line: string) => void;
+  emit?: (event: LibraryEvent) => void;
+  /** Merge window, ms. Default `$OPEN_ARTIFACT_WAKE_MERGE_MS`, else the protocol's. */
+  mergeMs?: number;
+}
+
+/** One queued item. */
+export type WakeItem = { thread: WakeThread } | { request: WakeRequestItem };
+
+interface Pending {
+  threads: Map<string, WakeThread>;
+  requests: WakeRequestItem[];
+  timer: ReturnType<typeof setTimeout> | undefined;
+  waiters: Array<(result: WakeResult) => void>;
+}
+
+/** Merges and routes wakes. */
+export class WakeRouter {
+  private readonly options: WakeRouterOptions;
+  private readonly pending = new Map<string, Pending>();
+  /** Send times in the last minute, by artifact id. */
+  private readonly sent = new Map<string, number[]>();
+
+  constructor(options: WakeRouterOptions) {
+    this.options = options;
+  }
+
+  private get mergeMs(): number {
+    if (this.options.mergeMs !== undefined) return this.options.mergeMs;
+    const fromEnv = Number(process.env.OPEN_ARTIFACT_WAKE_MERGE_MS);
+    return Number.isFinite(fromEnv) && process.env.OPEN_ARTIFACT_WAKE_MERGE_MS ? fromEnv : WAKE_MERGE_MS;
+  }
+
+  /** The person asked from the Shell or the home page. */
+  ask(id: string, text: string, label?: string): Promise<WakeResult> {
+    const request: WakeRequestItem = { id: `ask_${Date.now().toString(36)}`, text, sentAt: new Date().toISOString() };
+    if (label) request.label = label;
+    return this.queue(id, { request });
+  }
+
+  /** Queues a thread or request; resolves once the merged wake was routed. Throws `rate_limited`. */
+  queue(id: string, item: WakeItem): Promise<WakeResult> {
+    const recent = (this.sent.get(id) ?? []).filter((t) => Date.now() - t < 60_000);
+    if (recent.length >= WAKE_PER_MINUTE) {
+      throw new OpenArtifactError('rate_limited', 'Too many messages to the agent from this artifact in the last minute.', { status: 429 });
+    }
+    let pending = this.pending.get(id);
+    if (!pending) this.pending.set(id, (pending = { threads: new Map(), requests: [], timer: undefined, waiters: [] }));
+    if ('thread' in item) pending.threads.set(item.thread.id, item.thread);
+    else pending.requests.push(item.request);
+    clearTimeout(pending.timer);
+    pending.timer = setTimeout(() => void this.flush(id), this.mergeMs);
+    pending.timer.unref?.();
+    const waiters = pending.waiters;
+    return new Promise((resolveQueue) => waiters.push(resolveQueue));
+  }
+
+  private async flush(id: string): Promise<void> {
+    const pending = this.pending.get(id);
+    if (!pending) return;
+    this.pending.delete(id);
+    const recent = (this.sent.get(id) ?? []).filter((t) => Date.now() - t < 60_000);
+    recent.push(Date.now());
+    this.sent.set(id, recent);
+    let result: WakeResult;
+    try {
+      result = await this.deliver(id, [...pending.threads.values()], pending.requests);
+    } catch (error) {
+      this.options.log(`wake ${id} failed: ${(error as Error)?.stack ?? error}`);
+      result = { via: 'failed' };
+    }
+    for (const done of pending.waiters) done(result);
+  }
+
+  /** Renders and routes one merged wake. */
+  async deliver(id: string, threads: WakeThread[], requests: WakeRequestItem[]): Promise<WakeResult> {
+    const record = this.options.store.get(id);
+    if (!record) return { via: 'dropped' };
+    const owner = record.owner;
+    const message = wakeMessage(record, threads, requests, { viewUrl: this.options.viewUrl(id), noOwner: !owner });
+    const payload: WakePayload = { artifact: artifactUrl(id), artifactId: id, text: message.text, source: message.source };
+    return this.send(owner, payload);
+  }
+
+  /**
+   * Delivers a rendered message to one session: live when its adapter takes
+   * it, else into its inbox (the unowned inbox when `target` is `null`).
+   * Wakes go to the owner; a finished long action goes to the caller that
+   * started it.
+   */
+  async send(target: SessionRef | null, payload: WakePayload): Promise<WakeResult> {
+    const { inbox, log, emit } = this.options;
+    const id = payload.artifactId;
+    const live = this.options.live();
+    if (target && live) {
+      const status = await live.deliver(target, payload).catch((error: unknown) => {
+        log(`wake.deliver to ${sessionKeyOf(target)}: ${(error as Error)?.message ?? error}`);
+        return null;
+      });
+      if (status && status !== 'failed') {
+        log(`wake ${id} -> ${sessionKeyOf(target)} (${status})`);
+        emit?.({ type: 'wake/state', artifactId: id, via: 'live', status });
+        return { via: 'live', status };
+      }
+    }
+    const key = (target && sessionKeyOf(target)) || UNOWNED_KEY;
+    const { taken } = inbox.append(key, { kind: 'wake', ...payload });
+    log(`wake ${id} -> inbox ${key}${taken ? ' (taken by a wait)' : ''}`);
+    const via: WakeVia = taken ? 'wait' : 'inbox';
+    emit?.({ type: 'wake/state', artifactId: id, via });
+    return { via };
+  }
+}

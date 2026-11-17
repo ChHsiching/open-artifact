@@ -1,0 +1,16 @@
+node_modules/
+dist/
+# Build output written into the type folders (see scripts/build.mjs)
+artifact-types/*/scripts/
+*.log
+.DS_Store
+# DSH plugin build output (plugins/dsh/scripts/build.mjs)
+plugins/dsh/lib/
+plugins/dsh/vendor/
+plugins/dsh/LICENSE
+plugins/dsh/NOTICE
+# Rust build output (scripts/build-wasm.mjs)
+/target/
+# The open-artifact skill's vendored daemon (scripts/build-skill.mjs)
+skills/open-artifact/vendor/
+designs/

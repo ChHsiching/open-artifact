@@ -1,0 +1,15 @@
+[package]
+name = "open-artifact-wb-geom"
+description = "Whiteboard geometry: elbow arrow routing, labels, ink, shape paths, hit testing, snapping, layout."
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+wasm-bindgen.workspace = true
+libm.workspace = true
+# Shortest round-trip digits for `String(number)` (path data is mostly numbers).
+ryu = "1"

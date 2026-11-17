@@ -1,0 +1,115 @@
+@import "@open-artifact/ui/styles.css";
+@import "@open-artifact/editor-kit/styles.css";
+@source "./";
+
+/*
+ * Canvas chrome tokens: the floating cards, menus and tooltips around the
+ * canvas, and the properties panel.
+ */
+@theme {
+  --color-chrome: var(--dc-card);
+  --color-chrome-fg: var(--dc-fg);
+  --color-chrome-muted: var(--dc-muted);
+  --color-chrome-hover: var(--dc-hover);
+  --color-chrome-pressed: var(--dc-pressed);
+  --color-chrome-pressed-fg: var(--dc-pressed-fg);
+  --color-chrome-line: var(--dc-line);
+  --color-chrome-secondary: var(--dc-secondary);
+  --color-chrome-selected: var(--dc-selected);
+  --color-chrome-sep: var(--dc-sep);
+  --color-chrome-field: var(--dc-field);
+  --color-chrome-ring: var(--dc-field-ring);
+  --color-chrome-ring-strong: var(--dc-field-ring-strong);
+  --color-chrome-accent: #257de0;
+  /* Focus ring of the shared chrome controls (`@open-artifact/editor-kit`). */
+  --color-chrome-focus: var(--color-accent);
+  --font-mono: "SF Mono", ui-monospace, Menlo, monospace;
+  --color-tip: var(--dc-tip);
+  --color-tip-fg: var(--dc-tip-fg);
+  --shadow-chrome: var(--dc-card-shadow);
+  --shadow-chrome-popup: var(--dc-popup-shadow);
+  --font-weight-control: 435;
+}
+
+:root {
+  --dc-card: #ffffff;
+  --dc-fg: rgb(0 0 0 / 0.9);
+  --dc-muted: rgb(0 0 0 / 0.465);
+  --dc-hover: rgb(0 0 0 / 0.05);
+  --dc-secondary: rgb(0 0 0 / 0.6);
+  --dc-selected: rgb(0 0 0 / 0.1);
+  --dc-sep: rgb(11 11 11 / 0.1);
+  --dc-field: rgb(255 255 255 / 0.5);
+  --dc-field-ring: rgb(0 0 0 / 0.08);
+  --dc-field-ring-strong: rgb(11 11 11 / 0.2);
+  --dc-pressed: rgb(37 125 224 / 0.12);
+  --dc-pressed-fg: #1757ac;
+  --dc-line: rgb(0 0 0 / 0.08);
+  --dc-tip: #0b0b0b;
+  --dc-tip-fg: #ffffff;
+  --dc-card-shadow: 0 0 0 1px rgb(0 0 0 / 0.08), 0 1px 2px 0 rgb(11 11 11 / 0.06), 0 2px 8px 0 rgb(11 11 11 / 0.08);
+  --dc-popup-shadow: 0 0 0 1px rgb(0 0 0 / 0.08), 0 8px 24px rgb(0 0 0 / 0.12), 0 2px 6px rgb(0 0 0 / 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --dc-card: #1f1f1f;
+    --dc-fg: rgb(255 255 255 / 0.93);
+    --dc-muted: rgb(255 255 255 / 0.4);
+    --dc-hover: rgb(255 255 255 / 0.075);
+    --dc-secondary: rgb(255 255 255 / 0.57);
+    --dc-selected: rgb(255 255 255 / 0.15);
+    --dc-sep: rgb(255 255 255 / 0.1);
+    --dc-field: rgb(255 255 255 / 0.05);
+    --dc-field-ring: rgb(255 255 255 / 0.12);
+    --dc-field-ring-strong: rgb(255 255 255 / 0.2);
+    --dc-pressed-fg: #6aabf1;
+    --dc-line: rgb(255 255 255 / 0.04);
+    --dc-tip: #303030;
+    --dc-tip-fg: rgb(255 255 255 / 0.93);
+    --dc-card-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.04), 0 1px 2px 0 rgb(11 11 11 / 0.06), 0 2px 8px 0 rgb(0 0 0 / 0.24);
+    --dc-popup-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.04), 0 8px 24px rgb(0 0 0 / 0.32), 0 2px 6px rgb(0 0 0 / 0.2);
+  }
+}
+:root[data-theme="dark"] {
+  --dc-card: #1f1f1f;
+  --dc-fg: rgb(255 255 255 / 0.93);
+  --dc-muted: rgb(255 255 255 / 0.4);
+  --dc-hover: rgb(255 255 255 / 0.075);
+  --dc-secondary: rgb(255 255 255 / 0.57);
+  --dc-selected: rgb(255 255 255 / 0.15);
+  --dc-sep: rgb(255 255 255 / 0.1);
+  --dc-field: rgb(255 255 255 / 0.05);
+  --dc-field-ring: rgb(255 255 255 / 0.12);
+  --dc-field-ring-strong: rgb(255 255 255 / 0.2);
+  --dc-pressed-fg: #6aabf1;
+  --dc-line: rgb(255 255 255 / 0.04);
+  --dc-tip: #303030;
+  --dc-tip-fg: rgb(255 255 255 / 0.93);
+  --dc-card-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.04), 0 1px 2px 0 rgb(11 11 11 / 0.06), 0 2px 8px 0 rgb(0 0 0 / 0.24);
+  --dc-popup-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.04), 0 8px 24px rgb(0 0 0 / 0.32), 0 2px 6px rgb(0 0 0 / 0.2);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+/*
+ * The canvas engine (services/engine.ts) marks the canvas surface while the
+ * camera moves (`data-moving`) and while it drags or resizes objects
+ * (`data-gesture`). DOM drawn for a settled camera, or for where objects
+ * were before the drag, hides meanwhile.
+ */
+[data-canvas-surface][data-moving] [data-camera-bound],
+[data-canvas-surface][data-gesture] [data-gesture-bound] {
+  visibility: hidden;
+}
+
+/* Creation tools keep their crosshair over the engine's canvas, which sets its own cursor. */
+[data-canvas-surface][data-tool-cursor] > canvas {
+  cursor: inherit !important;
+}

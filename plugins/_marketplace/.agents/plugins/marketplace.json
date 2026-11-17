@@ -1,0 +1,20 @@
+{
+  "name": "open-artifact",
+  "interface": {
+    "displayName": "Open Artifact"
+  },
+  "plugins": [
+    {
+      "name": "open-artifact",
+      "source": {
+        "source": "local",
+        "path": "./codex"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Creativity"
+    }
+  ]
+}

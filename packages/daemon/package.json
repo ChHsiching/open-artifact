@@ -1,0 +1,18 @@
+{
+  "name": "@open-artifact/daemon",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The Open Artifact daemon (`open-artifact`): type registry, artifact library, type servers, agent tools, wake routing, the Harness API, MCP and the Shell.",
+  "bin": {
+    "open-artifact": "./src/bin/open-artifact.ts"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./client": "./src/client.ts"
+  },
+  "dependencies": {
+    "@open-artifact/protocol": "0.1.0"
+  },
+  "license": "Apache-2.0"
+}

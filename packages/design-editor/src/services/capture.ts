@@ -1,0 +1,434 @@
+/**
+ * Copy as PNG / SVG / HTML: captures one rendered element of an artboard.
+ *
+ * SVG is a real vector drawing (dom-to-svg: boxes, text and images as SVG
+ * shapes, no `<foreignObject>`), so it pastes into design tools. PNG is that
+ * drawing rasterized at 2×. HTML is a self-contained copy of the element
+ * with its computed styles inlined (trimmed against browser defaults).
+ */
+
+import { blobToDataUrl, elementSvg, maxCaptureScale, SVG_NS, type CaptureLimits } from '@open-artifact/export-kit';
+import { toast } from '@open-artifact/ui';
+import { useView, type ElementSelection } from '../state/view.ts';
+import { frameOf } from './frames.ts';
+
+export type CaptureFormat = 'png' | 'svg' | 'html';
+
+const TID_ATTRIBUTE = 'data-dc-tpl';
+const PNG_SCALE = 2;
+/** How large a capture may be: 12000 px a side, 120 megapixels. */
+export const CAPTURE_LIMITS: CaptureLimits = { maxSide: 12000, maxPixels: 120_000_000 };
+const MAX_HTML = 8 * 1024 * 1024;
+
+/** True when exactly one element or one artboard is selected. */
+export function canCaptureSelection(): boolean {
+  const { selection } = useView.getState();
+  if (selection.kind === 'elements') return selection.items.length === 1;
+  return selection.kind === 'objects' && selection.boards.length === 1 && selection.notes.length === 0;
+}
+
+/** True when the browser can put the formats on the clipboard. */
+export function canCopyAs(): boolean {
+  return typeof ClipboardItem !== 'undefined' && Boolean(navigator.clipboard?.write);
+}
+
+/**
+ * The rendered element of a selected template element (the clicked
+ * instance; inside an SVG, its outermost `<svg>`). `descend` steps into
+ * component boundaries, which render as `display: contents`; `svg` takes a
+ * shape's outermost `<svg>`.
+ */
+export function liveElementOf(board: string, item: ElementSelection, { descend = true, svg = true } = {}): Element | null {
+  const doc = frameOf(board)?.contentDocument;
+  if (!doc) return null;
+  const instances = doc.querySelectorAll(`[${TID_ATTRIBUTE}="${item.tid}"]`);
+  let element: Element | null = instances[item.instance] ?? instances[0] ?? null;
+  if (!element) return null;
+  if (descend) while (element && element.ownerDocument.defaultView!.getComputedStyle(element).display === 'contents') element = element.firstElementChild;
+  if (!element) return null;
+  if (svg) for (let up = element.parentElement; up; up = up.parentElement) if (up.namespaceURI === SVG_NS && up.tagName.toLowerCase() === 'svg') element = up;
+  return element;
+}
+
+/** The rendered element of the single selected element, or a selected artboard's page. */
+function selectedLiveElement(): Element | null {
+  const { selection } = useView.getState();
+  // A whole artboard: its page.
+  if (selection.kind === 'objects' && selection.boards.length === 1 && !selection.notes.length) return frameOf(selection.boards[0]!)?.contentDocument?.body ?? null;
+  if (selection.kind !== 'elements' || selection.items.length !== 1) return null;
+  return liveElementOf(selection.board, selection.items[0]!);
+}
+
+/** Runs a capture with the element's own placement transforms neutralised. */
+async function withoutTransform<T>(element: Element, run: () => Promise<T>): Promise<T> {
+  const style = (element as HTMLElement).style;
+  if (!style) return run();
+  const saved = ['transform', 'rotate', 'scale', 'translate'].map((name) => [name, style.getPropertyValue(name), style.getPropertyPriority(name)] as const);
+  for (const [name] of saved) style.setProperty(name, 'none', 'important');
+  try {
+    return await run();
+  } finally {
+    for (const [name, value, priority] of saved) {
+      if (value) style.setProperty(name, value, priority);
+      else style.removeProperty(name);
+    }
+  }
+}
+
+/* ----------------------------------- SVG ---------------------------------- */
+
+/** Removes what the copy should not carry: scripts, handlers, debug data, external links. */
+function cleanSvg(root: Element): void {
+  for (const node of [root, ...root.querySelectorAll('*')]) {
+    if (/^(script|foreignObject)$/i.test(node.localName)) {
+      node.remove();
+      continue;
+    }
+    for (const attr of [...node.attributes]) {
+      const name = attr.name.toLowerCase();
+      const href = name === 'href' || name === 'xlink:href';
+      if (name.startsWith('on') || name.startsWith('data-') || name === 'class' || (href && !(attr.value.startsWith('#') || (node.localName === 'image' && attr.value.startsWith('data:image/'))))) node.removeAttribute(attr.name);
+    }
+  }
+  // Links become plain groups.
+  for (const link of [...root.querySelectorAll('a')]) {
+    const group = root.ownerDocument.createElementNS(SVG_NS, 'g');
+    for (const attr of [...link.attributes]) group.setAttribute(attr.name, attr.value);
+    group.append(...link.childNodes);
+    link.replaceWith(group);
+  }
+  // Empty groups and styles (stacking layers with nothing in the captured area).
+  for (const node of [...root.querySelectorAll('g, style')].reverse()) {
+    if (!node.childNodes.length && !node.id) node.remove();
+  }
+  root.removeAttribute('aria-owns');
+}
+
+/** The element as SVG markup and its size. */
+async function captureSvg(element: Element): Promise<{ svg: string; width: number; height: number }> {
+  return withoutTransform(element, async () => {
+    const rect = element.getBoundingClientRect();
+    const doc = await elementSvg(element, rect);
+    const root = doc.documentElement;
+    cleanSvg(root);
+    root.setAttribute('width', String(Math.round(rect.width * 100) / 100));
+    root.setAttribute('height', String(Math.round(rect.height * 100) / 100));
+    for (const node of [...root.childNodes]) if (node.nodeType === Node.COMMENT_NODE) node.remove();
+    return { svg: new XMLSerializer().serializeToString(doc), width: rect.width, height: rect.height };
+  });
+}
+
+/* ----------------------------------- PNG ---------------------------------- */
+
+interface RasterOptions {
+  scale?: number;
+  type?: 'image/png' | 'image/jpeg';
+  /** Painted under the drawing (JPEG has no transparency). */
+  background?: string;
+  /** Only rows `[from, to)` (CSS px) keep the drawing; the rest is painted over with `background`. */
+  keep?: { from: number; to: number };
+}
+
+async function rasterize(svg: string, width: number, height: number, { scale = PNG_SCALE, type = 'image/png', background, keep }: RasterOptions = {}): Promise<Blob> {
+  scale = Math.min(scale, maxCaptureScale(width, height, CAPTURE_LIMITS));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(width * scale));
+  canvas.height = Math.max(1, Math.round(height * scale));
+  const image = new Image();
+  image.decoding = 'sync';
+  const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
+  try {
+    await new Promise<void>((resolve, reject) => {
+      image.onload = () => resolve();
+      image.onerror = () => reject(new Error('The drawing could not be rendered.'));
+      image.src = url;
+    });
+    const context = canvas.getContext('2d')!;
+    if (background) {
+      context.fillStyle = background;
+      context.fillRect(0, 0, canvas.width, canvas.height);
+    }
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    if (keep) {
+      context.fillStyle = background ?? '#ffffff';
+      const k = canvas.height / height;
+      const from = Math.max(0, Math.round(keep.from * k));
+      const to = Math.min(canvas.height, Math.round(keep.to * k));
+      if (from > 0) context.fillRect(0, 0, canvas.width, from);
+      if (to < canvas.height) context.fillRect(0, to, canvas.width, canvas.height - to);
+    }
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+  return new Promise((resolve, reject) => canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('The image is empty.'))), type, 0.92));
+}
+
+/**
+ * A frame's page as an image: its viewport (`width` × `height` CSS pixels
+ * from the top left) drawn at `scale`, on white.
+ */
+export async function pageImage(
+  doc: Document,
+  width: number,
+  height: number,
+  options: {
+    scale: number;
+    type?: 'image/png' | 'image/jpeg';
+    /** Top of the captured area, CSS px from the document's top (the frame is never scrolled). */
+    top?: number;
+    /** Paper under the drawing (default white). */
+    background?: string;
+    /** Rows of the image that keep the drawing; the rest shows `background` (a PDF page's break margins). */
+    keep?: { from: number; to: number };
+  },
+): Promise<Blob> {
+  const svgDoc = await elementSvg(doc.documentElement, { x: 0, y: options.top ?? 0, width, height });
+  const root = svgDoc.documentElement;
+  cleanSvg(root);
+  root.setAttribute('width', String(width));
+  root.setAttribute('height', String(height));
+  for (const node of [...root.childNodes]) if (node.nodeType === Node.COMMENT_NODE) node.remove();
+  return rasterize(new XMLSerializer().serializeToString(svgDoc), width, height, { scale: options.scale, type: options.type, background: options.background ?? '#ffffff', keep: options.keep });
+}
+
+/* ---------------------------------- HTML ---------------------------------- */
+
+/** Properties children inherit: dropped when equal to the parent's. */
+const INHERITED = new Set([
+  'color', 'cursor', 'direction', 'font-family', 'font-feature-settings', 'font-kerning', 'font-size', 'font-stretch',
+  'font-style', 'font-variant', 'font-variant-caps', 'font-variant-ligatures', 'font-variant-numeric', 'font-weight',
+  'hyphens', 'letter-spacing', 'line-height', 'list-style-image', 'list-style-position', 'list-style-type', 'orphans',
+  'quotes', 'tab-size', 'text-align', 'text-align-last', 'text-indent', 'text-rendering', 'text-shadow',
+  'text-transform', 'visibility', 'white-space', 'white-space-collapse', 'text-wrap', 'text-wrap-mode', 'widows',
+  'word-break', 'word-spacing', 'overflow-wrap', 'writing-mode', 'caret-color', '-webkit-text-fill-color',
+  '-webkit-text-stroke-color', '-webkit-text-stroke-width', 'paint-order', 'fill', 'stroke', 'text-size-adjust',
+  '-webkit-font-smoothing', 'border-collapse', 'border-spacing', 'empty-cells', 'caption-side',
+]);
+
+/** Shorthand-free duplicates (logical properties mirror physical ones). */
+const SKIPPED = /^(inline-size|block-size|min-inline-size|min-block-size|max-inline-size|max-block-size|margin-(block|inline)|padding-(block|inline)|border-(block|inline)|inset-(block|inline)|border-(start|end)-|overflow-(block|inline)|contain-intrinsic|-webkit-(?!text-fill|text-stroke|font-smoothing)|transition|animation|will-change|view-transition|anchor|position-(try|anchor|visibility)|user-select|pointer-events|cursor|perspective-origin|transform-origin)/;
+
+const KEPT_ATTRIBUTES = new Set(['alt', 'title', 'width', 'height', 'colspan', 'rowspan', 'dir', 'lang', 'start', 'reversed', 'value', 'span']);
+const DROPPED_TAGS = new Set(['script', 'style', 'link', 'meta', 'template', 'noscript', 'iframe', 'object', 'embed', 'audio', 'source', 'track']);
+
+let defaultsFrame: HTMLIFrameElement | null = null;
+const defaultsCache = new Map<string, Map<string, string>>();
+
+/** Browser-default computed styles of a tag, from a blank frame. */
+function defaultsOf(tag: string): Map<string, string> {
+  const cached = defaultsCache.get(tag);
+  if (cached) return cached;
+  if (!defaultsFrame) {
+    defaultsFrame = document.createElement('iframe');
+    defaultsFrame.setAttribute('aria-hidden', 'true');
+    defaultsFrame.style.cssText = 'position:fixed;left:-10000px;top:0;width:100px;height:100px;visibility:hidden;border:0';
+    document.body.append(defaultsFrame);
+  }
+  const doc = defaultsFrame.contentDocument!;
+  const probe = doc.createElement(tag);
+  doc.body.append(probe);
+  const style = defaultsFrame.contentWindow!.getComputedStyle(probe);
+  const map = new Map<string, string>();
+  for (const name of style) map.set(name, style.getPropertyValue(name));
+  probe.remove();
+  defaultsCache.set(tag, map);
+  return map;
+}
+
+const escapeText = (text: string) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const escapeAttr = (text: string) => escapeText(text).replace(/"/g, '&quot;');
+
+/** A style value the copy can carry. */
+const portable = (value: string) => !/var\(|env\(|attr\(/.test(value) && !/url\((?!\s*["']?data:image\/)/.test(value);
+
+/** Fetches an image as a data URL (so the copy does not point at this server). */
+async function dataUrl(url: string): Promise<string | null> {
+  if (url.startsWith('data:')) return url;
+  try {
+    const blob = await (await fetch(url)).blob();
+    if (!blob.type.startsWith('image/')) return null;
+    return await blobToDataUrl(blob).catch(() => null);
+  } catch {
+    return null;
+  }
+}
+
+const IMAGE_TOKEN = /\u0000img:([\s\S]*?)\u0000/g;
+
+/**
+ * The element as standalone HTML with inline computed styles (trimmed
+ * against browser defaults). Image sources come back as tokens, with the
+ * set of sources they stand for.
+ */
+function standalone(element: Element): { html: string; images: Set<string> } {
+  const view = element.ownerDocument.defaultView!;
+  const images = new Set<string>();
+  const imageToken = (src: string) => {
+    images.add(src);
+    return `\u0000img:${src}\u0000`;
+  };
+
+  const styleOf = (node: Element, tag: string, parent: CSSStyleDeclaration | null, root: boolean): string => {
+    const computed = view.getComputedStyle(node);
+    const defaults = defaultsOf(tag);
+    const out: string[] = [];
+    for (const name of computed) {
+      if (name.startsWith('--') || SKIPPED.test(name)) continue;
+      const value = computed.getPropertyValue(name);
+      if (!value || !portable(value)) continue;
+      if (INHERITED.has(name) && parent) {
+        if (parent.getPropertyValue(name) === value) continue;
+      } else if (defaults.get(name) === value) continue;
+      if (root && /^(margin-|top$|left$|right$|bottom$|transform$|rotate$|scale$|translate$)/.test(name)) continue;
+      // A side or outline that is not drawn needs no color or width.
+      const side = /^(border-(?:top|right|bottom|left)|outline)-(?:color|width)$/.exec(name);
+      if (side && computed.getPropertyValue(`${side[1]}-style`) === 'none') continue;
+      out.push(`${name}: ${value}`);
+    }
+    if (root) {
+      if (computed.position === 'static' || computed.position === 'absolute' || computed.position === 'fixed') out.push('position: relative');
+      out.push('margin: 0');
+    }
+    // Keep the rendered size of replaced and sized boxes.
+    return out.filter((decl) => !(root && decl === 'position: static')).join('; ');
+  };
+
+  const walk = (node: Node, parent: CSSStyleDeclaration | null, root: boolean): string => {
+    if (node.nodeType === Node.TEXT_NODE) return escapeText(node.textContent ?? '');
+    if (node.nodeType !== Node.ELEMENT_NODE) return '';
+    const el = node as Element;
+    const computed = view.getComputedStyle(el);
+    if (computed.display === 'none') return '';
+    if (el.namespaceURI === SVG_NS) {
+      const copy = el.cloneNode(true) as Element;
+      cleanSvg(copy);
+      if (el.localName === 'svg') {
+        copy.setAttribute('xmlns', SVG_NS);
+        if (!root) copy.setAttribute('style', styleOf(el, 'svg', parent, false));
+      }
+      return new XMLSerializer().serializeToString(copy).replace(/ xmlns="http:\/\/www\.w3\.org\/1999\/xhtml"/g, '');
+    }
+    let tag = el.localName;
+    if (DROPPED_TAGS.has(tag)) return '';
+    if (computed.display === 'contents') return [...el.childNodes].map((child) => walk(child, parent, root)).join('');
+    const children = () => [...el.childNodes].map((child) => walk(child, computed, false)).join('');
+    let inner: string | null = null;
+    let attrs = '';
+    switch (tag) {
+      case 'input': {
+        const input = el as HTMLInputElement;
+        if (input.type === 'checkbox' || input.type === 'radio') {
+          tag = 'span';
+          inner = input.checked ? '☑' : '☐';
+        } else {
+          tag = 'span';
+          inner = escapeText(input.value || input.placeholder);
+        }
+        break;
+      }
+      case 'textarea':
+        tag = 'div';
+        inner = escapeText((el as HTMLTextAreaElement).value || (el as HTMLTextAreaElement).placeholder);
+        break;
+      case 'select':
+        tag = 'span';
+        inner = escapeText((el as HTMLSelectElement).selectedOptions[0]?.text ?? '');
+        break;
+      case 'canvas':
+        tag = 'img';
+        try {
+          attrs += ` src="${(el as HTMLCanvasElement).toDataURL('image/png')}"`;
+        } catch {
+          // Tainted canvas: an empty box of the same size.
+          tag = 'div';
+        }
+        break;
+      case 'video':
+        tag = 'div';
+        inner = '';
+        break;
+      case 'img': {
+        const src = (el as HTMLImageElement).currentSrc || (el as HTMLImageElement).src;
+        if (src) attrs += ` src="${imageToken(src)}"`;
+        break;
+      }
+      case 'a': {
+        const href = el.getAttribute('href') ?? '';
+        if (/^(https?:|mailto:|#)/i.test(href)) attrs += ` href="${escapeAttr(href)}"`;
+        break;
+      }
+    }
+    for (const attr of el.attributes) if (KEPT_ATTRIBUTES.has(attr.name) && !(tag !== el.localName && attr.name === 'value')) attrs += ` ${attr.name}="${escapeAttr(attr.value)}"`;
+    const style = styleOf(el, el.localName === tag ? tag : 'div', parent, root);
+    if (style) attrs += ` style="${escapeAttr(style)}"`;
+    if (tag === 'img' || tag === 'br' || tag === 'hr' || tag === 'wbr') return `<${tag}${attrs}>`;
+    return `<${tag}${attrs}>${inner ?? children()}</${tag}>`;
+  };
+
+  // The root inherits from its real parent, so its own inherited values are kept unless default.
+  return { html: walk(element, null, true), images };
+}
+
+/** The element as standalone HTML, images by URL (for a synchronous clipboard write). */
+export function standaloneHtml(element: Element): string {
+  return standalone(element).html.replace(IMAGE_TOKEN, (_m, src: string) => escapeAttr(src));
+}
+
+/** The element as standalone HTML, images inlined as data URLs. */
+export async function captureHtml(element: Element): Promise<string> {
+  const { html, images } = standalone(element);
+  const urls = new Map(await Promise.all([...images].map(async (src) => [src, await dataUrl(src)] as const)));
+  return html.replace(IMAGE_TOKEN, (_m, src: string) => escapeAttr(urls.get(src) ?? src));
+}
+
+/* --------------------------------- command -------------------------------- */
+
+let busy = false;
+
+/** Copies the single selected element in a format. */
+export async function copyAs(format: CaptureFormat): Promise<void> {
+  if (busy) {
+    toast.add({ title: 'Still copying…' });
+    return;
+  }
+  const element = selectedLiveElement();
+  if (!element) {
+    toast.add({ title: `Select just one element to copy it as ${format.toUpperCase()}` });
+    return;
+  }
+  if (!canCopyAs()) {
+    toast.add({ title: 'This browser cannot copy images or markup to the clipboard.' });
+    return;
+  }
+  busy = true;
+  try {
+    if (format === 'png') {
+      const svg = captureSvg(element);
+      const blob = svg.then(({ svg: markup, width, height }) => {
+        if (width < 1 || height < 1) throw new Error('The element has no size.');
+        return rasterize(markup, width, height);
+      });
+      // The item is created synchronously (Safari needs the user's click); the image follows.
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+    } else if (format === 'svg') {
+      const { svg } = await captureSvg(element);
+      const items: Record<string, Blob> = { 'text/plain': new Blob([svg], { type: 'text/plain' }) };
+      if (ClipboardItem.supports?.('image/svg+xml')) items['image/svg+xml'] = new Blob([svg], { type: 'image/svg+xml' });
+      try {
+        await navigator.clipboard.write([new ClipboardItem(items)]);
+      } catch {
+        await navigator.clipboard.writeText(svg);
+      }
+    } else {
+      const html = await captureHtml(element);
+      if (!html.trim()) throw new Error('The element is empty.');
+      if (html.length > MAX_HTML) throw new Error('The element is too large to copy as HTML.');
+      await navigator.clipboard.write([new ClipboardItem({ 'text/html': new Blob([html], { type: 'text/html' }), 'text/plain': new Blob([html], { type: 'text/plain' }) })]);
+    }
+    toast.add({ title: `Copied as ${format.toUpperCase()}` });
+  } catch (error) {
+    toast.add({ title: `Couldn’t copy as ${format.toUpperCase()}`, description: error instanceof Error ? error.message : String(error) });
+  } finally {
+    busy = false;
+  }
+}

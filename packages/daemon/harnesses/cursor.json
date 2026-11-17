@@ -1,0 +1,22 @@
+{
+  "name": "cursor",
+  "title": "Cursor",
+  "agentName": "Cursor",
+  "level": "L2",
+  "entry": "mcp",
+  "plugin": "open-artifact",
+  "mcp": {
+    "command": "node",
+    "args": [
+      "${CURSOR_PLUGIN_ROOT}/skills/open-artifact/scripts/open-artifact.mjs",
+      "mcp",
+      "--harness",
+      "cursor"
+    ]
+  },
+  "skillsDir": "~/.cursor/skills",
+  "wake": [
+    "inbox"
+  ],
+  "open": "browser"
+}

@@ -1,0 +1,457 @@
+/**
+ * The Shell's pure logic: what the bar shows for a given state. No DOM, no
+ * store, so it runs under `node --test`.
+ */
+
+import {
+  SHELL_PARAMS,
+  type ArtifactView,
+  type ChromeAction,
+  type ChromeFormat,
+  type ChromeReport,
+  type ChromeSaved,
+  type ChromeWhy,
+  type HostCaps,
+  type ShareGuest,
+  type ShareRole,
+  type ShareView,
+  type ShellBoot,
+} from '@open-artifact/protocol';
+
+/** The owner session as the library reports it. */
+export type Owner = NonNullable<ArtifactView['owner']>;
+
+/** The host that embeds the Shell, once it said `host_hello`. */
+export interface HostInfo {
+  /** The host's origin: host messages go only there. */
+  origin: string;
+  caps: HostCaps;
+  /** What the host calls its agent, when it said. */
+  agentName: string | null;
+}
+
+/** Share roles, most rights first. */
+export const ROLES: readonly ShareRole[] = ['editor', 'commenter', 'viewer'];
+
+/** The agent's display name: the host's, else the boot's, else a generic one. */
+export function agentNameOf(host: HostInfo | null, boot: Pick<ShellBoot, 'agentName'> | null, fallback: string): string {
+  return host?.agentName || boot?.agentName || fallback;
+}
+
+/**
+ * The agent is at work: the owner session runs; with no owner known, the page says its agent is busy. The page's word
+ * is the daemon's presence as its type server last passed it on, so it can be stale (a type server stopped mid-turn
+ * never says idle); the owner, which the Shell refreshes on every harness change, decides when there is one.
+ */
+export function isWorking(owner: Owner | null | undefined, report: ChromeReport): boolean {
+  if (owner) return owner.live && owner.status === 'running';
+  return !!report.agent?.busy;
+}
+
+/** What the owner status chip says. */
+export type OwnerState = 'none' | 'working' | 'idle' | 'offline';
+
+/** The owner status chip's state. */
+export function ownerState(owner: Owner | null | undefined, report: ChromeReport): OwnerState {
+  if (isWorking(owner, report)) return 'working';
+  if (!owner) return 'none';
+  return owner.live ? 'idle' : 'offline';
+}
+
+/** The host can show the owner session: it offers sessions and a session owns the artifact. */
+export function canOpenSession(host: HostInfo | null, owner: Owner | null | undefined): boolean {
+  return !!(host?.caps.sessions && owner?.session);
+}
+
+/** The comments button shows when the page has comments and no button of its own. */
+export function showsComments(report: ChromeReport): boolean {
+  return !!(report.comments?.available && !report.comments.pageButton);
+}
+
+/** The count badge: empty for none, `99+` past 99. */
+export function countText(count: number | undefined): string {
+  if (!count || count < 0) return '';
+  return count > 99 ? '99+' : String(count);
+}
+
+/** When an artifact last changed, for sorting. */
+export function changedAt(a: Pick<ArtifactView, 'openedAt' | 'contentAt' | 'updatedAt' | 'createdAt'>): number {
+  return Date.parse(a.openedAt || a.contentAt || a.updatedAt || a.createdAt || '') || 0;
+}
+
+/**
+ * Switch artifact's list: the owner session's artifacts when it has more
+ * than one, else every artifact; the most recent first.
+ */
+export function switchPool(library: ArtifactView[], owner: Owner | null | undefined): { inSession: boolean; list: ArtifactView[] } {
+  const bySession = owner?.session
+    ? library.filter((a) => a.owner && a.owner.harness === owner.harness && a.owner.session === owner.session)
+    : [];
+  const inSession = bySession.length > 1;
+  const pool = inSession ? bySession : library;
+  return { inSession, list: [...pool].sort((a, b) => changedAt(b) - changedAt(a)) };
+}
+
+/**
+ * The page's address in the frame: the boot's page with `open_artifact_shell`, `open_artifact_id`
+ * and the `comment` thread taken from the Shell's own address. `null` when
+ * there is no page.
+ */
+export function pageAddress(boot: Pick<ShellBoot, 'page' | 'id'>, shellHref: string): string | null {
+  if (!boot.page) return null;
+  const shell = new URL(shellHref);
+  const thread = shell.searchParams.get(SHELL_PARAMS.comment);
+  try {
+    const at = new URL(boot.page, shell.href);
+    at.searchParams.set(SHELL_PARAMS.shell, shell.origin);
+    at.searchParams.set(SHELL_PARAMS.id, boot.id);
+    if (thread) at.searchParams.set(SHELL_PARAMS.comment, thread);
+    return at.href;
+  } catch {
+    return boot.page;
+  }
+}
+
+/** The Shell's address without the parameter `name`, or `null` when it has none. */
+export function addressWithout(shellHref: string, name: string): string | null {
+  const url = new URL(shellHref);
+  if (!url.searchParams.has(name)) return null;
+  url.searchParams.delete(name);
+  return `${url.pathname}${url.search}${url.hash}`;
+}
+
+/** The Shell's address without the `comment` thread (it is the page's to read), or `null` when unchanged. */
+export function addressWithoutThread(shellHref: string): string | null {
+  return addressWithout(shellHref, SHELL_PARAMS.comment);
+}
+
+/** The panel the Shell's address asks to open on load (`?panel=share` or `?panel=export`), or `null`. */
+export function panelOf(shellHref: string): 'share' | 'export' | null {
+  const value = new URL(shellHref).searchParams.get(SHELL_PARAMS.panel);
+  return value === 'share' || value === 'export' ? value : null;
+}
+
+/** The page's own origin: chrome messages go only there and come only from there. */
+export function pageOriginOf(page: string | null, shellHref: string): string {
+  try {
+    return page ? new URL(page, shellHref).origin : new URL(shellHref).origin;
+  } catch {
+    return new URL(shellHref).origin;
+  }
+}
+
+/** The Share button shows "shared": from the share state when loaded, else the page or the library. */
+export function isShared(view: ShareView | null, report: ChromeReport, artifact: Pick<ArtifactView, 'shared'> | null): boolean {
+  return view ? view.lan : !!(report.shareOn || artifact?.shared);
+}
+
+/** The people who joined, online first, then the most recently seen. */
+export function sortedGuests(view: ShareView): ShareGuest[] {
+  return [...(view.guests ?? [])].sort((a, b) => Number(b.online) - Number(a.online) || (b.seen ?? b.joined).localeCompare(a.seen ?? a.joined));
+}
+
+/** The network addresses the panel names, with the port; the Tailscale address has a line of its own. */
+export function shownAddresses(view: ShareView): string[] {
+  const all = view.addresses ?? [];
+  const lan = all.filter((a) => a !== view.tailnet?.address);
+  const port = view.port ? `:${view.port}` : '';
+  return (lan.length ? lan : all).map((a) => `${a.includes(':') ? `[${a}]` : a}${port}`);
+}
+
+/** The link that gives away the least among those that are on, or `null`. */
+export function leastRole(view: ShareView): ShareRole | null {
+  return [...ROLES].reverse().find((role) => view.links[role]?.on) ?? null;
+}
+
+/** How a message reached the owner session, from `artifacts.ask`'s `via`. */
+export type Delivery = 'delivered' | 'inbox' | 'failed';
+
+/** The {@link Delivery} of an `artifacts.ask` answer. */
+export function deliveryOf(via: string | undefined): Delivery {
+  if (via === 'live' || via === 'wait') return 'delivered';
+  if (via === 'inbox') return 'inbox';
+  return 'failed';
+}
+
+/** One message the person sent from the Shell (kept in session storage). */
+export interface SentMessage {
+  text: string;
+  /** ISO time. */
+  at: string;
+  delivery: Delivery;
+}
+
+/** Appends a sent message, keeping the last `limit`. */
+export function appendSent(list: SentMessage[], message: SentMessage, limit = 50): SentMessage[] {
+  return [...list, message].slice(-limit);
+}
+
+/** Parses stored sent messages, dropping anything malformed. */
+export function parseSent(raw: string | null): SentMessage[] {
+  if (!raw) return [];
+  try {
+    const value: unknown = JSON.parse(raw);
+    if (!Array.isArray(value)) return [];
+    return value.filter(
+      (m): m is SentMessage =>
+        !!m && typeof m === 'object' && typeof (m as SentMessage).text === 'string' && typeof (m as SentMessage).at === 'string',
+    ).map((m) => ({ text: m.text, at: m.at, delivery: m.delivery === 'inbox' || m.delivery === 'failed' ? m.delivery : 'delivered' }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * A boot for development, when the daemon did not inject one: built from
+ * `artifacts.open` and `artifact` answers.
+ */
+export function devBoot(
+  detail: ArtifactView,
+  page: { page: string; page_url: string } | null,
+  problem: string | null,
+): ShellBoot {
+  return {
+    id: detail.id,
+    url: detail.url,
+    title: detail.title,
+    type: detail.type,
+    typeTitle: detail.typeTitle,
+    root: detail.root,
+    page: page?.page ?? null,
+    pageUrl: page?.page_url ?? null,
+    pageKind: null,
+    problem: page ? null : problem,
+    empty: false,
+    prompt: null,
+    owner: detail.owner ? { harness: detail.owner.harness, key: null } : null,
+    agentName: '',
+    userName: '',
+    version: 'dev',
+  };
+}
+
+// ---- the page's report (chrome protocol) --------------------------------------------------------------------------
+
+const SAVED: readonly ChromeSaved[] = ['saved', 'saving', 'unsaved', 'reconnecting', 'readonly'];
+const WHY: readonly ChromeWhy[] = ['older_version', 'agent_working', 'draft_open', 'comments_on', 'needs_agent', 'unsaved', 'other'];
+const ACTION_ID = /^[a-z][a-z0-9_-]{0,31}$/;
+/** Formats a page may list, and variants per format (Design's PNG has nine). */
+export const MAX_FORMATS = 8;
+export const MAX_VARIANTS = 16;
+const FORMAT = /^[a-z0-9]{1,8}$/;
+
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/** A short display string from the page: trimmed, no control characters, at most `max` characters. */
+function shortText(value: unknown, max: number): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  // eslint-disable-next-line no-control-regex
+  const text = [...value.replace(/[\u0000-\u001f\u007f]+/g, ' ').trim()].slice(0, max).join('');
+  return text || undefined;
+}
+
+function whyOf(value: unknown): ChromeWhy | undefined {
+  return WHY.includes(value as ChromeWhy) ? (value as ChromeWhy) : undefined;
+}
+
+/**
+ * The page's report as the Shell keeps it. The v1 parts pass as they are;
+ * the newer ones are checked one entry at a time (a bad entry is dropped,
+ * not the report), and lists are capped.
+ */
+export function normalizeReport(raw: unknown): ChromeReport {
+  if (!isRecord(raw)) return {};
+  const out: ChromeReport = {};
+  for (const key of ['comments', 'agent'] as const) if (isRecord(raw[key])) (out as Record<string, unknown>)[key] = raw[key];
+  for (const key of ['history', 'share', 'shareOn', 'exports', 'leaveLosesWork', 'hasContent'] as const) {
+    if (typeof raw[key] === 'boolean') out[key] = raw[key];
+  }
+  if (SAVED.includes(raw.saved as ChromeSaved)) out.saved = raw.saved as ChromeSaved;
+  if (Array.isArray(raw.actions)) {
+    const seen = new Set<string>();
+    const actions: ChromeAction[] = [];
+    for (const entry of raw.actions) {
+      if (!isRecord(entry) || typeof entry.id !== 'string' || !ACTION_ID.test(entry.id) || seen.has(entry.id)) continue;
+      seen.add(entry.id);
+      const label = shortText(entry.label, 48);
+      const why = whyOf(entry.why);
+      actions.push({ id: entry.id, ...(label ? { label } : {}), ...(entry.disabled === true ? { disabled: true } : {}), ...(why ? { why } : {}) });
+      if (actions.length === 18) break;
+    }
+    out.actions = actions;
+  }
+  if (Array.isArray(raw.formats)) {
+    const seen = new Set<string>();
+    const formats: ChromeFormat[] = [];
+    for (const entry of raw.formats) {
+      if (!isRecord(entry) || typeof entry.format !== 'string' || !FORMAT.test(entry.format) || seen.has(entry.format)) continue;
+      seen.add(entry.format);
+      const label = shortText(entry.label, 48);
+      const description = shortText(entry.description, 160);
+      const why = whyOf(entry.why);
+      const reason = shortText(entry.disabledReason, 160);
+      const variants = Array.isArray(entry.variants)
+        ? entry.variants
+            .filter((v): v is Record<string, unknown> => isRecord(v) && typeof v.id === 'string' && ACTION_ID.test(v.id))
+            .slice(0, MAX_VARIANTS)
+            .map((v) => {
+              const vLabel = shortText(v.label, 80);
+              const vReason = shortText(v.disabledReason, 160);
+              return { id: v.id as string, ...(vLabel ? { label: vLabel } : {}), ...(v.disabled === true ? { disabled: true } : {}), ...(vReason ? { disabledReason: vReason } : {}) };
+            })
+        : undefined;
+      formats.push({
+        format: entry.format,
+        ...(label ? { label } : {}),
+        ...(description ? { description } : {}),
+        ...(entry.disabled === true ? { disabled: true } : {}),
+        ...(why ? { why } : {}),
+        ...(reason ? { disabledReason: reason } : {}),
+        ...(entry.interactive === true ? { interactive: true } : {}),
+        ...(entry.more === true ? { more: true } : {}),
+        ...(variants?.length ? { variants } : {}),
+      });
+      if (formats.length === MAX_FORMATS) break;
+    }
+    out.formats = formats;
+  }
+  if (isRecord(raw.shareNotice) && raw.shareNotice.tone === 'warning' && typeof raw.shareNotice.text === 'string' && raw.shareNotice.text.trim()) {
+    out.shareNotice = { text: raw.shareNotice.text.slice(0, 2000), tone: 'warning' };
+  }
+  return out;
+}
+
+/** The page offers exports: detailed formats, or v1 items. */
+export function hasExports(report: ChromeReport): boolean {
+  return !!(report.formats?.length || report.exports);
+}
+
+/**
+ * The Export tab offers the whole folder as a zip, last: on any page but a
+ * read-only one (an older version's page, which the folder no longer is).
+ */
+export function offersArchive(report: ChromeReport): boolean {
+  return report.saved !== 'readonly';
+}
+
+/** The Share panel has an Export tab: the page's exports, or the folder's zip. */
+export function hasExportTab(report: ChromeReport): boolean {
+  return hasExports(report) || offersArchive(report);
+}
+
+/** The page's action with this id, when declared. */
+export function actionOf(report: ChromeReport, id: string): ChromeAction | undefined {
+  return report.actions?.find((action) => action.id === id);
+}
+
+/** Actions the Shell's own controls stand for, never listed as page actions. */
+const DRAWN_ELSEWHERE = new Set(['chat_toggle']);
+
+/** The actions the artifact menu lists. */
+export function menuActions(report: ChromeReport): ChromeAction[] {
+  return (report.actions ?? []).filter((action) => !DRAWN_ELSEWHERE.has(action.id));
+}
+
+/** What the save indicator shows. */
+export type SaveIndicator = 'none' | 'saving' | 'reconnecting' | 'unsaved' | 'retry' | 'readonly';
+
+/**
+ * The save indicator: Read-only always; Saving…
+ * and Reconnecting… only for pages that declare `save_now` (others save
+ * too often for it to be worth a flicker); a failed save always, as a
+ * retry button when `save_now` can run.
+ */
+export function saveIndicator(report: ChromeReport): SaveIndicator {
+  const save = actionOf(report, 'save_now');
+  switch (report.saved) {
+    case 'readonly':
+      return 'readonly';
+    case 'unsaved':
+      return save && !save.disabled ? 'retry' : 'unsaved';
+    case 'saving':
+    case 'reconnecting':
+      return save ? report.saved : 'none';
+    default:
+      return 'none';
+  }
+}
+
+const FORMAT_NAMES: Record<string, string> = {
+  pdf: 'PDF',
+  pptx: 'PowerPoint',
+  docx: 'Word',
+  xlsx: 'Excel',
+  png: 'PNG',
+  jpg: 'JPEG',
+  jpeg: 'JPEG',
+  svg: 'SVG',
+  gif: 'GIF',
+  mp4: 'MP4',
+  webm: 'WebM',
+  html: 'HTML',
+  md: 'Markdown',
+  csv: 'CSV',
+  json: 'JSON',
+  zip: 'ZIP',
+  txt: 'Text',
+};
+
+/** `all_slides` → `All slides`. */
+export function humanize(id: string): string {
+  const words = id.replace(/[_-]+/g, ' ').trim();
+  return words ? words[0]!.toUpperCase() + words.slice(1) : id;
+}
+
+/** One row of the Export tab: a format, or one variant of it. */
+export interface ExportEntry {
+  key: string;
+  label: string;
+  /** The format's own name (for its icon). */
+  kind: string;
+  description?: string;
+  format: string;
+  variant?: string;
+  interactive: boolean;
+  /** The row opens something first: a chevron instead of the download arrow. */
+  more: boolean;
+  disabled: boolean;
+  why?: ChromeWhy;
+  /** Why it is disabled, in the page's words (wins over `why`). */
+  disabledReason?: string;
+}
+
+/** The Export tab's rows for the page's formats: one per format, or one per variant. */
+export function exportEntries(report: ChromeReport): ExportEntry[] {
+  const empty = report.hasContent === false;
+  const out: ExportEntry[] = [];
+  for (const f of report.formats ?? []) {
+    const name = f.label ?? FORMAT_NAMES[f.format] ?? f.format.toUpperCase();
+    const base = { kind: `${name} ${f.format}`, format: f.format, interactive: !!f.interactive, more: !!(f.more || f.interactive), ...(f.why ? { why: f.why } : {}) };
+    if (f.variants?.length) {
+      for (const v of f.variants) {
+        const off = !!f.disabled || !!v.disabled;
+        // The variant's own reason when it alone is off, else the format's.
+        const reason = off ? ((v.disabled && v.disabledReason) || f.disabledReason) : undefined;
+        out.push({
+          ...base,
+          key: `${f.format}:${v.id}`,
+          label: `${name} · ${v.label ?? humanize(v.id)}`,
+          ...(f.description ? { description: f.description } : {}),
+          variant: v.id,
+          disabled: empty || off,
+          ...(reason ? { disabledReason: reason } : {}),
+        });
+      }
+    } else {
+      out.push({ ...base, key: f.format, label: name, ...(f.description ? { description: f.description } : {}), disabled: empty || !!f.disabled, ...(f.disabled && f.disabledReason ? { disabledReason: f.disabledReason } : {}) });
+    }
+  }
+  return out;
+}
+
+const REQUEST_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+
+/** A fresh export request id (matches `CHROME_REQUEST`). */
+export function exportRequestId(random: (n: number) => Uint8Array = (n) => crypto.getRandomValues(new Uint8Array(n))): string {
+  return [...random(24)].map((b) => REQUEST_ALPHABET[b % REQUEST_ALPHABET.length]).join('');
+}

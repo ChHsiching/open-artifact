@@ -1,0 +1,7 @@
+[
+  {
+    "name": "open-artifact-comments",
+    "command": "node \"${CLAUDE_PLUGIN_ROOT}/skills/open-artifact/scripts/open-artifact.mjs\" watch --harness claude-code",
+    "description": "Comments and requests people send to Claude from Open Artifact pages"
+  }
+]

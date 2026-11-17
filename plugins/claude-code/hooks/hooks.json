@@ -1,0 +1,58 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/skills/open-artifact/scripts/open-artifact.mjs",
+              "hook",
+              "SessionStart",
+              "--harness",
+              "claude-code"
+            ],
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/skills/open-artifact/scripts/open-artifact.mjs",
+              "hook",
+              "UserPromptSubmit",
+              "--harness",
+              "claude-code"
+            ],
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/skills/open-artifact/scripts/open-artifact.mjs",
+              "hook",
+              "Stop",
+              "--harness",
+              "claude-code"
+            ],
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

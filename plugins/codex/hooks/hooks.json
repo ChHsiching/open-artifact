@@ -1,0 +1,37 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$PLUGIN_ROOT/skills/open-artifact/scripts/open-artifact.mjs\" hook SessionStart --harness codex",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$PLUGIN_ROOT/skills/open-artifact/scripts/open-artifact.mjs\" hook UserPromptSubmit --harness codex",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$PLUGIN_ROOT/skills/open-artifact/scripts/open-artifact.mjs\" hook Stop --harness codex",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

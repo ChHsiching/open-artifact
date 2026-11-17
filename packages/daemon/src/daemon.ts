@@ -1,0 +1,1692 @@
+/**
+ * The `open-artifact` daemon: one per user (per `OPEN_ARTIFACT_HOME`). On one loopback port it
+ * serves the Shell (`/a/<id>`), the home page (`/`), their built assets
+ * (`/_open-artifact/shell/*`, `/_open-artifact/home/*`), static entries on per-artifact origins
+ * (`<id>.frame.localhost:<port>`), the Library API (`/api/open-artifact.*`), the Type
+ * API (`/api/open-artifact.type.*`), the HTTP polling API, MCP (`POST /mcp`) and the
+ * Harness API (WebSocket `/__harness`); and it starts the type servers that
+ * serve every other page.
+ */
+
+import { randomBytes } from 'node:crypto';
+import { EventEmitter } from 'node:events';
+import { appendFileSync, cpSync, createReadStream, existsSync, openSync, readFileSync, readdirSync, rmSync, statSync, watch, writeFileSync, writeSync, closeSync, type Dirent, type FSWatcher } from 'node:fs';
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { userInfo } from 'node:os';
+import { dirname, extname, isAbsolute, join, resolve, sep } from 'node:path';
+import { Readable, type Duplex } from 'node:stream';
+import { fileURLToPath } from 'node:url';
+import {
+  HARNESS_PATH,
+  HARNESS_SUBPROTOCOL,
+  LIBRARY_ROUTES,
+  OpenArtifactError,
+  SHELL_FRAME_NAME,
+  SHELL_PARAMS,
+  TYPE_API_ROUTES,
+  TYPE_SERVER_ROUTES,
+  artifactIdOf,
+  artifactUrl,
+  errorBody,
+  taskMessage,
+  type ArtifactDetail,
+  type ArtifactRecord,
+  type ArtifactView,
+  type AskRequest,
+  type CreateArtifactRequest,
+  type DaemonHealth,
+  type DaemonState,
+  type LibraryEvent,
+  type OpenArtifactSettings,
+  type ResolvedEntry,
+  type SessionRef,
+  type ShareRequest,
+  type ShareView,
+  type ShellBoot,
+  type TypeApiArtifact,
+  type TypeApiEvent,
+  type TypeApiPresence,
+  type TypeApiTask,
+  type TypeApiWakeRequest,
+  type TypeApiWakeResult,
+  type TypesResponse,
+  type TypeView,
+  type UpdateArtifactRequest,
+  type WakeRequestItem,
+  type WakeStatus,
+  type WakeThread,
+} from '@open-artifact/protocol';
+import { HarnessHub, systemBrowse, type PollParams } from './harness.ts';
+import { Inbox } from './inbox.ts';
+import { callerFromRequest, handleMcp, type McpMessage, type McpReply } from './mcp.ts';
+import { ensureDir, expandHome, files, inside, openArtifactHome, readJson, writeJson } from './paths.ts';
+import { ACTION_CALL_MS, TypeServers } from './servers.ts';
+import { loadSettings } from './settings.ts';
+import { ArtifactStore, sessionKeyOf, userEditsAfter, type StoreChange } from './store.ts';
+import { Tools, type ShareAccess } from './tools.ts';
+import { TypeRegistry, type ListedType, type TypeInfo } from './types.ts';
+import { WakeRouter, type WakeResult } from './wake.ts';
+import { acceptWebSocket } from './ws.ts';
+import pkg from '../package.json' with { type: 'json' };
+
+const here = dirname(fileURLToPath(import.meta.url));
+
+/**
+ * The daemon's version (its package version). Imported, not read from disk,
+ * so a bundled daemon (the DSH plugin's vendor/open-artifact.mjs) keeps its own version.
+ */
+export const VERSION: string = (pkg as { version?: string }).version ?? '0.0.0';
+
+/**
+ * Where the built Shell or home app lives: `$OPEN_ARTIFACT_SHELL_DIR` / `$OPEN_ARTIFACT_HOME_DIR`,
+ * else `<repo>/dist/daemon/<name>` resolved from this module's location.
+ */
+export function defaultUiDir(name: 'shell' | 'home'): string {
+  const fromEnv = name === 'shell' ? process.env.OPEN_ARTIFACT_SHELL_DIR : process.env.OPEN_ARTIFACT_HOME_DIR;
+  return fromEnv ? resolve(fromEnv) : resolve(here, '..', '..', '..', 'dist', 'daemon', name);
+}
+
+/** The placeholder in the Shell's `index.html` that the boot object replaces. */
+export const BOOT_PLACEHOLDER = '/*__OPEN_ARTIFACT_BOOT__*/null';
+
+/** Base paths of the built apps (their Vite `base`). */
+export const UI_PATHS = { shell: '/_open-artifact/shell/', home: '/_open-artifact/home/' } as const;
+
+const PAGE_IDLE_MS = Number(process.env.OPEN_ARTIFACT_PAGE_IDLE_MS ?? 15 * 60_000);
+/** How long a long action may run before its end is no longer delivered. */
+const TASK_TTL_MS = 24 * 60 * 60_000;
+/** After an agent's write action answers, page writes within this long are still the agent's. */
+const ACTING_GRACE_MS = Number(process.env.OPEN_ARTIFACT_ACTING_GRACE_MS ?? 3_000);
+/** `open: "after_first_write"`: how often to look for the content, how long to let it settle, and when to give up. */
+const OPEN_POLL_MS = 1_000;
+const OPEN_SETTLE_MS = 1_500;
+const OPEN_GIVE_UP_MS = 30 * 60_000;
+
+/** A long action the agent started: its end goes to the caller. */
+interface StartedTask {
+  artifactId: string;
+  action: string;
+  caller: SessionRef;
+  write: boolean;
+  at: number;
+}
+
+/** Whether a file under an artifact's root is content (not a marker, agent state, a blob or the version history). */
+function isContentPath(rel: string): boolean {
+  const parts = rel.split('/');
+  return !!rel && !parts.some((part) => part.startsWith('.')) && parts[0] !== '_agent' && parts[0] !== '_blobs' && parts[0] !== 'history';
+}
+
+/** Whether the folder holds any content file (looks a few levels deep). */
+function hasContent(root: string, rel = '', depth = 0): boolean {
+  if (depth > 4) return false;
+  let entries: Dirent[];
+  try {
+    entries = readdirSync(join(root, rel), { withFileTypes: true });
+  } catch {
+    return false;
+  }
+  for (const entry of entries.slice(0, 500)) {
+    const path = rel ? `${rel}/${entry.name}` : entry.name;
+    if (!isContentPath(path)) continue;
+    if (entry.isFile()) return true;
+    if (entry.isDirectory() && hasContent(root, path, depth + 1)) return true;
+  }
+  return false;
+}
+
+const CONTENT_TYPES: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.htm': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.json': 'application/json',
+  '.map': 'application/json',
+  '.txt': 'text/plain; charset=utf-8',
+  '.md': 'text/markdown; charset=utf-8',
+  '.csv': 'text/csv; charset=utf-8',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.avif': 'image/avif',
+  '.ico': 'image/x-icon',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+  '.ttf': 'font/ttf',
+  '.otf': 'font/otf',
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
+  '.pdf': 'application/pdf',
+  '.wasm': 'application/wasm',
+};
+
+/** A static entry's own origin: `http://<artifact id>.frame.localhost:<port>`. */
+const FRAME_HOST = /^(art_[0-9a-z]+)\.frame\.localhost:(\d+)$/;
+
+const contentType = (file: string): string => CONTENT_TYPES[extname(file).toLowerCase()] ?? 'application/octet-stream';
+
+function sendJson(res: ServerResponse, status: number, body: unknown, headers: Record<string, string> = {}): void {
+  const text = JSON.stringify(body);
+  res.writeHead(status, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Cache-Control': 'no-store',
+    'Content-Length': Buffer.byteLength(text),
+    ...headers,
+  });
+  res.end(text);
+}
+
+function sendHtml(res: ServerResponse, html: string): void {
+  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }).end(html);
+}
+
+function readBody(req: IncomingMessage, limit = 4 << 20): Promise<Buffer> {
+  return new Promise((resolveBody, rejectBody) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    req.on('data', (chunk: Buffer) => {
+      size += chunk.length;
+      if (size > limit) {
+        rejectBody(new OpenArtifactError('too_large', 'The request body is too large.', { status: 413 }));
+        req.destroy();
+      } else chunks.push(chunk);
+    });
+    req.on('end', () => resolveBody(Buffer.concat(chunks)));
+    req.on('error', rejectBody);
+  });
+}
+
+async function readJsonBody<T = Record<string, unknown>>(req: IncomingMessage): Promise<Partial<T>> {
+  const buffer = await readBody(req);
+  if (!buffer.length) return {};
+  try {
+    const parsed = JSON.parse(buffer.toString('utf8')) as unknown;
+    return parsed && typeof parsed === 'object' ? (parsed as Partial<T>) : {};
+  } catch {
+    throw new OpenArtifactError('invalid_argument', 'The body is not JSON.');
+  }
+}
+
+/** The first language the browser asks for, as a `{lang}` placeholder takes it. */
+const langOf = (req: IncomingMessage | undefined): string | undefined =>
+  String(req?.headers['accept-language'] ?? '').split(',')[0]!.split(';')[0]!.trim() || undefined;
+
+const isLoopback = (address: string | undefined): boolean => address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1';
+
+const escapeHtml = (text: string): string =>
+  text.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+
+/** JSON safe to put inside a `<script>`. */
+const scriptJson = (value: unknown): string => JSON.stringify(value).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
+
+/** Whether `.sharing.json` in an artifact folder says it is shared on the network (the type server writes it). */
+function sharedOnLan(root: string): boolean {
+  return readJson<{ lan?: boolean } | null>(join(root, '.sharing.json'), null)?.lan === true;
+}
+
+function safeUserName(): string {
+  try {
+    return userInfo().username || 'You';
+  } catch {
+    return 'You';
+  }
+}
+
+/** HTTP status of a failure. */
+function statusOf(error: unknown): number {
+  if (error instanceof OpenArtifactError && error.status) return error.status;
+  const { code } = errorBody(error);
+  switch (code) {
+    case 'not_found':
+    case 'unknown_session':
+      return 404;
+    case 'unauthorized':
+      return 401;
+    case 'not_granted':
+      return 403;
+    case 'unsupported':
+    case 'conflict':
+      return 409;
+    case 'too_large':
+      return 413;
+    case 'rate_limited':
+      return 429;
+    case 'server_failed':
+      return 502;
+    default:
+      return 400;
+  }
+}
+
+function listenOn(server: Server, port: number, host: string): Promise<number> {
+  return new Promise((resolveListen, rejectListen) => {
+    const onError = (error: Error): void => {
+      server.off('listening', onListening);
+      rejectListen(error);
+    };
+    const onListening = (): void => {
+      server.off('error', onError);
+      const address = server.address();
+      resolveListen(typeof address === 'object' && address ? address.port : port);
+    };
+    server.once('error', onError);
+    server.once('listening', onListening);
+    server.listen(port, host);
+  });
+}
+
+/** The prompt that hands an empty artifact to an agent. */
+export function takeOverPrompt(record: Pick<ArtifactRecord, 'id' | 'title' | 'root'>, typeTitle: string): string {
+  const url = artifactUrl(record.id);
+  return `Take over artifact ${url} (${typeTitle} "${record.title}", folder ${record.root}): call Artifact {action: "adopt", url: "${url}"} for the type's instructions, then build it as they say.`;
+}
+
+/** The Shell used when the built one is missing: the artifact page, framed full-screen. */
+const FALLBACK_SHELL = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Open Artifact</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #fff; color: #222; font: 14px/1.5 system-ui, sans-serif; }
+  iframe { display: block; border: 0; width: 100%; height: 100%; }
+  .note { max-width: 640px; margin: 64px auto; padding: 0 24px; }
+  pre { white-space: pre-wrap; background: #f4f4f4; padding: 12px; border-radius: 6px; }
+  @media (prefers-color-scheme: dark) { html, body { background: #161616; color: #ddd; } pre { background: #222; } }
+</style>
+<script>window.__OPEN_ARTIFACT_BOOT__ = ${BOOT_PLACEHOLDER};</script>
+</head>
+<body>
+<script>
+(() => {
+  const boot = window.__OPEN_ARTIFACT_BOOT__;
+  document.title = boot.title;
+  if (boot.page) {
+    const at = new URL(boot.page, location.href);
+    at.searchParams.set(${JSON.stringify(SHELL_PARAMS.shell)}, location.origin);
+    at.searchParams.set(${JSON.stringify(SHELL_PARAMS.id)}, boot.id);
+    const frame = document.createElement('iframe');
+    frame.name = ${JSON.stringify(SHELL_FRAME_NAME)};
+    frame.allow = 'clipboard-read; clipboard-write; fullscreen';
+    frame.src = at.href;
+    document.body.append(frame);
+    return;
+  }
+  const note = document.createElement('div');
+  note.className = 'note';
+  const h = document.createElement('h1');
+  h.textContent = boot.title;
+  note.append(h);
+  const p = document.createElement('p');
+  p.textContent = boot.empty ? 'Nothing is written yet. Hand it to an agent with this prompt:' : (boot.problem || 'The page could not be opened.');
+  note.append(p);
+  if (boot.prompt) {
+    const pre = document.createElement('pre');
+    pre.textContent = boot.prompt;
+    note.append(pre);
+  }
+  document.body.append(note);
+})();
+</script>
+</body>
+</html>
+`;
+
+/** Options of {@link Daemon}. */
+export interface DaemonOptions {
+  /** Port to listen on; `0` picks one. Default: settings `serverPort` (the next free one when taken). */
+  port?: number;
+  /** Exit after this long with nothing connected, ms; `0` never. Default `$OPEN_ARTIFACT_IDLE_MS`, else 30 min. */
+  idleMs?: number;
+  /** No log lines on stderr. */
+  quiet?: boolean;
+  /** The built Shell (`index.html` and assets). Default {@link defaultUiDir}`('shell')`. */
+  shellDir?: string;
+  /** The built home page. Default {@link defaultUiDir}`('home')`. */
+  homeDir?: string;
+  /** The built-in type root; `null` turns it off. Default: the repository's `artifact-types/`. */
+  builtinTypesDir?: string | null;
+  /**
+   * Opens a page in this computer's browser, for harnesses whose profile says `open: "browser"`; `null` never does.
+   * Default {@link systemBrowse}.
+   */
+  browse?: ((url: string) => boolean) | null;
+}
+
+/** A resolved artifact page. */
+interface OpenPage {
+  kind: ResolvedEntry['kind'];
+  /** What the Shell frames (absolute). */
+  page: string;
+  page_url: string;
+  lastUsed: number;
+}
+
+interface TypeEventClient {
+  res: ServerResponse;
+  typeId: string;
+  ids: Set<string>;
+}
+
+/** The daemon. Emits `exit` when it closes itself (idle). */
+export class Daemon extends EventEmitter<{ exit: [] }> {
+  /** The listening port, once started. */
+  port = 0;
+  /** Bearer token of the Library and Harness APIs and MCP. */
+  readonly token = randomBytes(24).toString('base64url');
+  settings: OpenArtifactSettings;
+  readonly types: TypeRegistry;
+  readonly store: ArtifactStore;
+  readonly inbox: Inbox;
+  readonly wake: WakeRouter;
+  readonly servers: TypeServers;
+  readonly tools: Tools;
+  readonly harnesses: HarnessHub;
+  readonly shellDir: string;
+  readonly homeDir: string;
+  readonly server: Server;
+
+  private readonly wantPort: number;
+  private readonly idleMs: number;
+  private readonly quiet: boolean;
+  private readonly logFile: string;
+  private readonly eventClients = new Set<ServerResponse>();
+  private readonly typeEventClients = new Set<TypeEventClient>();
+  private readonly typeTokens = new Map<string, string>();
+  private readonly tokenTypes = new Map<string, string>();
+  private readonly pages = new Map<string, OpenPage>();
+  private readonly watchers = new Map<string, { watcher: FSWatcher; stop: () => void }>();
+  private readonly contentStamps = new Map<string, { at: number; value: string }>();
+  /** Long actions the agent started, by `<type>:<task>`. */
+  private readonly tasks = new Map<string, StartedTask>();
+  /** Ends that came before their start was known (a quick task), by `<type>:<task>`. */
+  private readonly earlyEnds = new Map<string, { body: TypeApiTask; at: number }>();
+  /** Write actions of the agent running on an artifact, and until when their page writes count as the agent's. */
+  private readonly acting = new Map<string, { running: number; until: number }>();
+  /** Pages waiting for the agent's first write, by artifact id: stops the wait. */
+  private readonly pendingOpens = new Map<string, () => void>();
+  private hosts = new Set<string>();
+  private lastActivity = Date.now();
+  private timer: ReturnType<typeof setInterval> | undefined;
+  private closed = false;
+
+  constructor(options: DaemonOptions = {}) {
+    super();
+    ensureDir(openArtifactHome(), 0o700);
+    ensureDir(files.logs());
+    this.settings = loadSettings();
+    this.wantPort = options.port ?? this.settings.serverPort;
+    this.idleMs = options.idleMs ?? Number(process.env.OPEN_ARTIFACT_IDLE_MS ?? 30 * 60_000);
+    this.quiet = options.quiet ?? false;
+    this.shellDir = resolve(options.shellDir ?? defaultUiDir('shell'));
+    this.homeDir = resolve(options.homeDir ?? defaultUiDir('home'));
+    this.logFile = join(files.logs(), 'daemon.log');
+    const log = (line: string): void => this.log(line);
+    this.types = new TypeRegistry(() => this.settings, options.builtinTypesDir !== undefined ? { builtinDir: options.builtinTypesDir } : {});
+    this.store = new ArtifactStore();
+    this.inbox = new Inbox();
+    this.wake = new WakeRouter({
+      store: this.store,
+      inbox: this.inbox,
+      live: () => this.harnesses,
+      viewUrl: (id) => this.viewUrl(id),
+      log,
+      emit: (event) => this.broadcast(event),
+    });
+    this.servers = new TypeServers({ daemonUrl: () => this.origin, tokenFor: (typeId) => this.typeToken(typeId), log });
+    this.tools = new Tools({
+      types: this.types,
+      store: this.store,
+      inbox: this.inbox,
+      harnesses: () => this.harnesses,
+      settings: () => this.settings,
+      viewUrl: (id) => this.viewUrl(id),
+      openPage: (record) => this.openPage(record),
+      typeAction: (type, record, name, args) =>
+        this.servers.call(type, 'POST', `${TYPE_SERVER_ROUTES.actions}${encodeURIComponent(name)}`, { id: record.id, root: record.root, args }, undefined, ACTION_CALL_MS),
+      typeActions: (type, options) => this.servers.actions(type, options),
+      shareOf: (record) => this.shareOf(record),
+      log,
+      taskStarted: ({ record, type, task, action, effect, caller }) => this.taskStarted(type.id, task, { artifactId: record.id, action, caller, write: effect === 'write', at: Date.now() }),
+      agentActing: (id, phase) => this.agentActing(id, phase),
+      openAfterFirstWrite: (record, caller) => this.openAfterFirstWrite(record, caller),
+      cancelOpenAfterFirstWrite: (id) => this.pendingOpens.get(id)?.(),
+    });
+    this.harnesses = new HarnessHub({
+      token: this.token,
+      version: VERSION,
+      tools: this.tools,
+      inbox: this.inbox,
+      log,
+      browse: options.browse === undefined ? systemBrowse : options.browse,
+      openArtifact: async (url, caller) => {
+        const result = await this.tools.call('Artifact', { action: 'open', url }, caller);
+        if (result.error) throw new OpenArtifactError(result.error.code, result.error.message);
+        return { opened: !!result.opened, ...(typeof result.view_url === 'string' ? { view_url: result.view_url } : {}) };
+      },
+    });
+    this.harnesses.on('changed', () => this.broadcast({ type: 'harness/changed' }));
+    this.store.on('changed', (record: StoreChange) => {
+      if (record.removed) this.closePage(record);
+      this.broadcast({ type: 'artifacts/changed', id: record.id, ...(record.removed ? { removed: true } : {}) });
+    });
+    this.types.on('changed', () => {
+      this.servers.typesChanged((id, old) => this.types.scanRoot({ root: old.root, scope: old.scope, trusted: old.trusted }).find((t) => t.id === id) ?? null);
+      this.broadcast({ type: 'types/changed' });
+    });
+    this.server = createServer((req, res) => {
+      this.onRequest(req, res).catch((error: unknown) => {
+        this.log(`request ${req.method} ${req.url} failed: ${(error as Error)?.stack ?? error}`);
+        if (!res.headersSent) sendJson(res, 500, { code: 'error', message: 'internal error' });
+        else res.destroy();
+      });
+    });
+    this.server.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => this.onUpgrade(req, socket, head));
+  }
+
+  /** Appends a line to the daemon log (and stderr with `OPEN_ARTIFACT_LOG_STDERR=1`). */
+  log(line: string): void {
+    const text = `[${new Date().toISOString()}] ${line}\n`;
+    try {
+      appendFileSync(this.logFile, text);
+    } catch {
+      /* nowhere to log */
+    }
+    if (!this.quiet && process.env.OPEN_ARTIFACT_LOG_STDERR === '1') process.stderr.write(text);
+  }
+
+  /** The daemon's base URL. */
+  get origin(): string {
+    return `http://127.0.0.1:${this.port}`;
+  }
+
+  /** The Shell address of an artifact. */
+  viewUrl(id: string): string {
+    return `${this.origin}/a/${id}`;
+  }
+
+  private typeOf(record: ArtifactRecord): ListedType | null {
+    return this.types.get(record.type, record.owner?.workspace ?? undefined);
+  }
+
+  private agentNameOf(record: ArtifactRecord): string {
+    return this.harnesses.agentNameOf(record.owner?.harness);
+  }
+
+  /** Listens, takes the lock and writes `daemon.json`. */
+  async start(): Promise<this> {
+    ensureDir(openArtifactHome());
+    // One daemon per OPEN_ARTIFACT_HOME: the lock holds this process's pid.
+    const lock = files.lock();
+    try {
+      const fd = openSync(lock, 'wx', 0o600);
+      writeSync(fd, String(process.pid));
+      closeSync(fd);
+    } catch {
+      const other = Number(readFileSync(lock, 'utf8'));
+      let alive = false;
+      try {
+        process.kill(other, 0);
+        alive = other !== process.pid;
+      } catch {
+        alive = false;
+      }
+      if (alive) throw new OpenArtifactError('conflict', `Another open-artifact daemon (pid ${other}) runs for ${openArtifactHome()}.`);
+      writeFileSync(lock, String(process.pid), { mode: 0o600 });
+    }
+    let port = this.wantPort;
+    for (let i = 0; ; i++) {
+      try {
+        this.port = await listenOn(this.server, port, '127.0.0.1');
+        break;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EADDRINUSE' || i >= 20 || port === 0) {
+          rmSync(lock, { force: true });
+          throw error;
+        }
+        port += 1;
+      }
+    }
+    this.hosts = new Set([`127.0.0.1:${this.port}`, `localhost:${this.port}`, `[::1]:${this.port}`]);
+    const state: DaemonState = { url: this.origin, port: this.port, pid: process.pid, token: this.token, version: VERSION, startedAt: new Date().toISOString() };
+    writeJson(files.daemon(), state, 0o600);
+    this.timer = setInterval(() => this.tick(), 30_000);
+    this.timer.unref?.();
+    this.log(`daemon ${VERSION} listening at ${this.origin} (home ${openArtifactHome()})`);
+    // Links handed out before a restart keep working: open what is shared again.
+    void this.remountShared();
+    return this;
+  }
+
+  private async remountShared(): Promise<void> {
+    for (const record of this.store.list()) {
+      if (!sharedOnLan(record.root)) continue;
+      try {
+        await this.openPage(record);
+      } catch (error) {
+        this.log(`sharing: could not open ${record.id} again: ${(error as Error)?.message ?? error}`);
+      }
+    }
+  }
+
+  /** A long action answered `{task, pending: true}`: remembers who gets its end. */
+  private taskStarted(typeId: string, task: string, started: StartedTask): void {
+    const key = `${typeId}:${task}`;
+    this.tasks.set(key, started);
+    if (started.write) this.agentActing(started.artifactId, 'start');
+    const early = this.earlyEnds.get(key);
+    if (early) {
+      this.earlyEnds.delete(key);
+      this.taskEnded(typeId, early.body);
+    }
+  }
+
+  /** A long action ended: its result goes to the caller that started it, live or into its inbox. */
+  private taskEnded(typeId: string, body: TypeApiTask): void {
+    const key = `${typeId}:${body.task}`;
+    const started = this.tasks.get(key);
+    if (!started) {
+      // The end may come before the action's answer reached Tools: keep it a while.
+      this.earlyEnds.set(key, { body, at: Date.now() });
+      return;
+    }
+    this.tasks.delete(key);
+    if (started.write) this.agentActing(started.artifactId, 'end');
+    const record = this.store.get(started.artifactId);
+    if (!record) return;
+    const message = taskMessage(
+      record,
+      { task: body.task, action: started.action, ...(body.error !== undefined && body.error !== null ? { error: body.error } : { result: body.result ?? null }) },
+      { viewUrl: this.viewUrl(record.id) },
+    );
+    void this.wake
+      .send(started.caller, { artifact: artifactUrl(record.id), artifactId: record.id, text: message.text, source: message.source })
+      .catch((error: unknown) => this.log(`task ${body.task} of ${record.id}: delivery failed: ${(error as Error)?.message ?? error}`));
+  }
+
+  /** The agent's write action on an artifact starts or answers. */
+  private agentActing(id: string, phase: 'start' | 'end'): void {
+    const now = Date.now();
+    const entry = this.acting.get(id) ?? { running: 0, until: 0 };
+    if (phase === 'start') entry.running += 1;
+    else {
+      entry.running = Math.max(0, entry.running - 1);
+      entry.until = now + ACTING_GRACE_MS;
+    }
+    this.acting.set(id, entry);
+  }
+
+  /** Whether page writes on the artifact now come from the agent's action. */
+  private isAgentActing(id: string): boolean {
+    const entry = this.acting.get(id);
+    return !!entry && (entry.running > 0 || Date.now() < entry.until);
+  }
+
+  /**
+   * `open: "after_first_write"`: once a content file appears under the root
+   * and has settled, shows the page in the caller's app. `false` when that
+   * app cannot show pages.
+   */
+  private openAfterFirstWrite(record: ArtifactRecord, caller: SessionRef): boolean {
+    if (!this.harnesses.canShow(caller)) return false;
+    this.pendingOpens.get(record.id)?.();
+    const id = record.id;
+    const started = Date.now();
+    let settle: ReturnType<typeof setTimeout> | undefined;
+    const poll = setInterval(() => {
+      const now = this.store.get(id);
+      if (!now || this.closed || Date.now() - started > OPEN_GIVE_UP_MS) return stop();
+      if (settle || !hasContent(now.root)) return;
+      settle = setTimeout(() => {
+        stop();
+        void this.openFor(id, caller);
+      }, OPEN_SETTLE_MS);
+      settle.unref?.();
+    }, OPEN_POLL_MS);
+    poll.unref?.();
+    const stop = (): void => {
+      clearInterval(poll);
+      clearTimeout(settle);
+      if (this.pendingOpens.get(id) === stop) this.pendingOpens.delete(id);
+    };
+    this.pendingOpens.set(id, stop);
+    return true;
+  }
+
+  /** Opens the page and asks the caller's app to show it. */
+  private async openFor(id: string, caller: SessionRef): Promise<void> {
+    const record = this.store.get(id);
+    if (!record) return;
+    try {
+      await this.openPage(record);
+      const shown = await this.harnesses.show(caller, { url: artifactUrl(id), view_url: this.viewUrl(id), title: record.title });
+      this.log(`opened ${id} after the first write${shown === 'browser' ? ' in the browser' : shown ? '' : ': the app did not show it'}`);
+    } catch (error) {
+      this.log(`opening ${id} after the first write failed: ${(error as Error)?.message ?? error}`);
+    }
+  }
+
+  private tick(): void {
+    const now = Date.now();
+    for (const [key, task] of this.tasks) {
+      if (now - task.at > TASK_TTL_MS) {
+        this.tasks.delete(key);
+        if (task.write) this.agentActing(task.artifactId, 'end');
+      }
+    }
+    for (const [key, early] of this.earlyEnds) if (now - early.at > 60_000) this.earlyEnds.delete(key);
+    for (const [id, entry] of this.acting) if (!entry.running && now > entry.until) this.acting.delete(id);
+    for (const [id, page] of this.pages) {
+      if (Date.now() - page.lastUsed > PAGE_IDLE_MS) {
+        this.pages.delete(id);
+        this.unwatch(id);
+      }
+    }
+    if (!this.idleMs) return;
+    const busy = this.harnesses.connections.size > 0 || this.pages.size > 0 || this.eventClients.size > 0 || this.typeEventClients.size > 0;
+    if (busy) this.lastActivity = Date.now();
+    else if (Date.now() - this.lastActivity > this.idleMs) {
+      this.log('idle: exiting');
+      this.close();
+      this.emit('exit');
+    }
+  }
+
+  /** Stops everything and removes `daemon.json` and the lock. */
+  close(): void {
+    if (this.closed) return;
+    this.closed = true;
+    clearInterval(this.timer);
+    this.servers.closeAll();
+    for (const id of [...this.watchers.keys()]) this.unwatch(id);
+    for (const stop of [...this.pendingOpens.values()]) stop();
+    for (const client of this.typeEventClients) client.res.end();
+    this.harnesses.close();
+    for (const res of this.eventClients) res.end();
+    this.types.close();
+    this.server.close();
+    this.server.closeAllConnections?.();
+    const state = readJson<DaemonState | null>(files.daemon(), null);
+    if (state?.pid === process.pid) rmSync(files.daemon(), { force: true });
+    try {
+      if (Number(readFileSync(files.lock(), 'utf8')) === process.pid) rmSync(files.lock(), { force: true });
+    } catch {
+      /* no lock */
+    }
+  }
+
+  /** Sends an event to the Library event streams, subscribed adapters and type servers. */
+  broadcast(event: LibraryEvent): void {
+    const line = `data: ${JSON.stringify(event)}\n\n`;
+    for (const res of this.eventClients) res.write(line);
+    this.harnesses?.broadcast(event);
+    if (this.typeEventClients.size) this.typeEvent(event);
+  }
+
+  // ---- requests ----------------------------------------------------------------------------------------------------
+
+  /** Our own names and the static entries' (DNS rebinding gets a 421). */
+  private hostAllowed(req: IncomingMessage): boolean {
+    const host = String(req.headers.host ?? '');
+    return this.hosts.has(host) || this.frameIdOf(host) !== null;
+  }
+
+  /** The artifact id of a static entry's host, or `null`. */
+  private frameIdOf(host: string | undefined): string | null {
+    const match = FRAME_HOST.exec(String(host ?? '').toLowerCase());
+    return match && Number(match[2]) === this.port ? match[1]! : null;
+  }
+
+  /** A static entry's origin. */
+  frameOrigin(id: string): string {
+    return `http://${id}.frame.localhost:${this.port}`;
+  }
+
+  private originOk(req: IncomingMessage): boolean {
+    const origin = req.headers.origin;
+    if (origin === undefined) return true;
+    try {
+      return new URL(origin).host === req.headers.host;
+    } catch {
+      return false;
+    }
+  }
+
+  /** A write from the home page or Shell (same origin, JSON) or a process with the token. */
+  private writeAllowed(req: IncomingMessage): boolean {
+    if (this.hasToken(req)) return true;
+    if (!isLoopback(req.socket.remoteAddress)) return false;
+    return req.headers.origin !== undefined && this.originOk(req) && String(req.headers['content-type'] ?? '').startsWith('application/json');
+  }
+
+  private hasToken(req: IncomingMessage): boolean {
+    return String(req.headers.authorization ?? '') === `Bearer ${this.token}`;
+  }
+
+  private async onRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    this.lastActivity = Date.now();
+    if (!this.hostAllowed(req)) {
+      req.resume();
+      res.writeHead(421, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Misdirected request');
+      return;
+    }
+    const url = new URL(req.url ?? '/', 'http://local');
+    const p = url.pathname;
+    const frameId = this.frameIdOf(req.headers.host);
+    if (frameId) {
+      // Static entries are for this computer only.
+      if (isLoopback(req.socket.remoteAddress)) return this.staticEntry(req, res, frameId, url);
+      return this.notFound(req, res);
+    }
+    // The daemon is for this computer; shared pages are the type servers'.
+    if (!isLoopback(req.socket.remoteAddress)) return this.notFound(req, res);
+    if (p === '/__open-artifact/health') {
+      const health: DaemonHealth = { openArtifact: 1, version: VERSION };
+      return sendJson(res, 200, health);
+    }
+    if (p === '/favicon.ico') {
+      req.resume();
+      res.writeHead(204).end();
+      return;
+    }
+    if (p === '/' || p === '/index.html') return this.homePage(req, res);
+    if (p.startsWith(UI_PATHS.shell)) return this.staticUnder(req, res, this.shellDir, p.slice(UI_PATHS.shell.length));
+    if (p.startsWith(UI_PATHS.home)) return this.staticUnder(req, res, this.homeDir, p.slice(UI_PATHS.home.length));
+    const shell = /^\/a\/(art_[0-9a-z]+)\/?$/.exec(p);
+    if (shell) return this.shellPage(req, res, shell[1]!);
+    if (p.startsWith('/api/open-artifact.')) return this.api(req, res, p.slice('/api/open-artifact.'.length), url);
+    if (p === '/mcp') return this.mcp(req, res);
+    return this.notFound(req, res);
+  }
+
+  private notFound(req: IncomingMessage, res: ServerResponse): void {
+    req.resume();
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' }).end('Not found');
+  }
+
+  /** A file under `dir` (no path escapes, no dot files), for GET and HEAD. */
+  private staticUnder(req: IncomingMessage, res: ServerResponse, dir: string, rel: string): void {
+    req.resume();
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      res.writeHead(405, { Allow: 'GET, HEAD' }).end();
+      return;
+    }
+    let decoded: string;
+    try {
+      decoded = decodeURIComponent(rel);
+    } catch {
+      return this.notFound(req, res);
+    }
+    const parts = decoded.split('/').filter(Boolean);
+    if (!parts.length || decoded.includes('\0') || parts.some((part) => part.startsWith('.'))) return this.notFound(req, res);
+    let file: string;
+    try {
+      file = inside(dir, parts.join('/'));
+    } catch {
+      return this.notFound(req, res);
+    }
+    this.sendFile(req, res, file, file.includes(`${sep}assets${sep}`) ? 'public, max-age=31536000, immutable' : 'no-cache');
+  }
+
+  private sendFile(req: IncomingMessage, res: ServerResponse, file: string, cache: string): void {
+    let stat;
+    try {
+      stat = statSync(file);
+      if (stat.isDirectory()) {
+        file = join(file, 'index.html');
+        stat = statSync(file);
+      }
+    } catch {
+      return this.notFound(req, res);
+    }
+    if (!stat.isFile()) return this.notFound(req, res);
+    const etag = `W/"${stat.size.toString(36)}-${Math.floor(stat.mtimeMs).toString(36)}"`;
+    const headers = { ETag: etag, 'Cache-Control': cache, 'X-Content-Type-Options': 'nosniff', 'Content-Type': contentType(file) };
+    if (req.headers['if-none-match'] === etag) {
+      res.writeHead(304, headers).end();
+      return;
+    }
+    res.writeHead(200, { ...headers, 'Content-Length': stat.size });
+    if (req.method === 'HEAD') {
+      res.end();
+      return;
+    }
+    createReadStream(file)
+      .on('error', () => res.destroy())
+      .pipe(res);
+  }
+
+  /** `GET /`: the built home page, or a plain list when it is missing. */
+  private homePage(req: IncomingMessage, res: ServerResponse): void {
+    req.resume();
+    try {
+      sendHtml(res, readFileSync(join(this.homeDir, 'index.html'), 'utf8'));
+      return;
+    } catch {
+      /* not built: the plain list */
+    }
+    const rows = this.store
+      .list()
+      .map((record) => {
+        const type = this.typeOf(record);
+        return `<li><a href="/a/${encodeURIComponent(record.id)}">${escapeHtml(record.title)}</a> <span>${escapeHtml(type?.title ?? record.type)}</span></li>`;
+      })
+      .join('\n');
+    sendHtml(
+      res,
+      `<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Open Artifact</title>
+<style>body{font:14px/1.6 system-ui,sans-serif;max-width:720px;margin:48px auto;padding:0 24px;color:#222}span{color:#888;margin-left:8px}@media (prefers-color-scheme:dark){body{background:#161616;color:#ddd}a{color:#8ab4f8}}</style>
+</head>
+<body>
+<h1>Open Artifact</h1>
+${rows ? `<ul>\n${rows}\n</ul>` : '<p>No artifacts yet. Ask an agent to make one with the Artifact tool.</p>'}
+</body>
+</html>
+`,
+    );
+  }
+
+  /** The boot object of the Shell for one artifact. */
+  async shellBoot(record: ArtifactRecord, req?: IncomingMessage): Promise<ShellBoot> {
+    let page: Omit<OpenPage, 'lastUsed'> | null = null;
+    let problem: string | null = null;
+    const type = this.typeOf(record);
+    // Made but not written yet: none of the type's marker files is there.
+    const empty = !!type?.detect.length && !type.detect.some((rel) => existsSync(join(record.root, rel)));
+    if (!empty) {
+      try {
+        page = await this.openPage(record, { lang: langOf(req), ...(req?.headers.host ? { shell: `http://${req.headers.host}` } : {}) });
+      } catch (error) {
+        problem = (error as Error)?.message ?? String(error);
+      }
+    }
+    const typeTitle = type?.title ?? record.type;
+    return {
+      id: record.id,
+      url: artifactUrl(record.id),
+      title: record.title,
+      type: record.type,
+      typeTitle,
+      root: record.root,
+      page: page?.page ?? null,
+      pageUrl: page?.page_url ?? null,
+      pageKind: page?.kind ?? null,
+      problem,
+      empty,
+      prompt: empty ? takeOverPrompt(record, typeTitle) : null,
+      owner: record.owner ? { harness: record.owner.harness, key: sessionKeyOf(record.owner) } : null,
+      agentName: this.agentNameOf(record),
+      userName: safeUserName(),
+      version: VERSION,
+    };
+  }
+
+  /** `GET /a/<id>`: the Shell's `index.html` with the boot object in place. */
+  private async shellPage(req: IncomingMessage, res: ServerResponse, id: string): Promise<void> {
+    req.resume();
+    const found = this.store.get(id);
+    if (!found) {
+      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' }).end(`No artifact ${id}.`);
+      return;
+    }
+    const record = this.touchOpened(found);
+    const boot = await this.shellBoot(record, req);
+    let template: string;
+    try {
+      template = readFileSync(join(this.shellDir, 'index.html'), 'utf8');
+    } catch {
+      template = FALLBACK_SHELL;
+    }
+    sendHtml(res, template.replace(BOOT_PLACEHOLDER, () => scriptJson(boot)));
+  }
+
+  // ---- library helpers ---------------------------------------------------------------------------------------------
+
+  /** Opened in the Shell or from a list: when (the record's `updatedAt` stays). */
+  private touchOpened(record: ArtifactRecord): ArtifactRecord {
+    try {
+      return this.store.update(record.id, { openedAt: new Date().toISOString(), updatedAt: record.updatedAt });
+    } catch {
+      return record;
+    }
+  }
+
+  /** The newest change in the artifact's folder; a bounded walk, kept for 5 s. */
+  private contentAt(record: ArtifactRecord): string {
+    const now = Date.now();
+    const have = this.contentStamps.get(record.root);
+    if (have && now - have.at < 5000) return have.value;
+    let newest = 0;
+    let seen = 0;
+    const walk = (dir: string, depth: number): void => {
+      let entries;
+      try {
+        entries = readdirSync(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        if (seen++ > 4000) return;
+        // Bookkeeping is not content.
+        if (entry.name.startsWith('.') || entry.name === 'node_modules' || entry.name === 'exports') continue;
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) {
+          if (depth < 5) walk(full, depth + 1);
+        } else {
+          try {
+            newest = Math.max(newest, statSync(full).mtimeMs);
+          } catch {
+            /* gone meanwhile */
+          }
+        }
+      }
+    };
+    walk(record.root, 0);
+    const value = newest ? new Date(Math.floor(newest)).toISOString() : record.updatedAt;
+    this.contentStamps.set(record.root, { at: now, value });
+    return value;
+  }
+
+  /** The folder's size (a bounded walk: a huge folder reads as at least this much). */
+  private folderBytes(root: string): number {
+    let bytes = 0;
+    let seen = 0;
+    const walk = (dir: string, depth: number): void => {
+      let entries;
+      try {
+        entries = readdirSync(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        if (seen++ > 20000) return;
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) {
+          if (depth < 8 && entry.name !== 'node_modules') walk(full, depth + 1);
+        } else if (entry.isFile()) {
+          try {
+            bytes += statSync(full).size;
+          } catch {
+            /* gone meanwhile */
+          }
+        }
+      }
+    };
+    walk(root, 0);
+    return bytes;
+  }
+
+  /** A copy of the artifact beside it: its content, not its bookkeeping (dot files, history, exports). */
+  private duplicate(record: ArtifactRecord): ArtifactRecord {
+    const parent = dirname(record.root);
+    const base = record.root.slice(parent.length + 1);
+    let root = join(parent, `${base}-copy`);
+    for (let n = 2; existsSync(root); n++) root = join(parent, `${base}-copy-${n}`);
+    const skip = (name: string): boolean => name.startsWith('.') || name === 'history' || name === 'exports' || name === 'node_modules';
+    ensureDir(root);
+    for (const name of readdirSync(record.root)) {
+      if (skip(name)) continue;
+      cpSync(join(record.root, name), join(root, name), { recursive: true, errorOnExist: false });
+    }
+    return this.store.create({ root, type: record.type, typeSource: record.typeSource, typeRelease: record.typeRelease, owner: record.owner, title: `Copy of ${record.title}`.slice(0, 200) });
+  }
+
+  private thumbnailFile(id: string): string {
+    return join(files.thumbnails(), `${id}.jpg`);
+  }
+
+  /** The content stamp a thumbnail was taken at, or `null`. */
+  private thumbnailOf(id: string): string | null {
+    return readJson<{ v?: string } | null>(join(files.thumbnails(), `${id}.json`), null)?.v ?? null;
+  }
+
+  /** One artifact as lists show it. */
+  artifactView(record: ArtifactRecord): ArtifactView {
+    const type = this.typeOf(record);
+    const live = this.harnesses.statusOf(record.owner);
+    return {
+      id: record.id,
+      url: artifactUrl(record.id),
+      title: record.title,
+      type: record.type,
+      typeTitle: type?.title ?? record.type,
+      typeMissing: !type,
+      root: record.root,
+      view_url: this.viewUrl(record.id),
+      page_url: this.pages.get(record.id)?.page_url ?? this.viewUrl(record.id),
+      owner: record.owner ? { harness: record.owner.harness, session: record.owner.session, workspace: record.owner.workspace, ...live } : null,
+      pinned: !!record.pinnedAt,
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt,
+      openedAt: record.openedAt ?? null,
+      contentAt: this.contentAt(record),
+      thumbnail: this.thumbnailOf(record.id),
+      shared: sharedOnLan(record.root),
+      open: this.pages.has(record.id),
+    };
+  }
+
+  private typeView(type: ListedType): TypeView {
+    return {
+      id: type.id,
+      title: type.title,
+      description: type.description,
+      scope: type.scope,
+      root: type.root,
+      runtime: type.runtime,
+      entry: type.entry?.kind ?? null,
+      server: this.servers.status(type.id),
+      runnable: type.runnable,
+      enabled: type.enabled,
+      shadowedBy: type.shadowedBy,
+      version: type.version,
+      problems: type.problems,
+      icon: !!type.icon,
+    };
+  }
+
+  /**
+   * Resolves the artifact's page: `page` is what the Shell frames, an
+   * absolute address on the page's own origin.
+   */
+  async openPage(record: ArtifactRecord, context: { lang?: string | undefined; shell?: string } = {}): Promise<Omit<OpenPage, 'lastUsed'>> {
+    const type = this.typeOf(record);
+    if (!type) throw new OpenArtifactError('type_missing', `The type ${record.type} is not installed.`);
+    if (!type.runnable || !type.entry) throw new OpenArtifactError('type_not_runnable', type.problems.join(' ') || `${type.id} cannot open.`);
+    const kind = type.entry.kind;
+    let out: Omit<OpenPage, 'lastUsed'>;
+    if (kind === 'static') {
+      const page = `${this.frameOrigin(record.id)}/`;
+      out = { kind, page, page_url: page };
+      this.watchFolder(record);
+    } else {
+      const got = await this.servers.open(type, record, { ...(context.lang ? { lang: context.lang } : {}), shell: context.shell ?? this.origin });
+      out = { kind, page: got.url, page_url: got.page_url };
+    }
+    this.pages.set(record.id, { ...out, lastUsed: Date.now() });
+    return out;
+  }
+
+  /** The artifact left the list: its type server may let it go. */
+  private closePage(record: ArtifactRecord): void {
+    this.pages.delete(record.id);
+    this.unwatch(record.id);
+    const type = this.typeOf(record);
+    if (type?.entry?.kind === 'server' && type.entry.open && this.servers.isReady(type.id)) {
+      this.servers.call(type, 'POST', TYPE_SERVER_ROUTES.close, { id: record.id }).catch(() => undefined);
+    }
+  }
+
+  /** A static entry's artifact folder: what changed goes out as `artifacts/changed` with the paths. */
+  private watchFolder(record: ArtifactRecord): void {
+    if (this.watchers.has(record.id)) return;
+    const changed = new Set<string>();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const watcher = watch(record.root, { recursive: true, persistent: false }, (_event, name) => {
+        const rel = String(name ?? '').split(sep).join('/');
+        if (!rel || rel.split('/').some((part) => part.startsWith('.'))) return;
+        changed.add(rel);
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+          const paths = [...changed];
+          changed.clear();
+          this.contentStamps.delete(record.root);
+          this.broadcast({ type: 'artifacts/changed', id: record.id, paths });
+        }, 150);
+      });
+      watcher.on('error', () => this.unwatch(record.id));
+      this.watchers.set(record.id, { watcher, stop: () => clearTimeout(timer) });
+    } catch {
+      /* a folder that is not there (yet) */
+    }
+  }
+
+  private unwatch(id: string): void {
+    const have = this.watchers.get(id);
+    if (!have) return;
+    this.watchers.delete(id);
+    have.stop();
+    have.watcher.close();
+  }
+
+  /** A static entry: the type folder at `/`, the artifact folder at `/_root/`, read only. */
+  private staticEntry(req: IncomingMessage, res: ServerResponse, id: string, url: URL): void {
+    req.resume();
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      res.writeHead(405, { Allow: 'GET, HEAD' }).end();
+      return;
+    }
+    const record = this.store.get(id);
+    const type = record ? this.typeOf(record) : null;
+    if (!record || type?.entry?.kind !== 'static') return this.notFound(req, res);
+    const page = this.pages.get(id);
+    if (page) page.lastUsed = Date.now();
+    let rel: string;
+    try {
+      rel = decodeURIComponent(url.pathname);
+    } catch {
+      return this.notFound(req, res);
+    }
+    if (rel.includes('\0')) return this.notFound(req, res);
+    let base = type.dir;
+    if (rel === '/_root' || rel.startsWith('/_root/')) {
+      base = record.root;
+      rel = rel.slice('/_root'.length);
+    } else if (rel === '/' || rel === '') rel = `/${type.entry.file}`;
+    const parts = rel.split('/').filter(Boolean);
+    // Dot files (.artifact.json, .git, a server's state) are nobody's page.
+    if (parts.some((part) => part.startsWith('.'))) return this.notFound(req, res);
+    let file: string;
+    try {
+      file = parts.length ? inside(resolve(base), parts.join('/')) : resolve(base);
+    } catch {
+      return this.notFound(req, res);
+    }
+    this.sendFile(req, res, file, 'no-cache');
+  }
+
+  /**
+   * `artifact.archive`: the artifact's folder as a zip, passed on from its
+   * type server's `/__open-artifact/archive` as it streams (`HEAD`: the
+   * headers, or 413 for a folder too large to zip). A type without a server,
+   * or whose server has no such route, answers `unsupported`.
+   */
+  private async sendArchive(req: IncomingMessage, res: ServerResponse, record: ArtifactRecord): Promise<void> {
+    const type = this.typeOf(record);
+    const entry = type?.entry;
+    const unsupported = (): OpenArtifactError => new OpenArtifactError('unsupported', `${type?.title ?? record.type} folders cannot be zipped here.`);
+    if (!type || !entry || entry.kind === 'static') throw unsupported();
+    await this.openPage(record);
+    const head = req.method === 'HEAD';
+    const answer = await this.servers.fetchRaw(type, head ? 'HEAD' : 'GET', TYPE_SERVER_ROUTES.archive, { id: record.id });
+    if (!answer.ok) {
+      const body = (await answer.json().catch(() => null)) as { code?: unknown; message?: unknown } | null;
+      if (answer.status === 404 || answer.status === 405) throw unsupported();
+      const code = typeof body?.code === 'string' ? body.code : answer.status === 413 ? 'too_large' : 'server_failed';
+      throw new OpenArtifactError(code, typeof body?.message === 'string' ? body.message : `${type.id}: the zip answered ${answer.status}.`, { status: answer.status });
+    }
+    const headers: Record<string, string> = { 'Content-Type': 'application/zip', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' };
+    const disposition = answer.headers.get('content-disposition');
+    if (disposition) headers['Content-Disposition'] = disposition;
+    if (head || !answer.body) {
+      void answer.body?.cancel();
+      res.writeHead(200, headers).end();
+      return;
+    }
+    res.writeHead(200, headers);
+    const body = Readable.fromWeb(answer.body as Parameters<typeof Readable.fromWeb>[0]);
+    res.on('close', () => {
+      if (!res.writableFinished) body.destroy();
+    });
+    body.on('error', () => res.destroy());
+    body.pipe(res);
+  }
+
+  /** The artifact's LAN sharing, through its type server's `/__open-artifact/share`. */
+  private async shareOf(record: ArtifactRecord): Promise<ShareAccess> {
+    const type = this.typeOf(record);
+    const entry = type?.entry;
+    if (type && entry && entry.kind !== 'static' && entry.share) {
+      // The server knows the artifact once it opened it (again, if it restarted since).
+      await this.openPage(record);
+      return {
+        view: () => this.servers.call<ShareView>(type, 'GET', TYPE_SERVER_ROUTES.share, undefined, { id: record.id }),
+        update: (change) => {
+          const request: ShareRequest = { id: record.id, ...change };
+          return this.servers.call<ShareView>(type, 'POST', TYPE_SERVER_ROUTES.share, request);
+        },
+      };
+    }
+    throw new OpenArtifactError('unsupported', `${type?.title ?? record.type} pages cannot be shared on the network.`);
+  }
+
+  // ---- Type API: what the type servers this daemon started call back ------------------------------------------------
+
+  /** The Type API token of a type (`OPEN_ARTIFACT_TYPE_TOKEN`). */
+  typeToken(typeId: string): string {
+    let token = this.typeTokens.get(typeId);
+    if (!token) {
+      token = `oat_${randomBytes(24).toString('base64url')}`;
+      this.typeTokens.set(typeId, token);
+      this.tokenTypes.set(token, typeId);
+    }
+    return token;
+  }
+
+  private presenceOf(record: ArtifactRecord): TypeApiPresence {
+    const live = this.harnesses.statusOf(record.owner);
+    return {
+      presence: live.live ? 'online' : record.owner ? 'offline' : 'none',
+      canSend: true,
+      canSendSession: !!record.owner,
+      busy: live.live && live.status === 'running',
+      agentName: this.agentNameOf(record),
+    };
+  }
+
+  private typeEvent(event: LibraryEvent): void {
+    for (const client of this.typeEventClients) {
+      const send = (e: TypeApiEvent): void => void client.res.write(`event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`);
+      if (event.type === 'artifacts/changed' && client.ids.has(event.id)) {
+        const record = this.store.get(event.id);
+        send(record ? { type: 'artifact', id: event.id, title: record.title } : { type: 'artifact', id: event.id, removed: true });
+      } else if (event.type === 'harness/changed' || event.type === 'wake/state') {
+        for (const id of client.ids) {
+          if (event.type === 'wake/state' && event.artifactId !== id) continue;
+          const record = this.store.get(id);
+          if (record) send({ type: 'presence', id, ...this.presenceOf(record) });
+        }
+      }
+    }
+  }
+
+  private async typeApi(req: IncomingMessage, res: ServerResponse, name: string, url: URL): Promise<void> {
+    const auth = String(req.headers.authorization ?? '');
+    const typeId = auth.startsWith('Bearer ') ? this.tokenTypes.get(auth.slice(7)) : undefined;
+    if (!typeId || !isLoopback(req.socket.remoteAddress)) {
+      req.resume();
+      return sendJson(res, 401, { code: 'not_granted', message: 'The Type API takes the OPEN_ARTIFACT_TYPE_TOKEN of a server this daemon started.' });
+    }
+    const get = req.method === 'GET';
+    const body = get ? {} : await readJsonBody(req);
+    if (get) req.resume();
+    const theirs = (raw: unknown): ArtifactRecord => {
+      const id = artifactIdOf(String(raw ?? ''));
+      const record = id ? this.store.get(id) : null;
+      // Another type's artifact is as good as none.
+      if (!record || record.type !== typeId) throw new OpenArtifactError('not_found', `No artifact ${String(raw)} of type ${typeId}.`);
+      return record;
+    };
+    switch (name) {
+      case TYPE_API_ROUTES.artifact: {
+        const record = theirs(url.searchParams.get('id'));
+        const answer: TypeApiArtifact = {
+          id: record.id,
+          url: artifactUrl(record.id),
+          root: record.root,
+          title: record.title,
+          owner: record.owner ? { label: `${record.owner.harness}${record.owner.session ? ` · ${record.owner.session}` : ''}`, harness: record.owner.harness } : null,
+          agentName: this.agentNameOf(record),
+          view_url: this.viewUrl(record.id),
+        };
+        return sendJson(res, 200, answer);
+      }
+      case TYPE_API_ROUTES.wake: {
+        const request = body as Partial<TypeApiWakeRequest>;
+        const record = theirs(request.id);
+        const threads = Array.isArray(request.threads) ? request.threads.filter((t): t is WakeThread => !!t && typeof t === 'object' && !!t.id) : [];
+        const requests = Array.isArray(request.requests) ? request.requests.filter((r) => !!r && typeof r === 'object' && typeof r.text === 'string') : [];
+        if (!threads.length && !requests.length) throw new OpenArtifactError('invalid_argument', 'wake needs threads or requests.');
+        const waits: Array<Promise<WakeResult>> = [
+          ...threads.map((thread) => this.wake.queue(record.id, { thread })),
+          ...requests.map((r) => this.wake.queue(record.id, { request: { ...r, id: r.id ?? `req_${Date.now().toString(36)}` } as WakeRequestItem })),
+        ];
+        const result = (await Promise.all(waits)).at(-1)!;
+        const status: WakeStatus =
+          result.via === 'live' ? (result.status === 'resumed' ? 'resumed' : result.status === 'failed' ? 'failed' : 'delivered') : result.via === 'wait' ? 'delivered' : result.via === 'inbox' ? 'inbox' : 'failed';
+        const answer: TypeApiWakeResult = { status, via: result.via };
+        return sendJson(res, 200, answer);
+      }
+      case TYPE_API_ROUTES.presence:
+        return sendJson(res, 200, this.presenceOf(theirs(url.searchParams.get('id'))));
+      case TYPE_API_ROUTES.events: {
+        const ids = new Set(
+          String(url.searchParams.get('ids') ?? '')
+            .split(',')
+            .filter(Boolean)
+            .map((raw) => theirs(raw).id),
+        );
+        res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive' });
+        res.write(': open-artifact\n\n');
+        const client: TypeEventClient = { res, typeId, ids };
+        this.typeEventClients.add(client);
+        for (const id of ids) {
+          const record = this.store.get(id);
+          if (record) res.write(`event: presence\ndata: ${JSON.stringify({ type: 'presence', id, ...this.presenceOf(record) })}\n\n`);
+        }
+        // The response's close: the request's fires once its (empty) body is read.
+        res.on('close', () => this.typeEventClients.delete(client));
+        return;
+      }
+      case TYPE_API_ROUTES.touch: {
+        const record = theirs(body.id);
+        const title = typeof body.title === 'string' ? body.title.trim().slice(0, 200) : '';
+        this.contentStamps.delete(record.root);
+        const author = String(body.author ?? '');
+        const patch: Partial<ArtifactRecord> = {};
+        if (title && title !== record.title) patch.title = title;
+        const paths = Array.isArray(body.paths) ? body.paths.filter((x): x is string => typeof x === 'string').slice(0, 200) : [];
+        // Page writes while the agent's write action runs are the agent's doing, not the person's.
+        if (author && author !== 'agent' && !this.isAgentActing(record.id)) {
+          const at = new Date().toISOString();
+          patch.lastUserEditAt = at;
+          if (paths.length) patch.userEdits = userEditsAfter(record, paths, at);
+        }
+        if (Object.keys(patch).length) this.store.update(record.id, patch);
+        this.broadcast({ type: 'artifacts/changed', id: record.id, author, paths });
+        return sendJson(res, 200, { ok: true });
+      }
+      case TYPE_API_ROUTES.task: {
+        // Long actions report here: progress is logged; the end goes to the agent that started the action.
+        const report = body as Partial<TypeApiTask>;
+        const task = typeof report.task === 'string' ? report.task.slice(0, 200) : '';
+        if (!task) throw new OpenArtifactError('invalid_argument', 'task needs the task id.');
+        const error = report.error === undefined || report.error === null ? '' : typeof report.error === 'string' ? report.error : JSON.stringify(report.error);
+        this.log(`type ${typeId} task ${task}: ${report.done ? 'done' : 'progress'}${error ? ` (error ${error.slice(0, 200)})` : ''}`);
+        if (report.done) this.taskEnded(typeId, { ...report, task } as TypeApiTask);
+        return sendJson(res, 200, { ok: true });
+      }
+      default:
+        throw new OpenArtifactError('not_found', `No Type API call ${name}.`);
+    }
+  }
+
+  // ---- Library API ------------------------------------------------------------------------------------------------
+
+  private async api(req: IncomingMessage, res: ServerResponse, name: string, url: URL): Promise<void> {
+    if (name.startsWith('type.')) {
+      try {
+        return await this.typeApi(req, res, name.slice('type.'.length), url);
+      } catch (error) {
+        if (!res.headersSent) sendJson(res, statusOf(error), errorBody(error));
+        return;
+      }
+    }
+    // HEAD reads as GET does (node leaves the body out).
+    const get = req.method === 'GET' || req.method === 'HEAD';
+    if (!get && !this.writeAllowed(req)) {
+      req.resume();
+      return sendJson(res, 403, { code: 'not_granted', message: 'Writes come from this origin (JSON) or carry the daemon token.' });
+    }
+    if (get) req.resume();
+    try {
+      await this.libraryCall(req, res, name, url, get);
+    } catch (error) {
+      if (!res.headersSent) sendJson(res, statusOf(error), errorBody(error));
+    }
+  }
+
+  private async libraryCall(req: IncomingMessage, res: ServerResponse, name: string, url: URL, get: boolean): Promise<void> {
+    const R = LIBRARY_ROUTES;
+    switch (name) {
+      case R.artifacts: {
+        const type = url.searchParams.get('type');
+        const harness = url.searchParams.get('harness');
+        const list = this.store.list().filter((a) => (!type || a.type === type) && (!harness || a.owner?.harness === harness));
+        return sendJson(res, 200, { artifacts: list.map((a) => this.artifactView(a)) });
+      }
+      case R.artifact: {
+        const record = this.store.require(url.searchParams.get('id'));
+        const detail: ArtifactDetail = { ...this.artifactView(record), bytes: this.folderBytes(record.root) };
+        return sendJson(res, 200, detail);
+      }
+      case R.types: {
+        const workspace = url.searchParams.get('workspace') || undefined;
+        const answer: TypesResponse = {
+          roots: this.types.roots(workspace).map((r) => ({ scope: r.scope, dir: r.root })),
+          types: this.types.list(workspace, { includeShadowed: true }).map((t) => this.typeView(t)),
+        };
+        return sendJson(res, 200, answer);
+      }
+      case 'type.icon': {
+        const type = this.types.get(String(url.searchParams.get('id') ?? ''), url.searchParams.get('workspace') || undefined);
+        if (!type?.icon) throw new OpenArtifactError('not_found', 'No icon.');
+        return this.sendFile(req, res, inside(type.dir, type.icon), 'no-cache');
+      }
+      case R.harnesses:
+        return sendJson(res, 200, this.harnesses.info());
+      case R.events: {
+        res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive' });
+        res.write(': hello\n\n');
+        this.eventClients.add(res);
+        // The response's close: the request's fires once its (empty) body is read.
+        res.on('close', () => this.eventClients.delete(res));
+        return;
+      }
+      case R.share: {
+        const body = get ? {} : await readJsonBody<ShareRequest & { url?: string }>(req);
+        const record = this.store.require(get ? url.searchParams.get('id') : (body.id ?? body.url));
+        const access = await this.shareOf(record);
+        if (get) return sendJson(res, 200, await access.view());
+        // The type server checks each part; this passes on only what has the right shape.
+        const change: Omit<ShareRequest, 'id'> = {
+          ...(typeof body.lan === 'boolean' ? { lan: body.lan } : {}),
+          ...(body.links && typeof body.links === 'object' && !Array.isArray(body.links) ? { links: body.links } : {}),
+          ...(Array.isArray(body.reset) ? { reset: body.reset } : {}),
+          ...(body.guests && typeof body.guests === 'object' && !Array.isArray(body.guests) ? { guests: body.guests } : {}),
+        };
+        const view = await access.update(change);
+        this.broadcast({ type: 'artifacts/changed', id: record.id });
+        return sendJson(res, 200, view);
+      }
+      case R.archive:
+        return this.sendArchive(req, res, this.store.require(url.searchParams.get('id')));
+      case R.thumbnail: {
+        const record = this.store.require(url.searchParams.get('id'));
+        if (get) {
+          let image: Buffer;
+          try {
+            image = readFileSync(this.thumbnailFile(record.id));
+          } catch {
+            throw new OpenArtifactError('not_found', 'No thumbnail yet.');
+          }
+          // The address carries the content stamp (v=), so a new picture is a new address.
+          res
+            .writeHead(200, {
+              'Content-Type': 'image/jpeg',
+              'Cache-Control': url.searchParams.get('v') ? 'private, max-age=31536000, immutable' : 'no-store',
+              'Content-Length': image.length,
+            })
+            .end(image);
+          return;
+        }
+        const image = await readBody(req, 4 << 20);
+        if (image.length < 4 || image[0] !== 0xff || image[1] !== 0xd8) throw new OpenArtifactError('invalid_argument', 'The body is not a JPEG.');
+        const v = url.searchParams.get('v') || this.contentAt(record);
+        ensureDir(files.thumbnails());
+        writeFileSync(this.thumbnailFile(record.id), image);
+        writeJson(join(files.thumbnails(), `${record.id}.json`), { v, at: new Date().toISOString() });
+        return sendJson(res, 200, { thumbnail: v });
+      }
+      case R.restore: {
+        const body = await readJsonBody<{ id: string }>(req);
+        const record = this.store.restore(artifactIdOf(body.id));
+        if (!record) throw new OpenArtifactError('not_found', 'Nothing to restore.');
+        return sendJson(res, 200, this.artifactView(record));
+      }
+      case R.open: {
+        const body = await readJsonBody<{ id: string; url: string; host: boolean }>(req);
+        const record = this.touchOpened(this.store.require(body.id ?? body.url));
+        const page = await this.openPage(record, { lang: langOf(req) });
+        const shown =
+          body.host !== false && record.owner
+            ? await this.harnesses.hostOpen(record.owner, { url: artifactUrl(record.id), view_url: this.viewUrl(record.id), title: record.title })
+            : false;
+        return sendJson(res, 200, { view_url: this.viewUrl(record.id), page: page.page, page_url: page.page_url, shownInHarness: shown });
+      }
+      case R.preview: {
+        // Start its page without counting as an opening and without the Shell (for thumbnails); the idle sweep stops it.
+        const body = await readJsonBody<{ id: string; url: string }>(req);
+        const record = this.store.require(body.id ?? body.url);
+        const page = await this.openPage(record, { lang: langOf(req) });
+        return sendJson(res, 200, { page_url: page.page_url, view_url: this.viewUrl(record.id) });
+      }
+      case R.create: {
+        // From the home page: a type and a title, no session. The artifact belongs to nobody until an agent adopts it.
+        const body = await readJsonBody<CreateArtifactRequest>(req);
+        const typeId = String(body.type ?? '').replace(/^open-artifact:\/\/type\//, '');
+        if (!typeId) throw new OpenArtifactError('invalid_argument', 'type: the type id (or open-artifact://type/<id>) to create from.');
+        const folder = typeof body.folder === 'string' && body.folder.trim() ? body.folder.trim() : undefined;
+        if (folder && !isAbsolute(folder) && !folder.startsWith('~')) throw new OpenArtifactError('invalid_argument', 'folder: an absolute path (or ~/...).');
+        const caller: SessionRef = { harness: 'open-artifact-home', session: null, workspace: this.settings.homeWorkspace };
+        const made = await this.tools.call(
+          'Artifact',
+          { action: 'publish', type_url: `open-artifact://type/${typeId}`, title: String(body.title ?? '').slice(0, 200), ...(folder ? { folder: expandHome(folder) } : {}) },
+          caller,
+        );
+        if (made.error) return sendJson(res, statusOf(new OpenArtifactError(made.error.code, made.error.message)), made.error);
+        const record = this.store.update(artifactIdOf(made.url)!, { owner: null, createdBy: null });
+        const view = this.artifactView(record);
+        return sendJson(res, 201, { ...view, prompt: body.prompt ? `${body.prompt}\n\n${takeOverPrompt(record, view.typeTitle)}` : takeOverPrompt(record, view.typeTitle) });
+      }
+      case R.update: {
+        const body = await readJsonBody<UpdateArtifactRequest & { url: string }>(req);
+        const record = this.store.require(body.id ?? body.url);
+        const patch: Partial<ArtifactRecord> = {};
+        if (typeof body.title === 'string' && body.title.trim()) patch.title = body.title.trim().slice(0, 200);
+        if (typeof body.pinned === 'boolean') patch.pinnedAt = body.pinned ? new Date().toISOString() : null;
+        return sendJson(res, 200, this.artifactView(this.store.update(record.id, patch)));
+      }
+      case R.duplicate: {
+        const body = await readJsonBody<{ id: string; url: string }>(req);
+        return sendJson(res, 201, this.artifactView(this.duplicate(this.store.require(body.id ?? body.url))));
+      }
+      case R.delete: {
+        const body = await readJsonBody<{ id: string; url: string }>(req);
+        const record = this.store.require(body.id ?? body.url);
+        this.store.remove(record.id);
+        return sendJson(res, 200, { deleted: record.id, folderKept: record.root });
+      }
+      case R.ask: {
+        const body = await readJsonBody<AskRequest & { url: string }>(req);
+        const record = this.store.require(body.id ?? body.url);
+        if (typeof body.text !== 'string' || !body.text.trim()) throw new OpenArtifactError('invalid_argument', 'text: what to ask.');
+        const result = await this.wake.ask(record.id, body.text.trim().slice(0, 4000), typeof body.label === 'string' ? body.label : undefined);
+        return sendJson(res, 200, result);
+      }
+      case R.adopt: {
+        const body = await readJsonBody<Record<string, unknown> & { caller?: Partial<SessionRef> }>(req);
+        const { caller, ...args } = body;
+        const result = await this.tools.call('Artifact', { ...args, action: 'adopt' }, caller ?? {});
+        return sendJson(res, result.error ? statusOf(new OpenArtifactError(result.error.code, result.error.message)) : 200, result);
+      }
+      case R.tools: {
+        // For an adapter without a WebSocket: the tools' schemas and the always-on note.
+        const workspace = url.searchParams.get('workspace') || undefined;
+        return sendJson(res, 200, { tools: this.tools.definitions(), instructions: this.tools.instructions(workspace) });
+      }
+      case 'tools.call': {
+        const body = await readJsonBody<{ name: string; arguments: Record<string, unknown>; caller: Partial<SessionRef> }>(req);
+        return sendJson(res, 200, await this.tools.call(String(body.name ?? ''), body.arguments ?? {}, body.caller ?? {}));
+      }
+      case 'hook': {
+        // A harness hook (`open-artifact hook <event>`): remember the session and its processes, hand it what waited.
+        const body = await readJsonBody<{ harness: string; session: string; workspace: string; pids: number[] }>(req);
+        const ref: SessionRef = { harness: String(body.harness ?? 'mcp'), session: body.session ?? null, workspace: body.workspace ?? null };
+        for (const pid of Array.isArray(body.pids) ? body.pids : []) this.harnesses.registerPid(Number(pid), ref);
+        this.harnesses.remember(ref);
+        const keys = [sessionKeyOf(ref), sessionKeyOf({ harness: ref.harness, session: null, workspace: ref.workspace })].filter((k): k is string => !!k);
+        const messages = [...new Set(keys)].flatMap((key) => this.inbox.take(key)).map((m) => m.text);
+        return sendJson(res, 200, { messages });
+      }
+      case 'session.resolve': {
+        // Which session a hook registered for these processes (an MCP bridge asks for its own, to watch its wakes).
+        const body = await readJsonBody<{ pids?: number[] }>(req);
+        const pids = (Array.isArray(body.pids) ? body.pids : []).map(Number).filter((n) => n > 1);
+        return sendJson(res, 200, { session: this.harnesses.byPid(pids) });
+      }
+      case 'session.attach':
+        return sendJson(res, 200, this.harnesses.pollAttach(await this.pollBody(req)));
+      case 'session.wait': {
+        const body = await this.pollBody(req);
+        const abort = new AbortController();
+        res.on('close', () => abort.abort());
+        return sendJson(res, 200, await this.harnesses.pollWait(body, abort.signal));
+      }
+      case 'session.status':
+        return sendJson(res, 200, this.harnesses.pollStatus(await this.pollBody(req)));
+      case 'session.detach':
+        return sendJson(res, 200, this.harnesses.pollDetach(await this.pollBody(req)));
+      default:
+        throw new OpenArtifactError('not_found', `No /api/open-artifact.${name}.`);
+    }
+  }
+
+  /** A polling call's body, with the harness from `X-Open-Artifact-Harness` when the body names none. */
+  private async pollBody(req: IncomingMessage): Promise<PollParams> {
+    const body = (await readJsonBody<PollParams>(req)) as PollParams;
+    const header = req.headers['x-open-artifact-harness'];
+    if (!body.harness && typeof header === 'string') body.harness = header;
+    return body;
+  }
+
+  // ---- MCP --------------------------------------------------------------------------------------------------------
+
+  private async mcp(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    if (req.method === 'DELETE') {
+      req.resume();
+      res.writeHead(200).end();
+      return;
+    }
+    if (req.method !== 'POST') {
+      req.resume();
+      res.writeHead(405, { Allow: 'POST' }).end();
+      return;
+    }
+    // The bridge carries the token; a browser page cannot (it has no Authorization to give and its Origin is refused).
+    if (!this.hasToken(req) || req.headers.origin !== undefined) {
+      req.resume();
+      return sendJson(res, 401, { jsonrpc: '2.0', id: null, error: { code: -32001, message: 'Unauthorized: run `open-artifact mcp`, which carries the daemon token.' } });
+    }
+    let body: McpMessage | McpMessage[];
+    try {
+      body = JSON.parse((await readBody(req)).toString('utf8')) as McpMessage | McpMessage[];
+    } catch {
+      return sendJson(res, 400, { jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } });
+    }
+    const caller = callerFromRequest(req, this.harnesses);
+    const one = (message: McpMessage): Promise<McpReply | null> => handleMcp(message, { tools: this.tools, caller, version: VERSION });
+    if (Array.isArray(body)) {
+      const out = (await Promise.all(body.map(one))).filter((reply): reply is McpReply => reply !== null);
+      if (out.length) return sendJson(res, 200, out);
+      res.writeHead(202).end();
+      return;
+    }
+    const out = await one(body);
+    if (out) return sendJson(res, 200, out, { 'Mcp-Session-Id': 'open-artifact' });
+    res.writeHead(202).end();
+  }
+
+  // ---- upgrades ---------------------------------------------------------------------------------------------------
+
+  private onUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): void {
+    socket.on('error', () => undefined);
+    this.lastActivity = Date.now();
+    if (!this.hostAllowed(req) || !this.originOk(req)) {
+      socket.end('HTTP/1.1 403 Forbidden\r\n\r\n');
+      return;
+    }
+    const url = new URL(req.url ?? '/', 'http://local');
+    if (url.pathname === HARNESS_PATH) {
+      // Adapters are processes on this computer: a browser's Origin is not welcome here, nor is the network.
+      if (req.headers.origin !== undefined || !isLoopback(req.socket.remoteAddress)) {
+        socket.end('HTTP/1.1 403 Forbidden\r\n\r\n');
+        return;
+      }
+      const ws = acceptWebSocket(req, socket, head, HARNESS_SUBPROTOCOL);
+      if (ws) this.harnesses.accept(ws);
+      return;
+    }
+    socket.end('HTTP/1.1 404 Not Found\r\n\r\n');
+  }
+}
+
+/** Starts a daemon in this process (`open-artifact daemon run`, tests). */
+export async function startDaemon(options: DaemonOptions = {}): Promise<Daemon> {
+  const daemon = new Daemon(options);
+  await daemon.start();
+  return daemon;
+}
+
+/** Re-exported for callers that only import the daemon. */
+export type { TypeInfo };

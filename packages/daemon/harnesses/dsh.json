@@ -1,0 +1,9 @@
+{
+  "name": "dsh",
+  "title": "DeepSeek Harness",
+  "agentName": "Agent",
+  "level": "L3",
+  "entry": "harness-api",
+  "plugin": "dsh-open-artifact",
+  "wake": ["live", "inbox"]
+}

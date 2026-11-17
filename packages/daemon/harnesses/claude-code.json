@@ -1,0 +1,23 @@
+{
+  "name": "claude-code",
+  "title": "Claude Code",
+  "agentName": "Claude",
+  "level": "L2",
+  "entry": "mcp",
+  "plugin": "open-artifact",
+  "mcp": {
+    "command": "node",
+    "args": [
+      "${CLAUDE_PLUGIN_ROOT}/skills/open-artifact/scripts/open-artifact.mjs",
+      "mcp",
+      "--harness",
+      "claude-code"
+    ]
+  },
+  "sessionEnv": "CLAUDE_CODE_SESSION_ID",
+  "skillsDir": "~/.claude/skills",
+  "wake": [
+    "inbox"
+  ],
+  "open": "browser"
+}

@@ -1,0 +1,11 @@
+{
+  "name": "chatgpt",
+  "title": "ChatGPT",
+  "agentName": "ChatGPT",
+  "level": "L1",
+  "entry": "mcp",
+  "plugin": "open-artifact",
+  "wake": [
+    "inbox"
+  ]
+}

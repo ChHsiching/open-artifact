@@ -1,0 +1,55 @@
+{
+  "name": "dsh-open-artifact",
+  "version": "0.7.0",
+  "description": "Open Artifact in DeepSeek Harness: the Artifact, ArtifactData and ArtifactComments tools, comments on artifact pages waking the session that owns them, the Open Artifact page in the sidebar listing the open-artifact library, artifacts the agent opens shown in the session's Browser, and /open-artifact <type> to make a new one.",
+  "private": true,
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "vendor",
+    "locale",
+    "skills",
+    "icon.svg",
+    "cordis.patch.yml",
+    "NOTICE"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --test test/*.test.ts"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-api-session-controller",
+        "@deepseek-ai/dsh-api-workspace-controller",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-sidebar",
+        "@deepseek-ai/dsh-client-ui-sidebar-right",
+        "@deepseek-ai/dsh-client-ui-workspace"
+      ]
+    }
+  },
+  "engines": {
+    "dsh": ">=0.2.0-0",
+    "node": ">=22.18"
+  },
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@open-artifact/daemon": "0.1.0",
+    "@open-artifact/protocol": "0.1.0",
+    "@open-artifact/ui": "0.1.0"
+  }
+}

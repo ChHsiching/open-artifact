@@ -1,0 +1,23 @@
+{
+  "name": "codex",
+  "title": "Codex",
+  "agentName": "Codex",
+  "level": "L2",
+  "entry": "mcp",
+  "plugin": "open-artifact",
+  "mcp": {
+    "command": "node",
+    "args": [
+      "${PLUGIN_ROOT}/skills/open-artifact/scripts/open-artifact.mjs",
+      "mcp",
+      "--harness",
+      "codex"
+    ]
+  },
+  "sessionEnv": "CODEX_THREAD_ID",
+  "skillsDir": "~/.agents/skills",
+  "wake": [
+    "inbox"
+  ],
+  "open": "browser"
+}

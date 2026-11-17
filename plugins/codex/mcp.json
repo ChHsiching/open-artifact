@@ -1,0 +1,15 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "open-artifact": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "${PLUGIN_ROOT}/skills/open-artifact/scripts/open-artifact.mjs",
+        "mcp",
+        "--harness",
+        "codex"
+      ]
+    }
+  }
+}

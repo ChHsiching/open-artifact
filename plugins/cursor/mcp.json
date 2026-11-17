@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "open-artifact": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "${CURSOR_PLUGIN_ROOT}/skills/open-artifact/scripts/open-artifact.mjs",
+        "mcp",
+        "--harness",
+        "cursor"
+      ]
+    }
+  }
+}

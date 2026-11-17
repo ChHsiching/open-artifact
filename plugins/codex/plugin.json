@@ -1,0 +1,47 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "open-artifact",
+  "version": "0.1.0",
+  "description": "Make slide decks, design canvases, and whiteboards as folders of files that open in one local page where the person views, edits, comments and exports; comments sent from the page come back to the agent. Runs locally on Node.js 22 or later.",
+  "author": {
+    "name": "Jim Liu 宝玉",
+    "url": "https://github.com/JimLiu"
+  },
+  "homepage": "https://github.com/JimLiu/open-artifacts",
+  "repository": "https://github.com/JimLiu/open-artifacts",
+  "license": "Apache-2.0",
+  "keywords": [
+    "artifacts",
+    "slides",
+    "design",
+    "whiteboard"
+  ],
+  "extensions": {
+    "com.openai": {
+      "requires_local_executor": true,
+      "hooks": "./hooks/hooks.json",
+      "interface": {
+        "displayName": "Open Artifact",
+        "shortDescription": "Decks, designs and boards you comment on",
+        "longDescription": "Make slide decks, design canvases, and whiteboards as folders of files that open in one local page where the person views, edits, comments and exports; comments sent from the page come back to the agent. Runs locally on Node.js 22 or later.",
+        "developerName": "Jim Liu 宝玉",
+        "category": "Creativity",
+        "capabilities": [
+          "Interactive",
+          "Read",
+          "Write"
+        ],
+        "websiteURL": "https://github.com/JimLiu/open-artifacts",
+        "supportURL": "https://github.com/JimLiu/open-artifacts/issues",
+        "defaultPrompt": [
+          "/open-artifact slides a 6-slide pitch for this project",
+          "/open-artifact design three landing page options",
+          "/open-artifact whiteboard map this repo's architecture"
+        ],
+        "brandColor": "#2f5bb7",
+        "composerIcon": "./assets/icon.svg",
+        "logo": "./assets/icon.svg"
+      }
+    }
+  }
+}

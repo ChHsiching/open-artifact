@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "type": "command",
+        "bash": "node \"${PLUGIN_ROOT}/skills/open-artifact/scripts/open-artifact.mjs\" hook sessionStart --harness copilot",
+        "powershell": "node \"$env:PLUGIN_ROOT/skills/open-artifact/scripts/open-artifact.mjs\" hook sessionStart --harness copilot",
+        "timeoutSec": 30
+      }
+    ],
+    "userPromptTransformed": [
+      {
+        "type": "command",
+        "bash": "node \"${PLUGIN_ROOT}/skills/open-artifact/scripts/open-artifact.mjs\" hook userPromptTransformed --harness copilot",
+        "powershell": "node \"$env:PLUGIN_ROOT/skills/open-artifact/scripts/open-artifact.mjs\" hook userPromptTransformed --harness copilot",
+        "timeoutSec": 30
+      }
+    ],
+    "agentStop": [
+      {
+        "type": "command",
+        "bash": "node \"${PLUGIN_ROOT}/skills/open-artifact/scripts/open-artifact.mjs\" hook agentStop --harness copilot",
+        "powershell": "node \"$env:PLUGIN_ROOT/skills/open-artifact/scripts/open-artifact.mjs\" hook agentStop --harness copilot",
+        "timeoutSec": 30
+      }
+    ]
+  }
+}

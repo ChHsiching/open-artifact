@@ -1,0 +1,32 @@
+{
+  "name": "@open-artifact/server-sdk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared code for Open Artifact type servers: the server skeleton, the Type API client, LAN sharing and a minimal WebSocket server.",
+  "bin": {
+    "open-artifact-frame-host": "bin/frame-host.ts"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./serve": "./src/serve.ts",
+    "./daemon": "./src/daemon.ts",
+    "./lan": "./src/lan.ts",
+    "./ws": "./src/ws.ts",
+    "./frame": "./src/frame/index.ts",
+    "./db": "./src/frame/db.ts",
+    "./comments": "./src/frame/comments.ts"
+  },
+  "dependencies": {
+    "@open-artifact/protocol": "0.1.0"
+  },
+  "devDependencies": {
+    "@open-artifact/editor-kit": "0.1.0",
+    "@open-artifact/runtime": "0.1.0",
+    "@open-artifact/ui": "0.1.0"
+  },
+  "engines": {
+    "node": ">=22.18"
+  },
+  "license": "Apache-2.0"
+}
