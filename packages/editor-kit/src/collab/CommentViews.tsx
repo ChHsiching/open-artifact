@@ -294,13 +294,15 @@ export interface CommentPopoverProps {
   corner?: Point;
   /** The surface it is kept inside (px, from the layer's top-left corner). */
   viewport: Size;
+  /** Its width (px; default 330). */
+  width?: number;
   onEscape(): void;
   /** A function gets the height the card may take, and the popover keeps to it. */
   children: ReactNode | ((maxHeight: number) => ReactNode);
 }
 
 
-export function CommentPopover({ pin, corner, viewport, onEscape, children }: CommentPopoverProps): ReactNode {
+export function CommentPopover({ pin, corner, viewport, width: wanted = CARD_WIDTH, onEscape, children }: CommentPopoverProps): ReactNode {
   const ref = useRef<HTMLDivElement>(null);
   const [height, setHeight] = useState(0);
   useLayoutEffect(() => {
@@ -311,7 +313,7 @@ export function CommentPopover({ pin, corner, viewport, onEscape, children }: Co
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
-  const width = Math.max(0, Math.min(CARD_WIDTH, viewport.width - 2 * EDGE));
+  const width = Math.max(0, Math.min(wanted, viewport.width - 2 * EDGE));
   let left: number;
   let top: number;
   let maxHeight: number | undefined;

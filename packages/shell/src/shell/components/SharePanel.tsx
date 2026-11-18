@@ -77,6 +77,7 @@ const FORMAT_ICON: Record<FormatKind, ReactNode> = {
   pdf: <FileTile color="#e0342b" text="PDF" size={8} y={14.6} />,
   document: <FileTile color="#2b579a" text="W" size={11} y={15.4} />,
   slides: <Presentation className="size-[18px]" />,
+  spreadsheet: <FileTile color="#1d7044" text="X" size={11} y={15.4} />,
   image: <Image className="size-[18px]" />,
   html: <Code className="size-[18px]" />,
   video: <Video className="size-[18px]" />,

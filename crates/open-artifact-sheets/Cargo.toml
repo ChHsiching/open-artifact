@@ -1,0 +1,17 @@
+[package]
+name = "open-artifact-sheets"
+description = "Sheets type workbook engine: sheets, rows, columns and cells by id, the operations that change them, formulas and their functions, sync sessions and xlsx export."
+edition = "2021"
+license.workspace = true
+version.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+wasm-bindgen.workspace = true
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = { version = "=1.0.150", features = ["preserve_order", "float_roundtrip"] }
+indexmap = "=2.14.0"
+hashbrown = { version = "=0.17.1", default-features = false, features = ["default-hasher", "inline-more"] }
+regex = { version = "1", default-features = false, features = ["std", "unicode"] }

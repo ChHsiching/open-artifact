@@ -28,6 +28,7 @@ import {
   type McpCapability,
   type Peer,
   type RoomCapability,
+  type SheetCapability,
   type RoomMessage,
   type UserCapability,
 } from './capabilities.ts';
@@ -67,6 +68,7 @@ import {
   type ServerEvents,
   type SessionResponse,
 } from './http-api.ts';
+import { SHEET_API, SHEET_EVENT, type ImportFileResponse, type SheetFrame, type SheetSendResponse, type WidgetResponse } from './sheet-api.ts';
 
 /**
  * Why the page's access changed: `removed` (the server now refuses this
@@ -429,6 +431,24 @@ export function createLocalProvider(options: LocalProviderOptions = {}): Capabil
           }
         },
         listTools: (server) => json<McpToolsResponse>(API.mcpTools, { cache: 'no-store' }, server === undefined ? undefined : { server }),
+      };
+      return capability;
+    },
+
+    async sheet() {
+      const { stores } = await getSession();
+      if (!stores?.sheet) return null;
+      const capability: SheetCapability = {
+        read: (request) => post(SHEET_API.read, request),
+        send: (request) => post<SheetSendResponse>(SHEET_API.send, request),
+        widget: (request) => post<WidgetResponse>(SHEET_API.widget, request),
+        importFile: (file, name) =>
+          json<ImportFileResponse>(
+            SHEET_API.importFile,
+            { method: 'POST', headers: { 'content-type': file.type || 'application/octet-stream' }, body: file },
+            { name },
+          ),
+        onFrame: (listener: (frame: SheetFrame) => void) => subscribe(SHEET_EVENT, listener),
       };
       return capability;
     },

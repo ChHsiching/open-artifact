@@ -12,6 +12,7 @@ import { connectorsFile, parseConnectors } from './connectors.ts';
 import { readDbFiles } from './db-host.ts';
 import { staleCopyFindings } from './ds-sync.ts';
 import { ArtifactStore } from './store.ts';
+import { EDITS_FILE, META_FILE, SHEET_DIR } from './sheets/store.ts';
 import { TYPES, type CheckContext, type CheckFinding, type TypeName } from './types.ts';
 
 /** Every file under `project/` with its size, and the symbolic links met (never followed). */
@@ -107,10 +108,24 @@ export async function checkContextOf(root: string, type: TypeName): Promise<Chec
   return context;
 }
 
+/** A Sheet's meta and edit log (`sheet/`), the files its check reads. */
+function readSheetFiles(root: string): Map<string, string> {
+  const files = new Map<string, string>();
+  for (const name of [META_FILE, EDITS_FILE]) {
+    try {
+      files.set(name, readFileSync(join(root, SHEET_DIR, name), 'utf8'));
+    } catch {
+      // Not there yet.
+    }
+  }
+  return files;
+}
+
 /** Checks one artifact folder: the text files the check read, and the findings. */
 export async function runCheck(root: string, type: TypeName): Promise<{ files: Map<string, string>; findings: CheckFinding[] }> {
   // A db-backed type is checked from its documents (paths already start with `db/` in findings).
-  const files = TYPES[type].store === 'db' ? readDbFiles(root) : await new ArtifactStore(root).readProject();
+  const store = TYPES[type].store;
+  const files = store === 'db' ? readDbFiles(root) : store === 'workbook' ? readSheetFiles(root) : await new ArtifactStore(root).readProject();
   const findings = TYPES[type].check(files, await checkContextOf(root, type));
   try {
     findings.push(...staleCopyFindings(root, type));

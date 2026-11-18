@@ -49,7 +49,7 @@ export function avatarColor(key: string): string {
 }
 
 /** What an export row's icon shows, by its label (the page names the format there). */
-export type FormatKind = 'folder' | 'pdf' | 'document' | 'slides' | 'image' | 'html' | 'video' | 'text' | 'file';
+export type FormatKind = 'folder' | 'pdf' | 'document' | 'slides' | 'spreadsheet' | 'image' | 'html' | 'video' | 'text' | 'file';
 
 /** The {@link FormatKind} of an export label (a `.zip` of images is still images: only "folder" is the folder). */
 export function formatKind(label: string): FormatKind {
@@ -57,6 +57,7 @@ export function formatKind(label: string): FormatKind {
   if (/pdf/i.test(label)) return 'pdf';
   if (/word|docx/i.test(label)) return 'document';
   if (/powerpoint|pptx|slides/i.test(label)) return 'slides';
+  if (/excel|xlsx|csv|spreadsheet/i.test(label)) return 'spreadsheet';
   if (/png|jpe?g|image|svg/i.test(label)) return 'image';
   if (/html|web page/i.test(label)) return 'html';
   if (/video|mp4|gif/i.test(label)) return 'video';

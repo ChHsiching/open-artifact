@@ -18,7 +18,9 @@
     "@open-artifact/design-system-core": "0.2.2",
     "@open-artifact/slides-core": "0.2.2",
     "@open-artifact/whiteboard-core": "0.2.2",
-    "@open-artifact/data-core": "0.2.2"
+    "@open-artifact/data-core": "0.2.2",
+    "@open-artifact/sheets-core": "0.2.2",
+    "@open-artifact/wasm-sheets": "0.2.2"
   },
   "license": "Apache-2.0"
 }

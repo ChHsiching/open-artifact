@@ -38,6 +38,7 @@ const EDITORS = {
   whiteboard: 'packages/whiteboard-editor',
   data: 'packages/data-editor',
   slides: 'packages/slides-editor',
+  sheets: 'packages/sheets-editor',
 };
 
 const only = (() => {
@@ -78,6 +79,8 @@ async function buildCli() {
     logLevel: 'warning',
   });
   await chmod(outfile, 0o755);
+  // The workbook engine, read from beside the bundle (`@open-artifact/wasm-sheets/node`).
+  await cp(join(ROOT, 'packages/wasm-sheets/generated/open_artifact_sheets_bg.wasm'), join(OUT, 'sheets.wasm'));
 }
 
 async function buildEditors() {

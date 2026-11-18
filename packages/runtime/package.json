@@ -8,7 +8,8 @@
     ".": "./src/index.ts",
     "./capabilities": "./src/capabilities.ts",
     "./http-api": "./src/http-api.ts",
-    "./untrusted": "./src/untrusted.ts"
+    "./untrusted": "./src/untrusted.ts",
+    "./sheet-api": "./src/sheet-api.ts"
   },
   "dependencies": {
     "@open-artifact/protocol": "0.2.2"

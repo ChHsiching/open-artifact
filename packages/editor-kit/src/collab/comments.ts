@@ -67,6 +67,8 @@ export interface CommentsAdapter<A> {
   sendToAgent?(thread: CommentThread, anchor: A): Promise<boolean>;
   /** Told of threads as the host hands them over: the list, every change and every write. */
   heard?(threads: readonly CommentThread[]): void;
+  /** A new thread's card opens once it is saved (default: always); `sent`: it went to the agent too. */
+  opensCreated?(sent: boolean): boolean;
 }
 
 /** The comments store. */
@@ -294,15 +296,16 @@ export function createComments<A>(adapter: CommentsAdapter<A>): CommentsControll
           location: adapter.location?.(anchor) ?? {},
           text: body,
         });
+        const sends = Boolean(options?.send) && canSendToAgent();
         store.setState((state) => ({
           threads: state.threads.some((t) => t.id === thread.id) ? state.threads : [...state.threads, thread],
           draft: null,
           draftText: '',
           sendNew: false,
-          active: thread.id,
+          active: adapter.opensCreated?.(sends) === false ? null : thread.id,
         }));
         adapter.heard?.([thread]);
-        if (options?.send && canSendToAgent()) await controller.sendToAgent(thread.id);
+        if (sends) await controller.sendToAgent(thread.id);
         return true;
       } catch (error) {
         failed(error);

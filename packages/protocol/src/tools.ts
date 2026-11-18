@@ -207,7 +207,7 @@ const ARTIFACT_SCHEMA: ToolInputSchema = {
     },
     intent: {
       type: 'string',
-      description: 'quickstart: what is being made (design, design-system, slides, whiteboard, document, data, other), or a few words about it.',
+      description: 'quickstart: what is being made (design, design-system, slides, whiteboard, document, data, sheets, other), or a few words about it.',
     },
     scope: {
       type: 'string',

@@ -10,8 +10,20 @@
  * Every method is asynchronous and may reject with an {@link ArtifactError}.
  */
 
+import type {
+  ImportFileResponse,
+  SheetFrame,
+  SheetReadAnswers,
+  SheetReadRefusal,
+  SheetReadRequest,
+  SheetSendRequest,
+  SheetSendResponse,
+  WidgetRequest,
+  WidgetResponse,
+} from './sheet-api.ts';
+
 /** Version of the capability contract described in this file. */
-export const CONTRACT_VERSION = '1.3.0';
+export const CONTRACT_VERSION = '1.4.0';
 
 /* -------------------------------------------------------------------------- */
 /* Errors                                                                     */
@@ -689,6 +701,26 @@ export interface McpCapability {
 }
 
 /* -------------------------------------------------------------------------- */
+/* sheet: a workbook kept as an edit log                                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The `sheet` capability, granted to types whose manifest declares
+ * `store: "workbook"`. The page runs its own workbook engine and keeps it in
+ * step with the server's edit log: it loads the log with `read`, hears every
+ * later edit with `onFrame`, and saves its own with `send`.
+ */
+export interface SheetCapability {
+  read<K extends SheetReadRequest['kind']>(request: Extract<SheetReadRequest, { kind: K }>): Promise<SheetReadAnswers[K] | SheetReadRefusal>;
+  send(request: SheetSendRequest): Promise<SheetSendResponse>;
+  widget(request: WidgetRequest): Promise<WidgetResponse>;
+  /** Keeps a file for the agent to bring in (Import from Excel) and asks it to. */
+  importFile(file: Blob, name: string): Promise<ImportFileResponse>;
+  /** Subscribes to the stream's frames: a snapshot first on every (re)connect, then edits, clocks and widgets. */
+  onFrame(listener: (frame: SheetFrame) => void): () => void;
+}
+
+/* -------------------------------------------------------------------------- */
 /* The map                                                                    */
 /* -------------------------------------------------------------------------- */
 
@@ -704,6 +736,7 @@ export interface CapabilityMap {
   comments: CommentsCapability;
   history: HistoryCapability;
   mcp: McpCapability;
+  sheet: SheetCapability;
 }
 
 export type CapabilityName = keyof CapabilityMap;

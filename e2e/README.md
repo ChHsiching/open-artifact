@@ -94,3 +94,12 @@ Each test file runs its own server, with its own `OPEN_ARTIFACT_TYPE_SERVER_HOME
   - the overview shows the README, and opening the page writes the generated files;
   - an empty system's Welcome page offers "From code", and its request reaches `wait`;
   - an image dropped on an asset group is uploaded into `design-system.json`.
+
+**Sheets** (`sheets.test.mjs`)
+
+- `read` on a folder with no Sheet is refused; a first `update` makes the Sheet (one blank `Sheet1`) and applies its edits.
+- `read` gives values, and formulas with what they work out to; `formatCells` reads back through `readCellFormats`.
+- A stale `base`, an unknown edit and an unknown key are refused as JSON on stderr, and the revision stays.
+- `check` passes the Sheet. `export` writes an Excel file, and `--csv --sheet` the shown values of one sheet.
+- `open` serves the page and reuses the address. In Chrome, the grid shows the sheet, and an `update` sent while it is open reaches the formula bar at once.
+- `comments` lists no threads on a new Sheet; `stop` stops the server.

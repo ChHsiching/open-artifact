@@ -8,7 +8,7 @@ English · [简体中文](README.zh-CN.md)
 > format: one local daemon, one page frame, one `/open-artifact` skill, and a plugin for each agent app.
 
 **Open Artifact lets any coding agent make things people can open, edit and comment on, not just files.** You ask
-your agent for a slide deck, a UI design, a design system, a whiteboard or a data dashboard. The agent writes a plain folder of files.
+your agent for a slide deck, a UI design, a design system, a whiteboard, a spreadsheet or a data dashboard. The agent writes a plain folder of files.
 A local page opens it in a real editor, where you can fix a title, move a sticky note, leave comments, and export. Then
 "Send to agent" sends your comments back to the agent's session.
 
@@ -33,6 +33,7 @@ Everything runs on your machine. No account, no upload, no specific model or ven
 | [Design](artifact-types/design/SKILL.md) | An infinite canvas of live `.dc.html` artboards: screens, components, click-through prototypes, notes, pages | `project/canvas.json` | PNG, JPEG, PDF, HTML |
 | [Design System](artifact-types/design-system/SKILL.md) | A brand book: tokens, colors with contrast checks, type specimens, live component previews, assets. Designs and decks can install it | `project/design-system.json` | — |
 | [Whiteboard](artifact-types/whiteboard/SKILL.md) | A shared infinite board: stickies, shapes, arrows, ink, images, tables, embeds, live cursors, timer | `db/board/meta.json` | PNG |
+| [Sheets](artifact-types/sheets/SKILL.md) | A shared spreadsheet: several sheets of cells, a full formula engine, number formats, borders, merged cells, tables with filters, dropdowns, checkboxes, conditional formats, frozen and grouped rows, charts from cells, CSV import, cell history | `sheet/sheet.json` | XLSX, CSV |
 | [Data](artifact-types/data/SKILL.md) | A live dashboard or report: datasets from CSV/JSON/text uploads, live MCP connector queries or calculations, drawn by a plain HTML/CSS/d3 page; Sources shows where each number comes from; filters, hand edits, remix drafts | `db/dash/meta.json` | PDF, HTML, JSON |
 
 Each type folder is a self-contained skill: `SKILL.md` tells the agent how to write it, `reference/` documents the
@@ -96,6 +97,7 @@ After rebuilding, install again (or copy the folder again) to update. Then, in a
 /open-artifact slides a 6-slide pitch for this repo
 /open-artifact design three landing page options for a coffee shop
 /open-artifact whiteboard a retro board for last sprint
+/open-artifact sheets a monthly budget with categories and totals
 /open-artifact data a dashboard of signups by month from signups.csv
 ```
 
@@ -169,11 +171,12 @@ by trusted publishing. A package npm doesn't have yet is claimed once from a com
 | `packages/design-core`, `design-editor`, `dc` | Design model (`canvas.json`), editor, and the `.dc.html` artboard format. |
 | `packages/design-system-core`, `design-system-editor` | Design System model (token grammar, CSS compiler) and editor. |
 | `packages/whiteboard-core`, `whiteboard-editor` | Whiteboard model (schema, live sync, geometry) and editor. |
+| `packages/sheets-core`, `sheets-editor` | Sheets model (workbook, cells, styles, tables, charts) and editor. |
 | `packages/data-core`, `data-editor` | Data model (datasets, queries, rules, the dashboard page) and editor. |
 | **Shared** | |
 | `packages/live-store` | Live document sync shared by Whiteboard and Data. |
 | `packages/ui`, `editor-kit`, `export-kit` | UI kit (Base UI + Tailwind), what editors share (comments, history, presence…), browser-side exports. |
-| `packages/canvas-engine`, `wasm-*`, `crates/` | WebGL2 canvas engine and the Rust/WebAssembly crates behind it, exports, whiteboard geometry and data rules. |
+| `packages/canvas-engine`, `wasm-*`, `crates/` | WebGL2 canvas engine and the Rust/WebAssembly crates behind it, exports, whiteboard geometry, data rules and the sheets formula engine. |
 | `e2e/` | End-to-end tests. |
 | `scripts/` | `build.mjs`, `build-plugins.mjs`, `build-skill.mjs`, `build-wasm.mjs`. |
 

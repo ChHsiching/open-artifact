@@ -66,12 +66,12 @@ function adoptSheet(shadow: ShadowRoot): void {
   shadow.append(style);
 }
 
-/** Dark when the page says so (data-theme, a dark/light class), else when the system is; and the root font scale. */
+/** Dark when the page says so (data-mode, data-theme, a dark/light class), else when the system is; and the root font scale. */
 export function usePageTheme(win: Window = window): { dark: boolean; remScale: number } {
   const read = (): { dark: boolean; remScale: number } => {
     const doc = win.document;
     const html = doc.documentElement;
-    const attr = html.getAttribute('data-theme') ?? doc.body?.getAttribute('data-theme');
+    const attr = html.getAttribute('data-mode') ?? html.getAttribute('data-theme') ?? doc.body?.getAttribute('data-theme');
     const system = win.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
     const dark = attr === 'dark' || html.classList.contains('dark') || (attr !== 'light' && !html.classList.contains('light') && system);
     const rootSize = Number.parseFloat(win.getComputedStyle(html).fontSize) || 16;
@@ -87,7 +87,7 @@ export function usePageTheme(win: Window = window): { dark: boolean; remScale: n
     const media = win.matchMedia?.('(prefers-color-scheme: dark)');
     media?.addEventListener?.('change', update);
     const observer = new MutationObserver(update);
-    observer.observe(win.document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'class', 'style'] });
+    observer.observe(win.document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'data-mode', 'class', 'style'] });
     if (win.document.body) observer.observe(win.document.body, { attributes: true, attributeFilter: ['data-theme'] });
     return () => {
       media?.removeEventListener?.('change', update);

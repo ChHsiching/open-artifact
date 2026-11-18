@@ -17,6 +17,7 @@ import {
   validateViewContext as validateSlidesContext,
 } from '@open-artifact/slides-core';
 import { DATA_MARKER, checkData, dataHistoryIgnoresPath, dataWritesProblem, scaffoldData, validateDataContext } from './data.ts';
+import { SHEET_MARKER, checkSheet, scaffoldSheet, validateSheetContext } from './sheets/type.ts';
 import { WHITEBOARD_MARKER, checkWhiteboard, scaffoldWhiteboard, validateWhiteboardContext, whiteboardHistoryIgnores } from './whiteboard.ts';
 
 /** True when `dir` holds at least one slide file (`<id>.html`). */
@@ -90,8 +91,11 @@ export interface TypeDefinition {
    * `check` files are relative to. Default `project`.
    */
   contentDir?: string;
-  /** `db`: the type keeps a document store (`db/`, the `db` capability). */
-  store?: 'db';
+  /**
+   * `db`: the type keeps a document store (`db/`, the `db` capability). `workbook`: an edit log the engine makes a
+   * workbook of (`sheet/`, the `sheet` capability), with its own versions in place of the version history.
+   */
+  store?: 'db' | 'workbook';
   /** The type keeps comment threads (`comments.json`, the `comments` capability). */
   comments?: boolean;
   /**
@@ -106,7 +110,7 @@ export interface TypeDefinition {
   writesProblem?(writes: readonly unknown[], read: (path: string) => unknown): WriteRefusal | null;
 }
 
-export type TypeName = 'design' | 'design-system' | 'slides' | 'whiteboard' | 'data';
+export type TypeName = 'design' | 'design-system' | 'slides' | 'whiteboard' | 'data' | 'sheets';
 
 export const TYPES: Record<TypeName, TypeDefinition> = {
   design: {
@@ -187,6 +191,17 @@ export const TYPES: Record<TypeName, TypeDefinition> = {
     comments: true,
     historyIgnores: dataHistoryIgnoresPath,
     writesProblem: dataWritesProblem,
+  },
+  sheets: {
+    name: 'sheets',
+    title: 'Sheets',
+    contentDir: 'sheet',
+    marker: SHEET_MARKER,
+    scaffold: (title) => scaffoldSheet(title),
+    check: (files) => checkSheet(files),
+    validateContext: (value) => validateSheetContext(value),
+    store: 'workbook',
+    comments: true,
   },
 };
 

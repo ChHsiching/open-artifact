@@ -36,6 +36,8 @@ describe('format', () => {
     assert.equal(formatKind('PNG images (.zip)'), 'image', 'a zip of images is images');
     assert.equal(formatKind('ZIP archive'), 'file');
     assert.equal(formatKind('Word document'), 'document');
+    assert.equal(formatKind('Excel'), 'spreadsheet');
+    assert.equal(formatKind('CSV'), 'spreadsheet');
   });
 });
 

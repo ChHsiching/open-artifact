@@ -1,0 +1,592 @@
+import type { SheetId } from '@open-artifact/sheets-core';
+import type { CellId, WorkbookReads } from '../model/workbook.ts';
+import type { OwnFilter, PageState } from '../state/initial-state.ts';
+import type { PageContext, PointerPressed } from '../state/event-reducer.ts';
+import type { PageTransition } from '../state/transitions.ts';
+import type { GridPoint } from '../grid/geometry.ts';
+import type { CellArea, CellSelection } from './model.ts';
+import type { LinesLanding } from './move-lines.ts';
+import type { TableIndexRun } from './table-select.ts';
+import { layoutOfView } from '../grid/layout.ts';
+import { areasOverlap } from '../model/workbook.ts';
+import { areasOfRuleRanges } from '../format/conditional/descriptions.ts';
+import { tablesToOutline } from '../tables/tables-in-view.ts';
+import { drawnOwnFiltersOfSheet } from '../tables/own-filters.ts';
+import { areaOfFilteredTable } from '../tables/finding.ts';
+import { isInSpan, rangeSpansOnScreen, dropIndexAtPointer } from '../grid/geometry.ts';
+import { selectedArea, scrollToShowPosition, isSameCell, selectionBetweenPositions } from './model.ts';
+import { ROW_HEADER_WIDTH } from '../grid/cell-metrics-values.ts';
+import { MOVE_LINES_DRAG_THRESHOLD } from './move-lines.ts';
+import { dragPositionClearOfStuckHeaders, stuckHeadersOfView } from '../grid/sticky-headers.ts';
+import { withNoEffects } from '../state/transitions.ts';
+import { cellShownText } from '../clipboard/text-escaping.ts';
+import { queueEdit, IF_QUEUED_DEFAULTS } from '../model/edit-effects.ts';
+import { columnLetters } from '../model/a1-references.ts';
+import type { ReadsWithTextMeasurer } from '../state/controller.ts';
+/** A table's area and how many of its rows are its header. */
+export interface TableHeaderArea {
+  area: CellArea;
+  rowCountOfHeader: number;
+}
+/** A table whose columns may be moved: which of them may, the ranges of rules over it, and how many columns are frozen. */
+export interface TableToMoveColumnsOf extends TableHeaderArea {
+  mayMove: boolean[];
+  rangesOfRules: CellArea[];
+  frozenColumnCount: number;
+}
+/** The cells at the two ends of a run of columns. */
+export interface CellsAtEnds {
+  first: CellId;
+  last: CellId;
+}
+/** The top left and bottom right cells of a table. */
+export interface CornersOfTable {
+  topLeft: CellId;
+  bottomRight: CellId;
+}
+/** Columns of a table pressed by their grip, to move: the pressed cell, the columns, the run they may move within, the table, and what was selected. */
+export interface ColumnMoveOfPress extends CellsAtEnds {
+  pressedAt: GridPoint;
+  pressed: CellId;
+  within: CellsAtEnds;
+  table: CornersOfTable;
+  selectedAtPress: CellSelection;
+}
+/** How far the pointer is from the left and right edges of the columns it holds. */
+export interface GripOfColumns {
+  fromLeft: number;
+  toRight: number;
+}
+/** Columns of a table dragged by their grip. */
+export interface MovingColumnsOfTableDrag extends ColumnMoveOfPress {
+  kind: 'movingColumnsOfTable';
+  grip: GripOfColumns;
+  landing: LinesLanding | null;
+}
+/** Columns of a table being moved, as drawn: the columns they cross, the order they came from, where they land and how many. */
+export interface ColumnsOfTableMoving {
+  sheetId: SheetId;
+  area: CellArea;
+  cameFrom: number[];
+  landsAt: number;
+  count: number;
+  isToMove: boolean;
+}
+/** Where a grip of a column reaches down the table on screen. */
+export interface ExtentOfGrip {
+  from: number;
+  to: number;
+}
+/** The grip on a table's header cell that moves its column. */
+export interface ColumnGripOfTable {
+  key: string;
+  cell: CellId;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  extent: ExtentOfGrip;
+}
+export function columnsEmptyOutsideArea(
+  view: PageState,
+  reads: ReadsWithTextMeasurer,
+  { topRowIndex: topRowIndex, rowCount: rowCount, leftColumnIndex: leftColumnIndex, columnCount: columnCount }: CellArea,
+): boolean[] {
+  let { sheetId: sheetId } = view;
+  let key = [sheetId, topRowIndex, rowCount, leftColumnIndex, columnCount].join(' ');
+  let byArea = columnsFreeToMoveCache.get(reads) ?? new Map<string, boolean[]>();
+  columnsFreeToMoveCache.set(reads, byArea);
+  let cached = byArea.get(key);
+  if (cached !== undefined) return cached;
+  let isEmpty = Array.from(
+    {
+      length: columnCount,
+    },
+    () => true,
+  );
+  let rowAfter = topRowIndex + rowCount;
+  for (let outside of [
+    {
+      topRowIndex: 0,
+      rowCount: topRowIndex,
+      leftColumnIndex: leftColumnIndex,
+      columnCount: columnCount,
+    },
+    {
+      topRowIndex: rowAfter,
+      rowCount: layoutOfView(view, reads).rowCount - rowAfter,
+      leftColumnIndex: leftColumnIndex,
+      columnCount: columnCount,
+    },
+  ] as CellArea[]) {
+    if (outside.rowCount <= 0) continue;
+    for (let cellId of reads.cellsOnShowIn(sheetId, outside)) {
+      let position = reads.positionOfCell(cellId);
+      if (position !== null) isEmpty[position.columnIndex - leftColumnIndex] = false;
+    }
+    for (let merged of reads.mergedAreasIn(sheetId, outside))
+      for (let offset = 0; offset < merged.columnCount; offset += 1) {
+        let index = merged.leftColumnIndex + offset - leftColumnIndex;
+        if (index >= 0 && index < columnCount) isEmpty[index] = false;
+      }
+  }
+  return (byArea.set(key, isEmpty), isEmpty);
+}
+export function columnsFreeToMove(view: PageState, reads: ReadsWithTextMeasurer, area: CellArea): boolean[] {
+  let { columnEdges: columnEdges } = layoutOfView(view, reads);
+  let mayMove = columnsEmptyOutsideArea(view, reads, area).map(
+    (isEmpty, offset) => isEmpty && columnEdges.sizeOf(area.leftColumnIndex + offset) > 0,
+  );
+  let holdColumnsOf = ({ leftColumnIndex: leftColumnIndex, columnCount: columnCount }: Pick<CellArea, 'leftColumnIndex' | 'columnCount'>): void => {
+    for (let offset = 0; offset < columnCount; offset += 1) {
+      let index = leftColumnIndex + offset - area.leftColumnIndex;
+      if (index >= 0 && index < area.columnCount) mayMove[index] = false;
+    }
+  };
+  reads.mergedAreasIn(view.sheetId, area).forEach(holdColumnsOf);
+  for (let { r: rowId, c: columnId } of reads.cellsWithSpillIn(view.sheetId)) {
+    let spillArea = reads.spillOver({
+      sheetId: view.sheetId,
+      rowId: rowId,
+      columnId: columnId,
+    })?.area;
+    let isOneColumnWithinRows =
+      spillArea !== undefined &&
+      spillArea.columnCount === 1 &&
+      spillArea.topRowIndex >= area.topRowIndex &&
+      spillArea.topRowIndex + spillArea.rowCount <= area.topRowIndex + area.rowCount;
+    if (spillArea !== undefined && !isOneColumnWithinRows && areasOverlap(spillArea, area)) holdColumnsOf(spillArea);
+  }
+  return mayMove;
+}
+export function tablesToMoveColumnsOf(view: PageState, reads: ReadsWithTextMeasurer): TableToMoveColumnsOf[] {
+  let rangesOfRules: CellArea[] = reads
+    .conditionalFormatsOf(view.sheetId)
+    .flatMap(({ liveRanges: liveRanges }) => areasOfRuleRanges(reads, view.sheetId, liveRanges))
+    .filter(({ columnCount: columnCount }: CellArea) => columnCount > 1);
+  return [
+    ...tablesToOutline(view, reads),
+    ...drawnOwnFiltersOfSheet(view, view.sheetId).flatMap((ownFilter: OwnFilter) => {
+      let area = areaOfFilteredTable(reads, ownFilter);
+      return area === null
+        ? []
+        : [
+            {
+              area: area,
+              rowCountOfHeader: area.rowIndexOfButtons - area.topRowIndex + 1,
+            },
+          ];
+    }),
+  ].map(
+    ({ area: area, rowCountOfHeader: rowCountOfHeader }: TableHeaderArea): TableToMoveColumnsOf => ({
+      area: area,
+      rowCountOfHeader: rowCountOfHeader,
+      mayMove: columnsFreeToMove(view, reads, area),
+      rangesOfRules: rangesOfRules.filter((range) => areasOverlap(range, area)),
+      frozenColumnCount: layoutOfView(view, reads).frozenColumnCount,
+    }),
+  );
+}
+export function columnRunToMoveWithin(
+  { area: area, mayMove: mayMove, rangesOfRules: rangesOfRules, frozenColumnCount: frozenColumnCount }: TableToMoveColumnsOf,
+  firstColumnIndex: number,
+  count: number,
+): TableIndexRun | null {
+  let isFree = (columnIndex: number): boolean => mayMove[columnIndex - area.leftColumnIndex] === true;
+  let isAlike = (columnIndex: number, otherIndex: number): boolean =>
+    columnIndex < frozenColumnCount === otherIndex < frozenColumnCount &&
+    rangesOfRules.every(
+      ({ leftColumnIndex: leftColumnIndex, columnCount: columnCount }) =>
+        isInSpan(columnIndex, leftColumnIndex, columnCount) === isInSpan(otherIndex, leftColumnIndex, columnCount),
+    );
+  for (let columnIndex = firstColumnIndex; columnIndex < firstColumnIndex + count; columnIndex += 1)
+    if (!isFree(columnIndex) || !isAlike(firstColumnIndex, columnIndex)) return null;
+  let [first, last]: [number, number] = [firstColumnIndex, firstColumnIndex + count - 1];
+  while (isFree(first - 1) && isAlike(firstColumnIndex, first - 1)) first -= 1;
+  while (isFree(last + 1) && isAlike(firstColumnIndex, last + 1)) last += 1;
+  return last - first + 1 > count
+    ? {
+        first: first,
+        last: last,
+      }
+    : null;
+}
+export function columnMoveOfPress(
+  view: PageState,
+  press: PointerPressed,
+  { reads: reads, refusalOfEveryEdit: refusalOfEveryEdit }: Pick<PageContext, 'reads' | 'refusalOfEveryEdit'>,
+): ColumnMoveOfPress | null {
+  if (press.onGripOfColumn === undefined || refusalOfEveryEdit !== null) return null;
+  if (view.mode.kind === 'editing' || press.isToldOfLate === true) return null;
+  if (press.isShiftHeld || press.isModifierHeld === true || press.isByFinger) return null;
+  let pressedPosition = reads.positionOfCell(press.onGripOfColumn);
+  if (pressedPosition === null) return null;
+  let { rowIndex: rowIndex, columnIndex: columnIndex } = pressedPosition;
+  let table = tablesToMoveColumnsOf(view, reads).find(
+    ({ area: area, rowCountOfHeader: rowCountOfHeader }) =>
+      isInSpan(rowIndex, area.topRowIndex, rowCountOfHeader) && isInSpan(columnIndex, area.leftColumnIndex, area.columnCount),
+  );
+  if (table === undefined) return null;
+  let { topRowIndex: topRowIndex, rowCount: rowCount, leftColumnIndex: leftColumnIndex, columnCount: columnCount } = table.area;
+  let selected: CellArea | null = view.otherRanges.length === 0 ? selectedArea(view, reads) : null;
+  let isSelectedHeaderPressed =
+    selected !== null &&
+    isInSpan(rowIndex, selected.topRowIndex, selected.rowCount) &&
+    isInSpan(columnIndex, selected.leftColumnIndex, selected.columnCount) &&
+    selected.leftColumnIndex >= leftColumnIndex &&
+    selected.leftColumnIndex + selected.columnCount <= leftColumnIndex + columnCount &&
+    selected.topRowIndex >= topRowIndex &&
+    selected.topRowIndex + selected.rowCount <= topRowIndex + table.rowCountOfHeader &&
+    selected.columnCount < columnCount;
+  let [firstColumnIndex, count] = isSelectedHeaderPressed ? [selected!.leftColumnIndex, selected!.columnCount] : [columnIndex, 1];
+  let within = columnRunToMoveWithin(table, firstColumnIndex, count);
+  if (within === null) return null;
+  let cellAt = (row: number, column: number): CellId | null => reads.cellIdAt(view.sheetId, row, column);
+  let [first, last, withinFirst, withinLast, topLeft, bottomRight] = [
+    cellAt(topRowIndex, firstColumnIndex),
+    cellAt(topRowIndex, firstColumnIndex + count - 1),
+    cellAt(topRowIndex, within.first),
+    cellAt(topRowIndex, within.last),
+    cellAt(topRowIndex, leftColumnIndex),
+    cellAt(topRowIndex + rowCount - 1, leftColumnIndex + columnCount - 1),
+  ];
+  if (first === null || last === null || withinFirst === null || withinLast === null) return null;
+  if (topLeft === null || bottomRight === null) return null;
+  let { activeCell: activeCell, selectionCorner: selectionCorner } = view;
+  return {
+    pressedAt: {
+      x: press.x,
+      y: press.y,
+    },
+    pressed: press.onGripOfColumn,
+    first: first,
+    last: last,
+    within: {
+      first: withinFirst,
+      last: withinLast,
+    },
+    table: {
+      topLeft: topLeft,
+      bottomRight: bottomRight,
+    },
+    selectedAtPress: {
+      activeCell: activeCell,
+      selectionCorner: selectionCorner,
+      rangeWalked: null,
+    },
+  };
+}
+export function areaOfColumnsMoved({ first: first, last: last, table: table }: Pick<ColumnMoveOfPress, 'first' | 'last' | 'table'>, reads: WorkbookReads): CellArea | null {
+  let [firstPosition, lastPosition] = [reads.positionOfCell(first), reads.positionOfCell(last)];
+  let [topLeft, bottomRight] = [reads.positionOfCell(table.topLeft), reads.positionOfCell(table.bottomRight)];
+  if (firstPosition === null || lastPosition === null || topLeft === null || bottomRight === null) return null;
+  return {
+    topRowIndex: topLeft.rowIndex,
+    rowCount: bottomRight.rowIndex - topLeft.rowIndex + 1,
+    leftColumnIndex: Math.min(firstPosition.columnIndex, lastPosition.columnIndex),
+    columnCount: Math.abs(lastPosition.columnIndex - firstPosition.columnIndex) + 1,
+  };
+}
+export function canColumnsStillMove(
+  view: PageState,
+  reads: ReadsWithTextMeasurer,
+  { pressed: pressed, table: table, within: within }: Pick<ColumnMoveOfPress, 'pressed' | 'table' | 'within'>,
+): boolean {
+  let [pressedPosition, topLeft, bottomRight] = [
+    reads.positionOfCell(pressed),
+    reads.positionOfCell(table.topLeft),
+    reads.positionOfCell(table.bottomRight),
+  ];
+  let [withinFirst, withinLast] = [reads.positionOfCell(within.first), reads.positionOfCell(within.last)];
+  if (pressedPosition === null || topLeft === null || bottomRight === null || withinFirst === null || withinLast === null) return false;
+  return tablesToMoveColumnsOf(view, reads).some(
+    ({ area: area, mayMove: mayMove }) =>
+      mayMove.slice(withinFirst.columnIndex - area.leftColumnIndex, withinLast.columnIndex - area.leftColumnIndex + 1).every(Boolean) &&
+      isInSpan(pressedPosition.rowIndex, area.topRowIndex, area.rowCount) &&
+      isInSpan(pressedPosition.columnIndex, area.leftColumnIndex, area.columnCount) &&
+      area.topRowIndex === topLeft.rowIndex &&
+      area.leftColumnIndex === topLeft.columnIndex &&
+      area.topRowIndex + area.rowCount - 1 === bottomRight.rowIndex &&
+      area.leftColumnIndex + area.columnCount - 1 === bottomRight.columnIndex,
+  );
+}
+export function startMovingColumnsOfTable(view: PageState, move: ColumnMoveOfPress, reads: ReadsWithTextMeasurer) {
+  let area = areaOfColumnsMoved(move, reads);
+  if (area === null) return null;
+  let { across: across } = rangeSpansOnScreen(area, view, layoutOfView(view, reads), view);
+  let x = move.pressedAt.x - ROW_HEADER_WIDTH;
+  return {
+    ...view,
+    menu: null,
+    dragging: {
+      kind: 'movingColumnsOfTable',
+      ...move,
+      grip: {
+        fromLeft: x - across.start,
+        toRight: across.end - x,
+      },
+      landing: null,
+    } satisfies MovingColumnsOfTableDrag,
+  };
+}
+export function dragMovingColumnsOfTable(view: PageState, drag: MovingColumnsOfTableDrag, pointer: GridPoint, reads: ReadsWithTextMeasurer) {
+  let { pressedAt: pressedAt, grip: grip, within: within } = drag;
+  if (drag.landing === null && Math.hypot(pointer.x - pressedAt.x, pointer.y - pressedAt.y) < MOVE_LINES_DRAG_THRESHOLD) return view;
+  let area = areaOfColumnsMoved(drag, reads);
+  let [withinFirst, withinLast] = [reads.positionOfCell(within.first), reads.positionOfCell(within.last)];
+  if (area === null || withinFirst === null || withinLast === null || !canColumnsStillMove(view, reads, drag)) return stopMovingColumnsOfTable(view);
+  let layout = layoutOfView(view, reads);
+  let position = dragPositionClearOfStuckHeaders(pointer, view, reads, layout, {
+    of: 'columns',
+    fromRow: area.leftColumnIndex,
+  });
+  let columnIndex = Math.max(withinFirst.columnIndex, Math.min(position.columnIndex, withinLast.columnIndex));
+  let scrolled = scrollToShowPosition(
+    view,
+    reads,
+    {
+      ...position,
+      columnIndex: columnIndex,
+    },
+    {
+      rows: false,
+      columns: true,
+    },
+    'pointer',
+  );
+  let across = rangeSpansOnScreen(area, scrolled, layout, scrolled).across;
+  let leftEdge = pointer.x - grip.fromLeft;
+  let edgeX = leftEdge >= ROW_HEADER_WIDTH + across.start ? pointer.x + grip.toRight : leftEdge;
+  let dropIndex = dropIndexAtPointer(
+    {
+      ...pointer,
+      x: edgeX,
+    },
+    scrolled,
+    layout,
+    scrolled,
+    'columns',
+  );
+  let landsAt = Math.max(withinFirst.columnIndex, Math.min(dropIndex, withinLast.columnIndex + 1));
+  let after = landsAt === 0 ? null : reads.cellIdAt(view.sheetId, area.topRowIndex, landsAt - 1);
+  let landing = drag.landing;
+  if (
+    landing !== null &&
+    (after === null || landing.after === null ? after === landing.after : isSameCell(after, landing.after)) &&
+    scrolled.scrollLeft === view.scrollLeft
+  )
+    return view;
+  return {
+    ...scrolled,
+    dragging: {
+      ...drag,
+      landing: {
+        after: after,
+      },
+    } satisfies MovingColumnsOfTableDrag,
+  };
+}
+export function columnsOfTableMoving(view: PageState, reads: ReadsWithTextMeasurer): ColumnsOfTableMoving | null {
+  let { dragging: dragging, sheetId: sheetId } = view;
+  if (dragging?.kind !== 'movingColumnsOfTable') return null;
+  let area = areaOfColumnsMoved(dragging, reads);
+  if (area === null || !canColumnsStillMove(view, reads, dragging)) return null;
+  let { leftColumnIndex: leftColumnIndex, columnCount: columnCount } = area;
+  let after = dragging.landing?.after ?? null;
+  let afterIndex = after === null ? null : (reads.positionOfCell(after)?.columnIndex ?? null);
+  let dropIndex = dragging.landing === null ? leftColumnIndex : after === null ? 0 : afterIndex === null ? leftColumnIndex : afterIndex + 1;
+  let landing = isInSpan(dropIndex, leftColumnIndex, columnCount + 1) ? leftColumnIndex : dropIndex;
+  let [first, last] = [Math.min(leftColumnIndex, landing), Math.max(leftColumnIndex + columnCount, landing) - 1];
+  let columnIndexes = Array.from(
+    {
+      length: last - first + 1,
+    },
+    (_unused, offset) => first + offset,
+  );
+  let isMoving = (columnIndex: number): boolean => isInSpan(columnIndex, leftColumnIndex, columnCount);
+  let [moving, others] = [columnIndexes.filter(isMoving), columnIndexes.filter((columnIndex) => !isMoving(columnIndex))];
+  return {
+    sheetId: sheetId,
+    area: {
+      topRowIndex: area.topRowIndex,
+      rowCount: area.rowCount,
+      leftColumnIndex: first,
+      columnCount: last - first + 1,
+    },
+    cameFrom: landing > leftColumnIndex ? [...others, ...moving] : [...moving, ...others],
+    landsAt: landing > leftColumnIndex ? landing - columnCount : landing,
+    count: columnCount,
+    isToMove: landing !== leftColumnIndex,
+  };
+}
+export function dropMovedColumnsOfTable(
+  view: PageState,
+  drag: MovingColumnsOfTableDrag,
+  { reads: reads, refusalOfEveryEdit: refusalOfEveryEdit }: Pick<PageContext, 'reads' | 'refusalOfEveryEdit'>,
+): PageTransition {
+  let stopped = stopMovingColumnsOfTable(view);
+  let moving = columnsOfTableMoving(view, reads);
+  if (moving === null) return withNoEffects(stopped);
+  let { sheetId: sheetId } = view;
+  let { area: area, landsAt: landsAt, count: count } = moving;
+  if (drag.landing === null) {
+    let selection = selectionBetweenPositions(
+      stopped,
+      reads,
+      {
+        rowIndex: area.topRowIndex,
+        columnIndex: landsAt,
+      },
+      {
+        rowIndex: area.topRowIndex + area.rowCount - 1,
+        columnIndex: landsAt + count - 1,
+      },
+    );
+    return withNoEffects(
+      selection === null
+        ? stopped
+        : {
+            ...stopped,
+            ...selection,
+          },
+    );
+  }
+  if (!moving.isToMove) return withNoEffects(stopped);
+  if (refusalOfEveryEdit !== null)
+    return withNoEffects({
+      ...stopped,
+      notice: {
+        kind: 'editRefused',
+        why: refusalOfEveryEdit,
+        asked: 'otherEdit',
+      },
+    });
+  let [pressedPosition, firstPosition] = [reads.positionOfCell(drag.pressed), reads.positionOfCell(drag.first)];
+  if (pressedPosition === null || firstPosition === null) return withNoEffects(stopped);
+  let afterIndex = landsAt > firstPosition.columnIndex ? landsAt + count - 1 : landsAt - 1;
+  let afterColumn = afterIndex < 0 ? null : reads.cellIdAt(sheetId, area.topRowIndex, afterIndex)?.columnId;
+  if (afterColumn === undefined) return withNoEffects(stopped);
+  let [activeEnd, cornerEnd] = drag.pressed.columnId === drag.last.columnId ? [drag.last, drag.first] : [drag.first, drag.last];
+  let heading = cellShownText(reads.cellOnShowIn(drag.first), reads.decimalSign).trim();
+  let { landsAt: _landsAt, count: _count, isToMove: _isToMove, ...moved } = moving;
+  let selected = {
+    ...stopped,
+    activeCell: {
+      ...activeEnd,
+      rowId: drag.pressed.rowId,
+    },
+    selectionCorner: {
+      ...cornerEnd,
+      rowId: drag.pressed.rowId,
+    },
+    rangeWalked: null,
+    otherRanges: [],
+  };
+  let pressedLandsAt = {
+    rowIndex: pressedPosition.rowIndex,
+    columnIndex: landsAt + pressedPosition.columnIndex - firstPosition.columnIndex,
+  };
+  return queueEdit(
+    {
+      ...selected,
+      scrollLeft: scrollToShowPosition(
+        selected,
+        reads,
+        pressedLandsAt,
+        {
+          rows: false,
+          columns: true,
+        },
+        'pointer',
+      ).scrollLeft,
+      moveOfColumnsUnanswered: {
+        moved: moved,
+        before: reads,
+      },
+    },
+    {
+      kind: 'moveColumns',
+      sheetId: sheetId,
+      oneColumn: drag.first.columnId,
+      otherColumn: drag.last.columnId,
+      afterColumn: afterColumn,
+    },
+    {
+      ...IF_QUEUED_DEFAULTS,
+      select: null,
+      done: {
+        what: 'columnsOfTableMoved',
+        heading: heading === '' ? null : heading,
+        count: count,
+        first: columnLetters(landsAt),
+        last: columnLetters(landsAt + count - 1),
+      },
+      movesColumnsOfTable: {
+        ...moved,
+        count: count,
+        before: reads,
+        selectedIfNotMade: drag.selectedAtPress,
+      },
+    },
+  );
+}
+export function columnGripsOfTables(view: PageState, reads: ReadsWithTextMeasurer, isEditRefused: boolean): ColumnGripOfTable[] {
+  if (isEditRefused || view.mode.kind === 'editing') return [];
+  if (view.dragging?.kind === 'movingColumnsOfTable') return [];
+  let layout = layoutOfView(view, reads);
+  let stuckHeaders = stuckHeadersOfView(view, reads, layout);
+  return tablesToMoveColumnsOf(view, reads).flatMap((table) => {
+    let { area: area, rowCountOfHeader: rowCountOfHeader } = table;
+    let headerKept = stuckHeaders.find(
+      ({ firstRowIndex: firstRowIndex, firstColumnIndex: firstColumnIndex, top: top, showFrom: showFrom }) =>
+        firstRowIndex === area.topRowIndex && firstColumnIndex === area.leftColumnIndex && top >= showFrom,
+    );
+    return Array.from(
+      {
+        length: area.columnCount,
+      },
+      (_unused, offset): ColumnGripOfTable[] => {
+        let columnIndex = area.leftColumnIndex + offset;
+        let cell = reads.cellIdAt(view.sheetId, area.topRowIndex, columnIndex);
+        let spansOfRows = (rowCount: number) =>
+          rangeSpansOnScreen(
+            {
+              topRowIndex: area.topRowIndex,
+              rowCount: rowCount,
+              leftColumnIndex: columnIndex,
+              columnCount: 1,
+            },
+            view,
+            layout,
+            view,
+          );
+        let { across: across, down: down } = spansOfRows(rowCountOfHeader);
+        let [left, right] = [Math.max(across.start, across.showFrom), Math.min(across.end, across.showTo)];
+        let isHeaderShown = headerKept !== undefined || (down.start >= down.showFrom && down.start < down.showTo);
+        if (cell === null || right - left < 1 || !isHeaderShown) return [];
+        if (columnRunToMoveWithin(table, columnIndex, 1) === null) return [];
+        let tableDown = spansOfRows(area.rowCount).down;
+        return [
+          {
+            key: `${cell.rowId} ${cell.columnId}`,
+            cell: cell,
+            left: left,
+            top: headerKept?.top ?? down.start,
+            width: right - left,
+            height: headerKept?.height ?? Math.min(down.end, down.showTo) - down.start,
+            extent: {
+              from: Math.max(tableDown.start, tableDown.showFrom),
+              to: Math.min(tableDown.end, tableDown.showTo),
+            },
+          },
+        ];
+      },
+    ).flat();
+  });
+}
+export const columnsFreeToMoveCache = new WeakMap<WorkbookReads, Map<string, boolean[]>>();
+export const stopMovingColumnsOfTable = (view: PageState): PageState => ({
+  ...view,
+  ...(view.dragging?.kind === 'movingColumnsOfTable' && view.dragging.selectedAtPress),
+  dragging: null,
+});

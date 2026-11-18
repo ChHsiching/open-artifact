@@ -1,0 +1,117 @@
+/*
+ * Core kit parts: surfaces, avatars, placeholders, the agent mark, shimmering text,
+ * progress bars and resize handles. Tokens follow the theme's light and dark sets.
+ */
+
+:root, .ui-dark-scope[data-mode="dark"] {
+  --ui-avatar-sm: calc(1.25rem * var(--ui-rem-scale));
+  --ui-avatar-md: calc(1.5rem * var(--ui-rem-scale));
+  --ui-avatar-text-sm: calc(0.5625rem * var(--ui-rem-scale));
+  --ui-avatar-text-md: var(--ui-font-size-caption);
+  --ui-avatar-stack-ring: 2px;
+
+  --ui-shimmer-ink: var(--ui-text-primary);
+  --ui-shimmer-peak: color-mix(in srgb, var(--ui-text-primary) 30%, white);
+  --ui-shimmer-ink-secondary: var(--ui-text-secondary);
+  --ui-shimmer-peak-secondary: color-mix(in srgb, var(--ui-text-secondary) 30%, white);
+
+  --ui-placeholder-delay: 500ms;
+}
+
+:root[data-mode="dark"], .ui-dark-scope[data-mode="dark"] {
+  --ui-shimmer-ink: var(--ui-text-secondary);
+  --ui-shimmer-peak: var(--ui-text-primary);
+  --ui-shimmer-ink-secondary: var(--ui-text-muted);
+  --ui-shimmer-peak-secondary: color-mix(in srgb, var(--ui-text-muted) 30%, white);
+}
+
+/* ---- placeholders -------------------------------------------------------------------------------------- */
+
+@keyframes ui-skeleton-sheen { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+@keyframes ui-skeleton-breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+@keyframes ui-placeholder-reveal { from { opacity: 0; } }
+
+@layer components {
+  /* A lone placeholder carries its own sheen; inside a group the group sets the pace. */
+  .ui-root [data-ui="Skeleton"][data-alone]::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent, var(--ui-skeleton-sheen), transparent);
+    animation: ui-skeleton-sheen 2s linear infinite;
+  }
+  .ui-root [data-ui="Skeleton"][data-alone]:dir(rtl)::after { animation-direction: reverse; }
+
+  /* A group stays hidden for a moment, so quick loads never flash placeholders. */
+  .ui-root [data-ui="SkeletonGroup"] {
+    animation: ui-placeholder-reveal 150ms ease-out var(--ui-placeholder-delay) backwards;
+  }
+  .ui-root [data-ui="SkeletonGroup"] [data-ui="Skeleton"] {
+    animation: ui-skeleton-breathe 2s ease-in-out calc(var(--ui-placeholder-delay) + 150ms) infinite;
+  }
+}
+
+/* ---- shimmering text ------------------------------------------------------------------------------------ */
+
+@keyframes ui-shimmer-text {
+  0%, 15% { background-position: 83.333% 0; animation-timing-function: cubic-bezier(0.714, 0.121, 0.211, 0.888); }
+  85%, 100% { background-position: 16.667% 0; }
+}
+
+@layer components {
+  .ui-root [data-ui="ShimmerText"] {
+    --ui-shimmer-text-ink: var(--ui-shimmer-ink);
+    --ui-shimmer-text-peak: var(--ui-shimmer-peak);
+    color: var(--ui-shimmer-text-ink);
+  }
+  .ui-root [data-ui="ShimmerText"][data-variant="secondary"] {
+    --ui-shimmer-text-ink: var(--ui-shimmer-ink-secondary);
+    --ui-shimmer-text-peak: var(--ui-shimmer-peak-secondary);
+  }
+  @media screen and (forced-colors: none) {
+    .ui-root [data-ui="ShimmerText"][data-shimmering="true"] {
+      background-image: linear-gradient(120deg, var(--ui-shimmer-text-ink) 37.5%, var(--ui-shimmer-text-peak) 50%, var(--ui-shimmer-text-ink) 62.5%);
+      background-size: 400% 100%;
+      background-position: 83.333% 0;
+      background-repeat: no-repeat;
+      background-clip: text;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: ui-shimmer-text 3s linear infinite;
+    }
+    .ui-root [data-ui="ShimmerText"][data-shimmering="true"]:dir(rtl) { animation-direction: reverse; }
+  }
+}
+
+/* ---- progress ------------------------------------------------------------------------------------------- */
+
+@keyframes ui-progress-sweep { from { transform: translateX(-100%); } to { transform: translateX(300%); } }
+
+@layer components {
+  .ui-root [data-ui="ProgressIndicator"][data-indeterminate] {
+    width: 33.333%;
+    animation: ui-progress-sweep 1.4s ease-in-out infinite;
+  }
+  .ui-root [data-ui="ProgressIndicator"][data-indeterminate]:dir(rtl) { animation-direction: reverse; }
+}
+
+/* ---- motion off ------------------------------------------------------------------------------------------ */
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-root [data-ui="Skeleton"][data-alone]::after { display: none; }
+  .ui-root [data-ui="SkeletonGroup"] [data-ui="Skeleton"] { animation: none; }
+  .ui-root [data-ui="ShimmerText"][data-shimmering="true"] {
+    animation: none;
+    background-image: none;
+    -webkit-text-fill-color: currentColor;
+  }
+  .ui-root [data-ui="ProgressIndicator"][data-indeterminate] { animation-duration: 3s; }
+}
+:where([data-reduce-motion="true"]) .ui-root [data-ui="Skeleton"][data-alone]::after { display: none; }
+:where([data-reduce-motion="true"]) .ui-root [data-ui="SkeletonGroup"] [data-ui="Skeleton"] { animation: none; }
+:where([data-reduce-motion="true"]) .ui-root [data-ui="ShimmerText"][data-shimmering="true"] {
+  animation: none;
+  background-image: none;
+  -webkit-text-fill-color: currentColor;
+}
+:where([data-reduce-motion="true"]) .ui-root [data-ui="ProgressIndicator"][data-indeterminate] { animation-duration: 3s; }

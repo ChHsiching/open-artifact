@@ -33,6 +33,7 @@ import { join, resolve } from 'node:path';
 import type { ShareRequest, ShareRole, ShareView } from '@open-artifact/protocol';
 import type { Role, Viewer } from '@open-artifact/runtime/capabilities';
 import { API } from '@open-artifact/runtime/http-api';
+import { SHEET_API } from '@open-artifact/runtime/sheet-api';
 import { LanNetwork, SHARING_FILE, isTailnet, lanAddresses } from '@open-artifact/server-sdk/lan';
 import { HttpError, readBody, send } from './http.ts';
 
@@ -259,14 +260,16 @@ export class SharingFile {
 /** Page routes a commenter may write: the comment threads (not sending them to the agent). */
 const COMMENT_WRITES = new Set<string>([API.commentsCreate, API.commentsReply, API.commentsResolve, API.commentsMove]);
 /** Page routes that change the artifact. */
-const EDIT_WRITES = new Set<string>([API.publish, API.assets, API.dbWrite, API.commentsRemove, API.roomEmit, API.historyRestore, API.historyDismiss]);
+const EDIT_WRITES = new Set<string>([API.publish, API.assets, API.dbWrite, API.commentsRemove, API.roomEmit, API.historyRestore, API.historyDismiss, SHEET_API.send]);
+/** Page routes that answer with a POST: everyone's, as reads are (a Sheet's widget refuses a write by role itself). */
+const POSTED_READS = new Set<string>([SHEET_API.read, SHEET_API.widget]);
 /** Page routes that act on this computer or reach the agent: the owner's alone. */
-const OWNER_WRITES = new Set<string>([API.agentSend, API.commentsSend, API.downloads, API.mcpCall]);
+const OWNER_WRITES = new Set<string>([API.agentSend, API.commentsSend, API.downloads, API.mcpCall, SHEET_API.importFile]);
 
 /** Whether the role may make a write call to a page route (reads are everyone's). */
 export function roleMay(role: Role, route: string): boolean {
   if (role === 'owner') return true;
-  if (route === API.presence) return true;
+  if (route === API.presence || POSTED_READS.has(route)) return true;
   if (OWNER_WRITES.has(route)) return false;
   if (COMMENT_WRITES.has(route)) return role !== 'viewer';
   if (EDIT_WRITES.has(route)) return role === 'editor';

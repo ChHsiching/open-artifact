@@ -1,0 +1,46 @@
+/*
+ * Dialogs, tabs and toasts: the backdrop behind a modal dialog, the small tab height, and how
+ * the toast region stacks its cards when the page moves it up beside the grid.
+ */
+
+:root, .ui-dark-scope[data-mode="dark"] {
+  --ui-backdrop: rgb(0 0 0 / 0.32);
+  /* The height of a small tab. */
+  --ui-h-tab-sm: calc(1.25rem * var(--ui-rem-scale));
+}
+
+:root[data-mode="dark"], .ui-dark-scope[data-mode="dark"] {
+  --ui-backdrop: rgb(0 0 0 / 0.56);
+}
+
+.ui-root[data-density="comfortable"], [data-density="comfortable"] .ui-root:not([data-density]), [data-density="comfortable"] .ui-dark-scope {
+  --ui-h-tab-sm: calc(1.75rem * var(--ui-rem-scale));
+}
+
+@utility bg-backdrop { background-color: var(--ui-backdrop); }
+
+/* Toast cards stack from the bottom; the page can lift the region to the top, where they stack downwards. */
+[data-ui=Toast]:not([data-at-foot]) :is([role=dialog], [role=alertdialog]) {
+  transform-origin: top;
+  --ty: calc(var(--toast-index) * 14px);
+  top: 0;
+  bottom: auto;
+}
+
+[data-ui=Toast]:not([data-at-foot]) :is([role=dialog], [role=alertdialog])[data-starting-style] {
+  --ty: -100%;
+}
+
+/* A pinned card stays at the foot even while the other toasts sit at the top. */
+[data-ui=Toast]:not([data-at-foot]) [role=status]:has(> [data-pinned]) {
+  position: fixed;
+  right: calc(var(--sheet-room-kept-at-right, 0px) + 1rem);
+  bottom: var(--sheet-foot-of-notices);
+  width: 360px;
+  max-width: calc(100vw - var(--sheet-room-kept-at-right, 0px) - 2rem);
+}
+
+/* A card that was fading out when the region moved disappears at once instead of sliding across. */
+[data-ui=Toast] [data-moved-while-fading][data-ending-style] {
+  clip-path: inset(100%);
+}

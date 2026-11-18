@@ -35,6 +35,7 @@ import type {
   RoomMessage,
   Viewer,
 } from './capabilities.ts';
+import type { SheetFrame } from './sheet-api.ts';
 
 /** Route paths, relative to the page base. */
 export const API = {
@@ -78,7 +79,7 @@ export interface SessionResponse {
   viewer: Viewer;
   agent: AgentStatus;
   /** Stores the type keeps beside its files; absent ones are not offered (`db` / `comments` resolve `null`). */
-  stores?: { db?: boolean; comments?: boolean; history?: boolean };
+  stores?: { db?: boolean; comments?: boolean; history?: boolean; sheet?: boolean };
 }
 
 /** `GET _api/files` */
@@ -266,6 +267,8 @@ export interface ServerEvents {
   room: RoomMessage;
   /** A version was recorded (or grew). */
   history: HistoryChangeEvent;
+  /** A frame of the workbook's edit log (types with `store: "workbook"`). */
+  sheet: SheetFrame;
 }
 
 export type ServerEventName = keyof ServerEvents;

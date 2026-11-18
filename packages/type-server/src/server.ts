@@ -64,6 +64,11 @@ import { LanSharing, assertRoleMay, withShim, type ShareChange } from './sharing
 import { sendArchive } from './archive.ts';
 import { ConnectorsHost } from './connectors.ts';
 import { McpError } from './mcp-client.ts';
+import { SHEET_API, type SheetReadRequest, type SheetSendRequest, type WidgetRequest } from '@open-artifact/runtime/sheet-api';
+import { SheetRefusalError } from '@open-artifact/sheets-core';
+import { SheetStore, type Viewer as SheetViewer } from './sheets/store.ts';
+import { SHEET_ACTIONS, SheetsCommandError, assertSheetFor, isSheetsCommand, runSheetCall, type SheetCall } from './sheets/cli.ts';
+import { canEdit } from '@open-artifact/runtime/capabilities';
 
 /** Version reported by `/__open-artifact/health`. */
 export const SERVER_VERSION = '0.1.0';
@@ -230,6 +235,8 @@ class OpenArtifact {
   db: DbHost | null = null;
   /** Version history (see `history-host.ts`). */
   history: HistoryHost | null = null;
+  /** The workbook of a Sheet (`sheets/store.ts`). */
+  sheet: SheetStore | null = null;
 
   readonly id: string;
   /** Random URL segment; whoever has the page URL can use the artifact. */
@@ -400,6 +407,25 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
     return host;
   };
 
+  /** A page's person as a Sheet knows them. */
+  const sheetViewer = (who: Viewer): SheetViewer => ({ id: who.id, name: who.name, canEdit: canEdit(who.role), isOwner: who.role === 'owner' });
+
+  /** A Sheet's workbook, its edits reported to the daemon and an import handed to the agent. */
+  const makeSheetStore = (artifact: OpenArtifact): SheetStore =>
+    new SheetStore({
+      root: artifact.root,
+      title: artifact.title,
+      ownerId: viewer.id,
+      ownerName: viewer.name,
+      sendToAgent: (request) => {
+        void sendToAgent({ root: artifact.root, artifactId: artifact.id, request: normalizeRequest(request, 'send'), daemon })
+          .then((result) => log(`${artifact.id}: request "${request.title}" → ${result.status}`))
+          .catch((error: unknown) => log(`${artifact.id}: request "${request.title}" failed: ${error instanceof Error ? error.message : String(error)}`));
+        return true;
+      },
+      log: (line) => log(`${artifact.id}: ${line}`),
+    });
+
   /**
    * The version history of an artifact. A restore is written the way pages'
    * writes are (events for every page, the daemon told), then recorded.
@@ -442,9 +468,11 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
    */
   const attachClient = async (artifact: OpenArtifact, id: string, client: Client): Promise<() => void> => {
     let closed = false;
+    let closeSheet: (() => void) | null = null;
     const detach = (): void => {
       if (closed) return;
       closed = true;
+      closeSheet?.();
       if (artifact.clients.get(id) === client) artifact.clients.delete(id);
       peerViewers.delete(`${artifact.id}\0${id}`);
       if (artifact.peers.delete(id)) emit(artifact, 'peers', peerList(artifact));
@@ -458,6 +486,8 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
       client.send('agent', agentFor(client.viewer, await refreshStatus(artifact)));
       client.send('peers', peerList(artifact));
     }
+    // A Sheet's stream: a snapshot and the clock first, then a frame per edit.
+    if (!closed && artifact.sheet) closeSheet = artifact.sheet.open(sheetViewer(client.viewer), (frame) => client.send('sheet', frame));
     return detach;
   };
 
@@ -499,6 +529,11 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
   /** Starts watching while at least one page is connected. */
   const startWatching = async (artifact: OpenArtifact): Promise<void> => {
     if (artifact.watcher || artifact.statusTimer) return;
+    if (artifact.sheet) {
+      // A Sheet's files change only through its store, which tells the pages itself.
+      artifact.statusTimer = setInterval(() => refreshStatus(artifact).catch(() => undefined), 3_000);
+      return;
+    }
     artifact.listing = await artifact.store.list();
     const project = join(artifact.root, PROJECT_DIR);
     await mkdir(project, { recursive: true });
@@ -574,7 +609,9 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
       artifact = new OpenArtifact(id, randomBytes(16).toString('hex'), type, root, title);
       byId.set(id, artifact);
       byToken.set(artifact.token, artifact);
-      artifact.history = makeHistoryHost(artifact);
+      // A Sheet keeps its own versions: its edit log.
+      if (TYPES[type].store === 'workbook') artifact.sheet = makeSheetStore(artifact);
+      else artifact.history = makeHistoryHost(artifact);
       if (TYPES[type].store === 'db' || TYPES[type].comments) artifact.db = makeDbHost(artifact);
     } else {
       artifact.title = title;
@@ -590,6 +627,7 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
     if (!artifact) return false;
     stopWatching(artifact);
     artifact.db?.stop();
+    artifact.sheet?.close();
     for (const client of artifact.clients.values()) client.end();
     sharing.detach(id);
     byId.delete(id);
@@ -651,6 +689,37 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
     if (req.headers['sec-fetch-site'] === 'cross-site') throw new HttpError(403, 'not_writer', 'Cross-site write refused.');
   };
 
+  /** The `sheet` capability's routes (SHEET_API). */
+  const handleSheet = async (artifact: OpenArtifact, route: string, req: IncomingMessage, res: ServerResponse, url: URL, who: Viewer): Promise<void> => {
+    const sheet = artifact.sheet;
+    if (!sheet) throw new HttpError(404, 'not_found', 'This artifact is not a Sheet.');
+    if (req.method !== 'POST') throw new HttpError(405, 'invalid', 'POST only.');
+    const person = sheetViewer(who);
+    switch (route) {
+      case SHEET_API.read:
+        return sendJson(res, 200, sheet.read(await readJson<SheetReadRequest>(req, 64 * 1024 * 1024), person));
+      case SHEET_API.send: {
+        const answer = sheet.send(await readJson<SheetSendRequest>(req, 64 * 1024 * 1024), person);
+        if (answer.kind === 'saved') {
+          void reportTouch(daemon, artifact.id, who.role === 'owner' ? 'owner' : who.name, ['sheet/edits.jsonl']);
+          artifact.title = sheet.title;
+        }
+        return sendJson(res, 200, answer);
+      }
+      case SHEET_API.widget:
+        return sendJson(res, 200, sheet.widget(await readJson<WidgetRequest>(req, 64 * 1024 * 1024), person));
+      default: {
+        const bytes = await readBody(req, MAX_UPLOAD);
+        try {
+          return sendJson(res, 200, sheet.importFile(url.searchParams.get('name') ?? '', bytes));
+        } catch (error) {
+          if (error instanceof SheetRefusalError) throw new HttpError(400, 'invalid', error.message, { ...error.body });
+          throw error;
+        }
+      }
+    }
+  };
+
   const handleApi = async (artifact: OpenArtifact, route: string, req: IncomingMessage, res: ServerResponse, url: URL, who: Viewer = viewer): Promise<void> => {
     const method = req.method ?? 'GET';
     // The Shell's broker calls from the Shell's origin: let it read the answers.
@@ -688,6 +757,7 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
           stores: {
             ...(artifact.db ? { db: artifact.db.documents, comments: TYPES[artifact.type].comments === true } : {}),
             ...(artifact.history ? { history: true } : {}),
+            ...(artifact.sheet ? { sheet: true } : {}),
           },
         };
         return sendJson(res, 200, body);
@@ -871,6 +941,12 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
         return sendJson(res, 200, { ok: true });
       }
 
+      case SHEET_API.read:
+      case SHEET_API.send:
+      case SHEET_API.widget:
+      case SHEET_API.importFile:
+        return handleSheet(artifact, route, req, res, url, who);
+
       default:
         if (artifact.history && (await artifact.history.handle(route, req, res, url, who))) return;
         if (artifact.db && (await artifact.db.handle(route, req, res, url, who.role === 'owner' ? undefined : { name: who.name, client: author }))) return;
@@ -948,10 +1024,49 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
     return { image, width, height, bytes: png.length, note: SNAPSHOT_NOTE };
   };
 
+  /**
+   * A Sheet's call (`read`, `update`, `batch`, `widget`, `info`, `export`): on the open Sheet's store, so its pages
+   * hear of an update at once, or on one made for the call when the Sheet is not open here.
+   */
+  const runSheetAction = async (name: SheetCall['name'], body: Partial<ActionRequest>, res: ServerResponse): Promise<void> => {
+    const opened = typeof body.id === 'string' ? byId.get(body.id) : undefined;
+    const root = typeof body.root === 'string' && isAbsolute(body.root) ? resolve(body.root) : opened?.root;
+    if (!root) throw new HttpError(400, 'invalid_argument', 'root (an absolute path) is required.');
+    const open = opened?.root === root ? opened : [...byId.values()].find((a) => a.root === root);
+    const type = open?.type ?? (await detectType(root)) ?? (hosted.size === 1 ? [...hosted][0]! : null);
+    if (type !== 'sheets' || !hosted.has(type)) throw new HttpError(404, 'unknown_action', `No action ${name}: ${root} is not a Sheet.`);
+    const call: SheetCall = { name, args: body.args && typeof body.args === 'object' ? (body.args as SheetCall['args']) : {} };
+    const run = (store: SheetStore): unknown => runSheetCall(store, call);
+    try {
+      assertSheetFor(root, call);
+      if (open?.sheet) {
+        const sheet = open.sheet;
+        const answer = await open.run(async () => run(sheet));
+        if (name === 'update' || name === 'batch') {
+          open.externalAt = Date.now();
+          void refreshStatus(open).catch(() => undefined);
+          open.title = sheet.title;
+        }
+        return sendJson(res, 200, answer);
+      }
+      const store = new SheetStore({ root, ownerId: viewer.id, ownerName: viewer.name, log });
+      try {
+        return sendJson(res, 200, run(store));
+      } finally {
+        store.close();
+      }
+    } catch (error) {
+      if (error instanceof SheetRefusalError) throw new HttpError(409, 'refused', error.message, { ...error.body });
+      if (error instanceof SheetsCommandError) throw new HttpError(400, 'invalid_argument', error.message, { code: error.code });
+      throw error;
+    }
+  };
+
   /** `POST /__open-artifact/actions/<name> {id, root, args}`: the agent's `call`. */
   const runAction = async (name: string, req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const body = await readJson<Partial<ActionRequest>>(req, 64 * 1024 * 1024);
     if (name.startsWith('open-artifact.')) return runReserved(name, body, res);
+    if (isSheetsCommand(name) && SHEET_ACTIONS.some((action) => action.name === name)) return runSheetAction(name, body, res);
     if (!SERVER_ACTIONS.some((action) => action.name === name)) throw new HttpError(404, 'unknown_action', `No action ${name}.`);
     const opened = typeof body.id === 'string' ? byId.get(body.id) : undefined;
     const root = typeof body.root === 'string' && isAbsolute(body.root) ? resolve(body.root) : opened?.root;
@@ -1029,7 +1144,7 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
           artifacts: [...byId.values()].map((a) => ({ id: a.id, type: a.type, root: a.root, title: a.title, url: pageUrl(a), pages: a.clients.size })),
         });
       case 'actions':
-        if (req.method === 'GET') return sendJson(res, 200, { actions: SERVER_ACTIONS });
+        if (req.method === 'GET') return sendJson(res, 200, { actions: [...SERVER_ACTIONS, ...(hosted.has('sheets') ? SHEET_ACTIONS : [])] });
         throw new HttpError(404, 'unknown_action', 'Name the action: /__open-artifact/actions/<name>.');
       default:
         // Reserved `open-artifact.*` actions (db, comments) are answered in runReserved.

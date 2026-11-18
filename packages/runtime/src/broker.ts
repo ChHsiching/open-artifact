@@ -44,6 +44,7 @@ import {
   MCP_CALL_TIMEOUT,
   type McpCapability,
   type RoomCapability,
+  type SheetCapability,
   type UserCapability,
   type Viewer,
 } from './capabilities.ts';
@@ -68,6 +69,7 @@ export const BROKERED_METHODS: { readonly [K in CapabilityName]: readonly string
   comments: ['list', 'create', 'reply', 'setResolved', 'move', 'remove', 'sendToAgent'],
   history: ['list', 'files', 'read', 'readBytes', 'diff', 'restore', 'dismissNotice'],
   mcp: ['callTool', 'listTools'],
+  sheet: ['read', 'send', 'widget', 'importFile'],
 };
 
 /**
@@ -82,6 +84,7 @@ export const BROKERED_EVENTS = {
   db: { onChange: 'change' },
   comments: { onChange: 'threads' },
   history: { onChange: 'change' },
+  sheet: { onFrame: 'frame' },
 } as const satisfies Partial<Record<CapabilityName, Readonly<Record<string, string>>>>;
 
 const CALL_TIMEOUT: Partial<Record<CapabilityName, number>> = { downloads: 150_000, assets: 272_000, user: 20_000 };
@@ -333,6 +336,16 @@ export function createShellProvider(options: ShellProviderOptions = {}): Capabil
           remove: (threadId, messageId) => c('remove', messageId ? [threadId, messageId] : [threadId]),
           sendToAgent: (threadId) => c('sendToAgent', [threadId], true),
           onChange: (listener) => listen('comments', BROKERED_EVENTS.comments.onChange, listener),
+        };
+        return ns;
+      }
+      case 'sheet': {
+        const ns: SheetCapability = {
+          read: (request) => c('read', [request]),
+          send: (request) => c('send', [request]),
+          widget: (request) => c('widget', [request]),
+          importFile: (file, name) => c('importFile', [file, name], true),
+          onFrame: (listener) => listen('sheet', BROKERED_EVENTS.sheet.onFrame, listener),
         };
         return ns;
       }

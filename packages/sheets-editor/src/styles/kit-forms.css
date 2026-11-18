@@ -1,0 +1,62 @@
+/*
+ * Form controls: text and number fields, the date field, checkboxes, switches,
+ * segmented controls, radios and drop zones. Tokens follow the theme's light and
+ * dark sets, and its compact and comfortable densities.
+ */
+
+:root, .ui-dark-scope[data-mode="dark"] {
+  --ui-h-control-sm: calc(1.25rem * var(--ui-rem-scale));
+
+  --ui-switch-h: calc(1rem * var(--ui-rem-scale));
+  --ui-switch-h-sm: calc(0.875rem * var(--ui-rem-scale));
+  --ui-switch-track: var(--ui-alpha-2);
+  --ui-switch-track-hover: var(--ui-alpha-3);
+  --ui-switch-knob: #ffffff;
+  --ui-switch-knob-shadow: 0 1px 2px 0 #00000026;
+
+  --ui-segmented-track: var(--ui-alpha-1);
+  --ui-segmented-thumb: var(--ui-fill-field);
+  --ui-segmented-thumb-shadow: 0 0 0 1px var(--ui-alpha-2), 0 1px 2px 0 #0000000d;
+
+  --ui-drop-ring: var(--ui-fill-accent);
+  --ui-drop-glow: color-mix(in srgb, var(--ui-fill-accent) 22%, transparent);
+}
+
+:root[data-mode="dark"], .ui-dark-scope[data-mode="dark"] {
+  --ui-switch-track: var(--ui-alpha-3);
+  --ui-switch-track-hover: var(--ui-alpha-4);
+  --ui-switch-knob-shadow: 0 1px 2px 0 #00000066;
+
+  --ui-segmented-track: var(--ui-alpha-2);
+  --ui-segmented-thumb: color-mix(in srgb, #ffffff 14%, transparent);
+  --ui-segmented-thumb-shadow: 0 0 0 1px var(--ui-alpha-2);
+
+  --ui-drop-glow: color-mix(in srgb, var(--ui-fill-accent) 32%, transparent);
+}
+
+.ui-root[data-density="comfortable"], [data-density="comfortable"] .ui-root:not([data-density]), [data-density="comfortable"] .ui-dark-scope {
+  --ui-h-control-sm: calc(1.75rem * var(--ui-rem-scale));
+  --ui-switch-h: calc(1.25rem * var(--ui-rem-scale));
+  --ui-switch-h-sm: calc(1.125rem * var(--ui-rem-scale));
+}
+
+/* A small field sets the control height for everything inside it, its own buttons included. */
+:is([data-ui="TextInput"], [data-ui="DateInput"], [data-ui="NumberInput"])[data-size="sm"] {
+  --ui-h-control: var(--ui-h-control-sm);
+}
+
+@utility shadow-field-invalid { box-shadow: inset 0 0 0 1px var(--ui-fill-danger); }
+@utility shadow-drop-ring { box-shadow: inset 0 0 0 2px var(--ui-drop-ring); }
+@utility shadow-drop-glow { box-shadow: inset 0 0 1.5rem 0 var(--ui-drop-glow); }
+
+/* A bare input inside a field shell: the shell draws the box. */
+@utility ui-input-bare {
+  appearance: none;
+  border: 0;
+  margin: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  outline: none;
+  box-shadow: none;
+}

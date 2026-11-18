@@ -41,10 +41,12 @@ const LIBRARIES = [
   'live-store',
   'whiteboard-core',
   'data-core',
+  'sheets-core',
   'wasm-canvas',
   'wasm-export',
   'wasm-wb-geom',
   'wasm-data-rules',
+  'wasm-sheets',
 ];
 /** Imported by a library but left to the app that uses it, which brings its own copy. */
 const PEERS = new Set(['react', 'react-dom']);

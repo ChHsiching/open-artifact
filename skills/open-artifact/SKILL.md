@@ -46,11 +46,13 @@ Decide this before you make anything. When the person typed `/open-artifact <typ
   - a dashboard, metrics page, KPI tracker, scorecard, data visualization or recurring report: charts, numbers and
     tables worked out from their data (a CSV, JSON or text file, a live query on one of their MCP connectors, or a
     calculation) → `data`;
+  - a spreadsheet, workbook, budget, list of records, schedule or financial model: cells and formulas they and
+    you both fill in → `sheets`;
   - a brand or design system recorded for use in other artifacts (colors, type, spacing, components) →
     `design-system`. The person's existing design systems are artifacts of that type: when
     they say "use our brand" or name one, find it with `Artifact {action: "list", type: "design-system", scope: "all"}`
     and read it before you design.
-  - Anything else (a document, a spreadsheet, a task list, …) goes to an artifact only when a type for
+  - Anything else (a document, a task list, …) goes to an artifact only when a type for
     it is installed: `Artifact {action: "list", scope: "types"}` tells you, quickly; check it silently. If none is,
     do it the usual way: a reply, or a file.
 - **A type by name.** "Make this in slides", "put it on a whiteboard" mean that type, not a look to imitate in some
@@ -93,11 +95,12 @@ that alone is no reason to refuse an artifact they asked for.
 
 1. **Type.** Take the type id from the first word after `/open-artifact`, or from the request (see above). The
    built-in types are `design` (a canvas of HTML artboards: screens, mockups, prototypes, diagrams), `slides` (a
-   1920×1080 deck with speaker notes), `whiteboard` (a board of stickies, shapes and arrows), `data` (a dashboard
+   1920×1080 deck with speaker notes), `whiteboard` (a board of stickies, shapes and arrows), `sheets` (a
+   workbook of cells, formulas, tables and charts), `data` (a dashboard
    or report of charts, numbers and tables from their data) and `design-system` (a brand book of tokens, type,
    components and assets that designs and decks install). Words like "deck" or "presentation" mean `slides`;
    "canvas", "UI" or "mockup" mean `design`; "board" means `whiteboard`; "dashboard", "report", "metrics" or "chart"
-   mean `data`; "brand", "tokens" or "design system" mean `design-system`. Any other word may be a type installed on
+   mean `data`; "spreadsheet", "workbook" or "budget" mean `sheets`; "brand", "tokens" or "design system" mean `design-system`. Any other word may be a type installed on
    this computer: run `Artifact {action: "list", scope: "types"}` and use it if it is there. With no type word, `Artifact {action: "quickstart", intent: "<what they asked for>"}`
    recommends one, and its `related` lists the person's artifacts that type builds on (such as their design
    systems): when one fits, read it with `Artifact {action: "read", url}` and use it; when several could and the

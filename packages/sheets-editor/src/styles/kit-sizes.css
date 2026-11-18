@@ -1,0 +1,283 @@
+/* Size scale: `data-size` (xs, sm, lg) and `data-step` (1–5) set the control metrics of a subtree. */
+
+.ui-root {
+  --ui-radius--xs: calc(.3125rem * var(--ui-rem-scale,1));
+  --ui-radius--sm: calc(.3125rem * var(--ui-rem-scale,1));
+  --ui-radius--lg: calc(.4375rem * var(--ui-rem-scale,1));
+  --ui-h-control--xs: calc(1.25rem * var(--ui-rem-scale,1));
+  --ui-h-control--sm: calc(1.25rem * var(--ui-rem-scale,1));
+  --ui-h-control--lg: calc(1.75rem * var(--ui-rem-scale,1));
+  --ui-h-control-nested--xs: calc(1rem * var(--ui-rem-scale,1));
+  --ui-h-control-nested--sm: calc(1rem * var(--ui-rem-scale,1));
+  --ui-h-control-nested--lg: calc(1.25rem * var(--ui-rem-scale,1));
+  --ui-icon--xs: calc(.75rem * var(--ui-rem-scale,1));
+  --ui-icon--sm: calc(.75rem * var(--ui-rem-scale,1));
+  --ui-icon--lg: calc(1rem * var(--ui-rem-scale,1));
+  --ui-pad-xs--xs: calc(.125rem * var(--ui-rem-scale,1));
+  --ui-pad-xs--sm: calc(.125rem * var(--ui-rem-scale,1));
+  --ui-pad-xs--lg: calc(.375rem * var(--ui-rem-scale,1));
+  --ui-pad-sm--xs: calc(.25rem * var(--ui-rem-scale,1));
+  --ui-pad-sm--sm: calc(.25rem * var(--ui-rem-scale,1));
+  --ui-pad-sm--lg: calc(.5rem * var(--ui-rem-scale,1));
+  --ui-pad-md--xs: calc(.375rem * var(--ui-rem-scale,1));
+  --ui-pad-md--sm: calc(.375rem * var(--ui-rem-scale,1));
+  --ui-pad-md--lg: calc(.625rem * var(--ui-rem-scale,1));
+  --ui-pad-lg--xs: calc(.625rem * var(--ui-rem-scale,1));
+  --ui-pad-lg--sm: calc(.625rem * var(--ui-rem-scale,1));
+  --ui-pad-lg--lg: calc(.875rem * var(--ui-rem-scale,1));
+  --ui-pad-xl--xs: calc(.875rem * var(--ui-rem-scale,1));
+  --ui-pad-xl--sm: calc(.875rem * var(--ui-rem-scale,1));
+  --ui-pad-xl--lg: calc(1.375rem * var(--ui-rem-scale,1));
+  --ui-font-size-caption--xs: calc(.625rem * var(--ui-rem-scale,1));
+  --ui-font-size-caption--sm: calc(.625rem * var(--ui-rem-scale,1));
+  --ui-font-size-caption--lg: calc(.75rem * var(--ui-rem-scale,1));
+  --ui-font-size-body--xs: calc(.75rem * var(--ui-rem-scale,1));
+  --ui-font-size-body--sm: calc(.75rem * var(--ui-rem-scale,1));
+  --ui-font-size-body--lg: calc(.875rem * var(--ui-rem-scale,1));
+  --ui-font-size-prose--xs: .8125rem;
+  --ui-font-size-prose--sm: .8125rem;
+  --ui-font-size-prose--lg: .9375rem;
+  --ui-leading-body--xs: calc(1.0625rem * var(--ui-rem-scale,1));
+  --ui-leading-body--sm: calc(1.0625rem * var(--ui-rem-scale,1));
+  --ui-leading-body--lg: calc(1.25rem * var(--ui-rem-scale,1));
+  --ui-leading-prose--xs: 1.1875rem;
+  --ui-leading-prose--sm: 1.1875rem;
+  --ui-leading-prose--lg: 1.375rem;
+  --ui-checkbox--xs: calc(.875rem * var(--ui-rem-scale,1));
+  --ui-checkbox--sm: calc(.875rem * var(--ui-rem-scale,1));
+  --ui-checkbox--lg: calc(1.125rem * var(--ui-rem-scale,1));
+  --ui-checkbox-glyph--xs: calc(.875rem * var(--ui-rem-scale,1));
+  --ui-checkbox-glyph--sm: calc(.875rem * var(--ui-rem-scale,1));
+  --ui-checkbox-glyph--lg: calc(1rem * var(--ui-rem-scale,1));
+  --ui-checkbox-radius--xs: calc(.25rem * var(--ui-rem-scale,1));
+  --ui-checkbox-radius--sm: calc(.25rem * var(--ui-rem-scale,1));
+  --ui-checkbox-radius--lg: calc(.3125rem * var(--ui-rem-scale,1));
+  --ui-switch-h--xs: calc(.875rem * var(--ui-rem-scale,1));
+  --ui-switch-h--sm: calc(.875rem * var(--ui-rem-scale,1));
+  --ui-switch-h--lg: calc(1.125rem * var(--ui-rem-scale,1));
+}
+
+.ui-root[data-density="comfortable"] {
+  --ui-radius--xs: calc(.375rem * var(--ui-rem-scale,1));
+  --ui-radius--sm: calc(.4375rem * var(--ui-rem-scale,1));
+  --ui-radius--lg: calc(.625rem * var(--ui-rem-scale,1));
+  --ui-h-control--xs: calc(1.5rem * var(--ui-rem-scale,1));
+  --ui-h-control--sm: calc(1.75rem * var(--ui-rem-scale,1));
+  --ui-h-control--lg: calc(2.5rem * var(--ui-rem-scale,1));
+  --ui-h-control-nested--xs: calc(1.125rem * var(--ui-rem-scale,1));
+  --ui-h-control-nested--sm: calc(1.25rem * var(--ui-rem-scale,1));
+  --ui-h-control-nested--lg: calc(1.75rem * var(--ui-rem-scale,1));
+  --ui-icon--xs: calc(1rem * var(--ui-rem-scale,1));
+  --ui-icon--sm: calc(1rem * var(--ui-rem-scale,1));
+  --ui-icon--lg: calc(1.5rem * var(--ui-rem-scale,1));
+  --ui-pad-xs--xs: calc(.25rem * var(--ui-rem-scale,1));
+  --ui-pad-xs--sm: calc(.375rem * var(--ui-rem-scale,1));
+  --ui-pad-xs--lg: calc(.5rem * var(--ui-rem-scale,1));
+  --ui-pad-sm--xs: calc(.375rem * var(--ui-rem-scale,1));
+  --ui-pad-sm--sm: calc(.5rem * var(--ui-rem-scale,1));
+  --ui-pad-sm--lg: calc(.75rem * var(--ui-rem-scale,1));
+  --ui-pad-md--xs: calc(.5rem * var(--ui-rem-scale,1));
+  --ui-pad-md--sm: calc(.625rem * var(--ui-rem-scale,1));
+  --ui-pad-md--lg: calc(1rem * var(--ui-rem-scale,1));
+  --ui-pad-lg--xs: calc(.75rem * var(--ui-rem-scale,1));
+  --ui-pad-lg--sm: calc(.875rem * var(--ui-rem-scale,1));
+  --ui-pad-lg--lg: calc(1.25rem * var(--ui-rem-scale,1));
+  --ui-pad-xl--xs: calc(1.25rem * var(--ui-rem-scale,1));
+  --ui-pad-xl--sm: calc(1.375rem * var(--ui-rem-scale,1));
+  --ui-pad-xl--lg: calc(1.75rem * var(--ui-rem-scale,1));
+  --ui-font-size-caption--xs: calc(.6875rem * var(--ui-rem-scale,1));
+  --ui-font-size-caption--sm: calc(.75rem * var(--ui-rem-scale,1));
+  --ui-font-size-caption--lg: calc(.8125rem * var(--ui-rem-scale,1));
+  --ui-font-size-body--xs: calc(.8125rem * var(--ui-rem-scale,1));
+  --ui-font-size-body--sm: calc(.875rem * var(--ui-rem-scale,1));
+  --ui-font-size-body--lg: calc(.9375rem * var(--ui-rem-scale,1));
+  --ui-font-size-prose--xs: .875rem;
+  --ui-font-size-prose--sm: .9375rem;
+  --ui-font-size-prose--lg: 1.125rem;
+  --ui-leading-body--xs: calc(1.1875rem * var(--ui-rem-scale,1));
+  --ui-leading-body--sm: calc(1.25rem * var(--ui-rem-scale,1));
+  --ui-leading-body--lg: calc(1.375rem * var(--ui-rem-scale,1));
+  --ui-leading-prose--xs: 1.25rem;
+  --ui-leading-prose--sm: 1.375rem;
+  --ui-leading-prose--lg: 1.6875rem;
+  --ui-checkbox--xs: calc(1rem * var(--ui-rem-scale,1));
+  --ui-checkbox--sm: calc(1.125rem * var(--ui-rem-scale,1));
+  --ui-checkbox--lg: calc(1.5rem * var(--ui-rem-scale,1));
+  --ui-checkbox-glyph--xs: calc(1rem * var(--ui-rem-scale,1));
+  --ui-checkbox-glyph--sm: calc(1rem * var(--ui-rem-scale,1));
+  --ui-checkbox-glyph--lg: calc(1.25rem * var(--ui-rem-scale,1));
+  --ui-checkbox-radius--xs: calc(.25rem * var(--ui-rem-scale,1));
+  --ui-checkbox-radius--sm: calc(.3125rem * var(--ui-rem-scale,1));
+  --ui-checkbox-radius--lg: calc(.375rem * var(--ui-rem-scale,1));
+  --ui-switch-h--xs: calc(1rem * var(--ui-rem-scale,1));
+  --ui-switch-h--sm: calc(1.125rem * var(--ui-rem-scale,1));
+  --ui-switch-h--lg: calc(1.5rem * var(--ui-rem-scale,1));
+}
+
+.ui-root [data-size="xs"] {
+  --ui-radius: var(--ui-radius--xs);
+  --ui-h-control: var(--ui-h-control--xs);
+  --ui-h-control-nested: var(--ui-h-control-nested--xs);
+  --ui-icon: var(--ui-icon--xs);
+  --ui-pad-xs: var(--ui-pad-xs--xs);
+  --ui-pad-sm: var(--ui-pad-sm--xs);
+  --ui-pad-md: var(--ui-pad-md--xs);
+  --ui-pad-lg: var(--ui-pad-lg--xs);
+  --ui-pad-xl: var(--ui-pad-xl--xs);
+  --ui-font-size-caption: var(--ui-font-size-caption--xs);
+  --ui-font-size-body: var(--ui-font-size-body--xs);
+  --ui-font-size-prose: var(--ui-font-size-prose--xs);
+  --ui-leading-body: var(--ui-leading-body--xs);
+  --ui-leading-prose: var(--ui-leading-prose--xs);
+  --ui-checkbox: var(--ui-checkbox--xs);
+  --ui-checkbox-glyph: var(--ui-checkbox-glyph--xs);
+  --ui-checkbox-radius: var(--ui-checkbox-radius--xs);
+  --ui-switch-h: var(--ui-switch-h--xs);
+}
+
+.ui-root [data-size="sm"] {
+  --ui-radius: var(--ui-radius--sm);
+  --ui-h-control: var(--ui-h-control--sm);
+  --ui-h-control-nested: var(--ui-h-control-nested--sm);
+  --ui-icon: var(--ui-icon--sm);
+  --ui-pad-xs: var(--ui-pad-xs--sm);
+  --ui-pad-sm: var(--ui-pad-sm--sm);
+  --ui-pad-md: var(--ui-pad-md--sm);
+  --ui-pad-lg: var(--ui-pad-lg--sm);
+  --ui-pad-xl: var(--ui-pad-xl--sm);
+  --ui-font-size-caption: var(--ui-font-size-caption--sm);
+  --ui-font-size-body: var(--ui-font-size-body--sm);
+  --ui-font-size-prose: var(--ui-font-size-prose--sm);
+  --ui-leading-body: var(--ui-leading-body--sm);
+  --ui-leading-prose: var(--ui-leading-prose--sm);
+  --ui-checkbox: var(--ui-checkbox--sm);
+  --ui-checkbox-glyph: var(--ui-checkbox-glyph--sm);
+  --ui-checkbox-radius: var(--ui-checkbox-radius--sm);
+  --ui-switch-h: var(--ui-switch-h--sm);
+}
+
+.ui-root [data-size="lg"] {
+  --ui-radius: var(--ui-radius--lg);
+  --ui-h-control: var(--ui-h-control--lg);
+  --ui-h-control-nested: var(--ui-h-control-nested--lg);
+  --ui-icon: var(--ui-icon--lg);
+  --ui-pad-xs: var(--ui-pad-xs--lg);
+  --ui-pad-sm: var(--ui-pad-sm--lg);
+  --ui-pad-md: var(--ui-pad-md--lg);
+  --ui-pad-lg: var(--ui-pad-lg--lg);
+  --ui-pad-xl: var(--ui-pad-xl--lg);
+  --ui-font-size-caption: var(--ui-font-size-caption--lg);
+  --ui-font-size-body: var(--ui-font-size-body--lg);
+  --ui-font-size-prose: var(--ui-font-size-prose--lg);
+  --ui-leading-body: var(--ui-leading-body--lg);
+  --ui-leading-prose: var(--ui-leading-prose--lg);
+  --ui-checkbox: var(--ui-checkbox--lg);
+  --ui-checkbox-glyph: var(--ui-checkbox-glyph--lg);
+  --ui-checkbox-radius: var(--ui-checkbox-radius--lg);
+  --ui-switch-h: var(--ui-switch-h--lg);
+}
+
+.ui-root [data-step="1"] {
+  --ui-radius: calc(.3125rem * var(--ui-rem-scale,1));
+  --ui-h-control: calc(1.25rem * var(--ui-rem-scale,1));
+  --ui-h-control-nested: calc(1rem * var(--ui-rem-scale,1));
+  --ui-icon: calc(.75rem * var(--ui-rem-scale,1));
+  --ui-pad-xs: calc(.125rem * var(--ui-rem-scale,1));
+  --ui-pad-sm: calc(.25rem * var(--ui-rem-scale,1));
+  --ui-pad-md: calc(.375rem * var(--ui-rem-scale,1));
+  --ui-pad-lg: calc(.625rem * var(--ui-rem-scale,1));
+  --ui-pad-xl: calc(.875rem * var(--ui-rem-scale,1));
+  --ui-font-size-caption: calc(.625rem * var(--ui-rem-scale,1));
+  --ui-font-size-body: calc(.75rem * var(--ui-rem-scale,1));
+  --ui-font-size-prose: .8125rem;
+  --ui-leading-body: calc(1.0625rem * var(--ui-rem-scale,1));
+  --ui-leading-prose: 1.1875rem;
+  --ui-checkbox: calc(.875rem * var(--ui-rem-scale,1));
+  --ui-checkbox-glyph: calc(.875rem * var(--ui-rem-scale,1));
+  --ui-checkbox-radius: calc(.25rem * var(--ui-rem-scale,1));
+  --ui-switch-h: calc(.875rem * var(--ui-rem-scale,1));
+}
+
+.ui-root [data-step="2"] {
+  --ui-radius: calc(.375rem * var(--ui-rem-scale,1));
+  --ui-h-control: calc(1.5rem * var(--ui-rem-scale,1));
+  --ui-h-control-nested: calc(1.125rem * var(--ui-rem-scale,1));
+  --ui-icon: calc(1rem * var(--ui-rem-scale,1));
+  --ui-pad-xs: calc(.25rem * var(--ui-rem-scale,1));
+  --ui-pad-sm: calc(.375rem * var(--ui-rem-scale,1));
+  --ui-pad-md: calc(.5rem * var(--ui-rem-scale,1));
+  --ui-pad-lg: calc(.75rem * var(--ui-rem-scale,1));
+  --ui-pad-xl: calc(1.25rem * var(--ui-rem-scale,1));
+  --ui-font-size-caption: calc(.6875rem * var(--ui-rem-scale,1));
+  --ui-font-size-body: calc(.8125rem * var(--ui-rem-scale,1));
+  --ui-font-size-prose: .875rem;
+  --ui-leading-body: calc(1.1875rem * var(--ui-rem-scale,1));
+  --ui-leading-prose: 1.25rem;
+  --ui-checkbox: calc(1rem * var(--ui-rem-scale,1));
+  --ui-checkbox-glyph: calc(1rem * var(--ui-rem-scale,1));
+  --ui-checkbox-radius: calc(.25rem * var(--ui-rem-scale,1));
+  --ui-switch-h: calc(1rem * var(--ui-rem-scale,1));
+}
+
+.ui-root [data-step="3"] {
+  --ui-radius: calc(.4375rem * var(--ui-rem-scale,1));
+  --ui-h-control: calc(1.75rem * var(--ui-rem-scale,1));
+  --ui-h-control-nested: calc(1.25rem * var(--ui-rem-scale,1));
+  --ui-icon: calc(1rem * var(--ui-rem-scale,1));
+  --ui-pad-xs: calc(.375rem * var(--ui-rem-scale,1));
+  --ui-pad-sm: calc(.5rem * var(--ui-rem-scale,1));
+  --ui-pad-md: calc(.625rem * var(--ui-rem-scale,1));
+  --ui-pad-lg: calc(.875rem * var(--ui-rem-scale,1));
+  --ui-pad-xl: calc(1.375rem * var(--ui-rem-scale,1));
+  --ui-font-size-caption: calc(.75rem * var(--ui-rem-scale,1));
+  --ui-font-size-body: calc(.875rem * var(--ui-rem-scale,1));
+  --ui-font-size-prose: .9375rem;
+  --ui-leading-body: calc(1.25rem * var(--ui-rem-scale,1));
+  --ui-leading-prose: 1.375rem;
+  --ui-checkbox: calc(1.125rem * var(--ui-rem-scale,1));
+  --ui-checkbox-glyph: calc(1rem * var(--ui-rem-scale,1));
+  --ui-checkbox-radius: calc(.3125rem * var(--ui-rem-scale,1));
+  --ui-switch-h: calc(1.125rem * var(--ui-rem-scale,1));
+}
+
+.ui-root [data-step="4"] {
+  --ui-radius: calc(.5rem * var(--ui-rem-scale,1));
+  --ui-h-control: calc(2rem * var(--ui-rem-scale,1));
+  --ui-h-control-nested: calc(1.375rem * var(--ui-rem-scale,1));
+  --ui-icon: calc(1.25rem * var(--ui-rem-scale,1));
+  --ui-pad-xs: calc(.375rem * var(--ui-rem-scale,1));
+  --ui-pad-sm: calc(.5rem * var(--ui-rem-scale,1));
+  --ui-pad-md: calc(.75rem * var(--ui-rem-scale,1));
+  --ui-pad-lg: calc(1rem * var(--ui-rem-scale,1));
+  --ui-pad-xl: calc(1.5rem * var(--ui-rem-scale,1));
+  --ui-font-size-caption: calc(.75rem * var(--ui-rem-scale,1));
+  --ui-font-size-body: calc(.875rem * var(--ui-rem-scale,1));
+  --ui-font-size-prose: 1rem;
+  --ui-leading-body: calc(1.25rem * var(--ui-rem-scale,1));
+  --ui-leading-prose: 1.5rem;
+  --ui-checkbox: calc(1.25rem * var(--ui-rem-scale,1));
+  --ui-checkbox-glyph: calc(1rem * var(--ui-rem-scale,1));
+  --ui-checkbox-radius: calc(.3125rem * var(--ui-rem-scale,1));
+  --ui-switch-h: calc(1.25rem * var(--ui-rem-scale,1));
+}
+
+.ui-root [data-step="5"] {
+  --ui-radius: calc(.625rem * var(--ui-rem-scale,1));
+  --ui-h-control: calc(2.5rem * var(--ui-rem-scale,1));
+  --ui-h-control-nested: calc(1.75rem * var(--ui-rem-scale,1));
+  --ui-icon: calc(1.5rem * var(--ui-rem-scale,1));
+  --ui-pad-xs: calc(.5rem * var(--ui-rem-scale,1));
+  --ui-pad-sm: calc(.75rem * var(--ui-rem-scale,1));
+  --ui-pad-md: calc(1rem * var(--ui-rem-scale,1));
+  --ui-pad-lg: calc(1.25rem * var(--ui-rem-scale,1));
+  --ui-pad-xl: calc(1.75rem * var(--ui-rem-scale,1));
+  --ui-font-size-caption: calc(.8125rem * var(--ui-rem-scale,1));
+  --ui-font-size-body: calc(.9375rem * var(--ui-rem-scale,1));
+  --ui-font-size-prose: 1.125rem;
+  --ui-leading-body: calc(1.375rem * var(--ui-rem-scale,1));
+  --ui-leading-prose: 1.6875rem;
+  --ui-checkbox: calc(1.5rem * var(--ui-rem-scale,1));
+  --ui-checkbox-glyph: calc(1.25rem * var(--ui-rem-scale,1));
+  --ui-checkbox-radius: calc(.375rem * var(--ui-rem-scale,1));
+  --ui-switch-h: calc(1.5rem * var(--ui-rem-scale,1));
+}

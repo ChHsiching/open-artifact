@@ -1,0 +1,267 @@
+import type { Dynamic } from '../dynamic.ts';
+import { NO_COLOR } from '../model/colors.ts';
+import { normalizeHexColor } from '../format/hsb-colors.ts';
+import { unquoteCssString } from './html-reading.ts';
+export function programOfHtmlTag(tagName?: Dynamic, attributes?: Dynamic) {
+  if (tagName === 'google-sheets-html-origin' || attributes.has('data-sheets-root')) return 'googleSheets';
+  return tagName === 'meta' && attributes.get('name')?.toLowerCase() === 'progid' && attributes.get('content')?.toLowerCase() === 'excel.sheet'
+    ? 'excel'
+    : null;
+}
+export function parseCssColor(cssColor?: Dynamic) {
+  let lowered = cssColor.toLowerCase();
+  if (lowered === 'windowtext') return NO_COLOR;
+  if (lowered.startsWith('#')) {
+    let hex = normalizeHexColor(lowered);
+    return hex === null
+      ? null
+      : {
+          kind: 'rgb',
+          hex: hex,
+        };
+  }
+  let match = CSS_RGB_PATTERN.exec(lowered);
+  if (match === null) return CSS_NAMED_COLORS.get(lowered) ?? null;
+  let [red, green, blue] = [match[1], match[2], match[3]].map(Number);
+  if (red === undefined || green === undefined || blue === undefined) return null;
+  if (Math.max(red, green, blue) > 255 || (match[4] !== undefined && Number(match[4]) < 1)) return null;
+  return {
+    kind: 'rgb',
+    hex: `#${[red, green, blue].map((channel?: Dynamic) => channel.toString(16).padStart(2, '0')).join('')}`,
+  };
+}
+export function borderStyleOfWidth(width?: Dynamic) {
+  let [, amount, unit] = CSS_LENGTH_PATTERN.exec(width) ?? [];
+  let pixels = unit === 'pt' ? Number(amount) * 2 : Number(amount);
+  if (pixels >= 3) return 'thick';
+  return pixels >= 2 ? 'medium' : 'thin';
+}
+export function parseCssBorder(cssBorder?: Dynamic) {
+  let words = cssValueWords(cssBorder);
+  if (words.includes('none') || words.includes('hidden'))
+    return {
+      kind: 'none',
+    };
+  let style = words.map((word?: Dynamic) => CSS_BORDER_STYLES.get(word)).find((style2?: Dynamic) => style2 !== undefined);
+  if (style === undefined) return null;
+  let width = words.find((word?: Dynamic) => CSS_LENGTH_PATTERN.test(word)) ?? '';
+  let colorWord = words.find((word?: Dynamic) => !CSS_LENGTH_PATTERN.test(word) && !CSS_BORDER_STYLES.has(word));
+  if (colorWord === 'transparent')
+    return {
+      kind: 'none',
+    };
+  return {
+    kind: 'line',
+    style: style === 'byWidth' ? borderStyleOfWidth(width) : style,
+    color: (colorWord === undefined ? null : parseCssColor(colorWord)) ?? NO_COLOR,
+  };
+}
+export function bordersOfCss(declarations?: Dynamic) {
+  let borders: Dynamic = {};
+  for (let side of CELL_BORDER_SIDES as Dynamic) {
+    let cssBorder = declarations.get(`border-${side}`) ?? declarations.get('border');
+    let border = cssBorder === undefined ? null : parseCssBorder(cssBorder);
+    if (border !== null) borders[side] = border;
+  }
+  return borders;
+}
+export function fontOfCss(declarations?: Dynamic) {
+  let font: Dynamic = {};
+  let fontWeight = declarations.get('font-weight');
+  if (fontWeight !== undefined) font.bold = fontWeight === 'bold' || Number(fontWeight) >= 600;
+  let fontStyle = declarations.get('font-style');
+  if (fontStyle !== undefined) font.italic = fontStyle === 'italic';
+  let decoration = declarations.get('text-decoration') ?? declarations.get('text-decoration-line');
+  if (decoration !== undefined) {
+    let isDoubleUnderline = declarations.get('text-underline-style') === 'double';
+    font.underline = !decoration.includes('underline') ? 'none' : isDoubleUnderline ? 'double' : 'single';
+    font.strikethrough = decoration.includes('line-through');
+  }
+  let color = parseCssColor(declarations.get('color') ?? '');
+  if (color !== null) font.color = color;
+  let [, sizeAmount, sizeUnit] = CSS_LENGTH_PATTERN.exec(declarations.get('font-size') ?? '') ?? [];
+  let points = Math.round(sizeUnit === 'px' ? Number(sizeAmount) * 0.75 : Number(sizeAmount));
+  if (points >= 1 && points <= 409) font.size = points;
+  return font;
+}
+export function alignmentOfCss(declarations?: Dynamic) {
+  let alignment: Dynamic = {};
+  let textAlign = declarations.get('text-align');
+  if (textAlign !== undefined) {
+    let isSupported = textAlign === 'left' || textAlign === 'center' || textAlign === 'right';
+    alignment.horizontal = isSupported ? textAlign : 'general';
+  }
+  let verticalAlign = declarations.get('vertical-align');
+  let vertical = verticalAlign === 'middle' ? 'center' : verticalAlign;
+  if (vertical === 'top' || vertical === 'center' || vertical === 'bottom') alignment.vertical = vertical;
+  let whiteSpace = declarations.get('white-space');
+  if (whiteSpace !== undefined) alignment.wrap = whiteSpace === 'normal';
+  return alignment;
+}
+export function lookOfCss(declarations?: Dynamic) {
+  let fillColor = cssValueWords(declarations.get('background-color') ?? declarations.get('background') ?? '').flatMap(
+    (word?: Dynamic) => {
+      let color = parseCssColor(word);
+      return color === null || color.kind === 'none' ? [] : [color];
+    },
+  )[0];
+  let numberFormat = declarations.get('mso-number-format');
+  let msoIgnore = declarations.get('mso-ignore');
+  return {
+    alignment: alignmentOfCss(declarations),
+    border: bordersOfCss(declarations),
+    font: fontOfCss(declarations),
+    ...(fillColor !== undefined && {
+      fillColor: fillColor,
+    }),
+    ...(numberFormat !== undefined && {
+      pattern: unquoteCssString(numberFormat),
+    }),
+    ...(msoIgnore !== undefined && {
+      isRunningOnAndNotMerged: msoIgnore === 'colspan',
+    }),
+  };
+}
+export function formatOfCssLook(look?: Dynamic, defaults?: Dynamic) {
+  let { horizontal: horizontal, vertical: vertical, wrap: wrap } = look.alignment;
+  let alignment = {
+    ...(horizontal !== undefined &&
+      horizontal !== 'general' &&
+      horizontal !== defaults.horizontal && {
+        horizontal: horizontal,
+      }),
+    ...(vertical !== undefined &&
+      vertical !== defaults.vertical && {
+        vertical: vertical,
+      }),
+    ...(wrap === true && {
+      wrap: wrap,
+    }),
+  };
+  let { bold: bold, italic: italic, underline: underline, strikethrough: strikethrough, color: color, size: size } = look.font;
+  let font = {
+    ...(bold === true && {
+      bold: bold,
+    }),
+    ...(italic === true && {
+      italic: italic,
+    }),
+    ...(underline !== undefined &&
+      underline !== 'none' && {
+        underline: underline,
+      }),
+    ...(strikethrough === true && {
+      strikethrough: strikethrough,
+    }),
+    ...(color !== undefined &&
+      !isPlainBlackColor(color) && {
+        color: color,
+      }),
+    ...(size !== undefined && {
+      size: size,
+    }),
+  };
+  let borders: Dynamic = {};
+  for (let side of CELL_BORDER_SIDES as Dynamic) {
+    let sideBorder = look.border[side];
+    let isGridLine =
+      sideBorder?.kind === 'line' &&
+      sideBorder.style === 'thin' &&
+      sideBorder.color.kind === 'rgb' &&
+      sideBorder.color.hex === defaults.hexOfGridLine;
+    if (sideBorder !== undefined && !isGridLine) borders[side] = sideBorder;
+  }
+  return {
+    ...(Object.keys(alignment).length > 0 && {
+      alignment: alignment,
+    }),
+    ...(look.fillColor !== undefined && {
+      fillColor: look.fillColor,
+    }),
+    ...(Object.keys(borders).length > 0 && {
+      border: borders,
+    }),
+    ...(Object.keys(font).length > 0 && {
+      font: font,
+    }),
+  };
+}
+export const CSS_NAMED_COLORS = new (Map as Dynamic)(
+  Object.entries({
+    black: '#000000',
+    silver: '#c0c0c0',
+    gray: '#808080',
+    white: '#ffffff',
+    maroon: '#800000',
+    red: '#ff0000',
+    purple: '#800080',
+    fuchsia: '#ff00ff',
+    green: '#008000',
+    lime: '#00ff00',
+    olive: '#808000',
+    yellow: '#ffff00',
+    navy: '#000080',
+    blue: '#0000ff',
+    teal: '#008080',
+    aqua: '#00ffff',
+  }).map(
+    ([colorName, hex]: Dynamic) => [
+      colorName,
+      {
+        kind: 'rgb',
+        hex: hex,
+      },
+    ],
+  ),
+);
+export const CSS_RGB_PATTERN = /^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*(?:,\s*([\d.]+)\s*)?\)$/;
+export const cssValueWords = (cssValue?: Dynamic) => cssValue.toLowerCase().replaceAll(/,\s+/g, ',').split(/\s+/);
+export const CSS_LENGTH_PATTERN = /^(\d+(?:\.\d+)?|\.\d+)(pt|px)$/;
+export const CSS_BORDER_STYLES = new (Map as Dynamic)([
+  ['solid', 'byWidth'],
+  ['dashed', 'dashed'],
+  ['dotted', 'dotted'],
+  ['double', 'double'],
+  ['hairline', 'thin'],
+  ['dot-dash', 'dashed'],
+  ['dot-dot-dash', 'dashed'],
+  ['dot-dash-slanted', 'dashed'],
+]);
+export const CELL_BORDER_SIDES = ['top', 'bottom', 'left', 'right'];
+export const MOST_NUMBER_FORMAT_LENGTH = 1000;
+export const EMPTY_CSS_LOOK = {
+  alignment: {},
+  border: {},
+  font: {},
+};
+export const mergeCssLooks = (look?: Dynamic, over?: Dynamic) => ({
+  ...look,
+  ...over,
+  alignment: {
+    ...look.alignment,
+    ...over.alignment,
+  },
+  border: {
+    ...look.border,
+    ...over.border,
+  },
+  font: {
+    ...look.font,
+    ...over.font,
+  },
+});
+export const isPlainBlackColor = (color?: Dynamic) => color.kind === 'none' || (color.kind === 'rgb' && color.hex === '#000000');
+export const EXCEL_NAMED_NUMBER_FORMATS = new (Map as Dynamic)([
+  ['Fixed', '0.00'],
+  ['Standard', '#,##0.00'],
+  ['Percent', '0.00%'],
+  ['Scientific', '0.00E+00'],
+  ['Currency', '"$"#,##0.00_);[Red]\\("$"#,##0.00\\)'],
+  ['General Date', 'm/d/yyyy h:mm'],
+  ['Short Date', 'm/d/yyyy'],
+  ['Medium Date', 'd-mmm-yy'],
+  ['Long Date', 'dddd, mmmm d, yyyy'],
+  ['Short Time', 'h:mm'],
+  ['Medium Time', 'h:mm AM/PM'],
+  ['Long Time', 'h:mm:ss AM/PM'],
+]);

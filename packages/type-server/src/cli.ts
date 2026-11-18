@@ -3,7 +3,7 @@
  * `open-artifact-type-server`: the command line an agent uses to work on Design and
  * Design System artifacts.
  *
- *     open-artifact-type-server open <dir> [--type design|design-system|slides|whiteboard|data] [--title T] [--browser] [--lan]
+ *     open-artifact-type-server open <dir> [--type design|design-system|slides|whiteboard|data|sheets] [--title T] [--browser] [--lan]
  *     open-artifact-type-server check <dir> [--json]
  *     open-artifact-type-server generate <dir>
  *     open-artifact-type-server upload <dir> <file>… [--group G] [--name N]
@@ -11,6 +11,7 @@
  *     open-artifact-type-server wait <dir> [--timeout 600]
  *     open-artifact-type-server context <dir>
  *     open-artifact-type-server history <dir> [show|restore <n> [path…]] [--json]
+ *     open-artifact-type-server read|update|batch|widget|export|info <dir> …   (a Sheet's calls)
  *     open-artifact-type-server share <dir> [--off] [--enable R] [--disable R] [--reset R] [--role G=R] [--remove G] [--json]
  *     open-artifact-type-server status
  *     open-artifact-type-server stop
@@ -45,6 +46,9 @@ import { cmdArchive, cmdDeleteAsset, cmdDsSync } from './more-cli.ts';
 import { ensureGitignore } from './artifact-files.ts';
 import { runCheck } from './project-check.ts';
 import { readEdits } from './agent.ts';
+import { SheetRefusalError } from '@open-artifact/sheets-core';
+import { SheetStore } from './sheets/store.ts';
+import { SheetsCommandError, assertSheetFor, isSheetsCommand, runSheetCall, sheetCallOf, type SheetCall } from './sheets/cli.ts';
 
 const SELF = fileURLToPath(import.meta.url);
 
@@ -426,6 +430,72 @@ async function cmdContext(args: Args): Promise<number> {
   }
 }
 
+/** A Sheet's call through a running server's `call` action, when the Sheet is open there: its pages see it at once. */
+async function sheetCallThrough(record: ServerRecord, root: string, call: SheetCall): Promise<{ answer: unknown } | null> {
+  const { artifacts } = await openArtifact<{ artifacts: { id: string; root: string }[] }>(record, 'list');
+  const open = artifacts.find((a) => a.root === root);
+  if (!open) return null;
+  const response = await fetch(new URL(`__open-artifact/actions/${call.name}`, record.url), {
+    method: 'POST',
+    headers: { authorization: `Bearer ${record.secret}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ id: open.id, root, args: call.args }),
+    signal: AbortSignal.timeout(120_000),
+  });
+  const body = (await response.json()) as Record<string, unknown>;
+  if (response.ok) return { answer: body };
+  if (body.code === 'refused' && typeof body.detail === 'string') {
+    const { code: _code, message: _message, ...refusal } = body;
+    throw new SheetCallRefused(refusal);
+  }
+  if (body.code === 'invalid_argument' && typeof body.message === 'string') throw new SheetsCommandError(String(body.code), body.message);
+  throw new UsageError(typeof body.message === 'string' ? body.message : `HTTP ${response.status}`);
+}
+
+/** A refusal the server answered for a Sheet's call: its body as the Sheet gave it. */
+class SheetCallRefused extends Error {
+  readonly body: Record<string, unknown>;
+  constructor(body: Record<string, unknown>) {
+    super(typeof body.detail === 'string' ? body.detail : 'refused');
+    this.body = body;
+  }
+}
+
+/**
+ * `read|update|batch|widget|export|info <dir> …`: a Sheet's call, through the running server when it has the Sheet
+ * open, else on the folder. JSON on stdout; a refusal is JSON on stderr and exit 1, a mistake exit 2.
+ */
+async function cmdSheet(command: string, argv: string[]): Promise<number> {
+  try {
+    const dir = argv[0];
+    if (!dir) throw new SheetsCommandError('MISSING_FOLDER', `Pass the Sheet's folder: ${command} <dir>.`);
+    const root = resolve(dir);
+    const call = sheetCallOf(root, command, argv.slice(1).filter((arg) => arg !== '--json'));
+    const record = await liveServer();
+    const through = record ? await sheetCallThrough(record, root, call) : null;
+    let answer: unknown;
+    if (through) answer = through.answer;
+    else {
+      assertSheetFor(root, call);
+      const store = new SheetStore({ root });
+      try {
+        answer = runSheetCall(store, call);
+      } finally {
+        store.close();
+      }
+    }
+    process.stdout.write(`${JSON.stringify(answer, null, 2)}\n`);
+    return 0;
+  } catch (error) {
+    if (error instanceof SheetRefusalError || error instanceof SheetCallRefused) {
+      process.stderr.write(`${JSON.stringify(error.body)}\n`);
+      return 1;
+    }
+    const code = error instanceof SheetsCommandError ? error.code : 'ERROR';
+    process.stderr.write(`${JSON.stringify({ error: code, message: error instanceof Error ? error.message : String(error) })}\n`);
+    return 2;
+  }
+}
+
 async function cmdStatus(): Promise<void> {
   const record = await liveServer();
   if (!record) {
@@ -506,7 +576,7 @@ async function cmdServe(args: Args): Promise<void> {
 
 const USAGE = `open-artifact-type-server <command>
 
-  open <dir> [--type design|design-system|slides|whiteboard|data] [--title T] [--browser] [--lan] [--json]
+  open <dir> [--type design|design-system|slides|whiteboard|data|sheets] [--title T] [--browser] [--lan] [--json]
       Open (creating if empty) an artifact folder in its editor; prints the URL.
       --lan also shares it on the local network and prints the role links.
   check <dir> [--json]          Check project files; exit 1 on errors.
@@ -531,6 +601,16 @@ const USAGE = `open-artifact-type-server <command>
                                 update merges, {"__delete__": true} removes a key.
                                 {"$file": "path"} in data is that file's text; a refusal
                                 prints {"error": CODE} and writes nothing.
+  read <dir> [payload] [--at N] A Sheet's read (readSheets by default; a payload is JSON, a file or -).
+  update <dir> <payload>        A Sheet's edits as one revision: {"kind":"applyEdits","base":N,"edits":[…]}.
+  batch <dir> <calls>           Widget creates and one applyEdits (a new chart and its addChart).
+  widget <dir> create <code> | read <id> | draft <id> <basePub> <code> | list
+                                A chart's code (code: a file, or - for stdin).
+  export <dir> [file|folder] [--csv] [--sheet S]
+                                The Sheet as .xlsx (or .csv), into <dir>/exports/ unless given.
+  info <dir>                    A Sheet's id, title and revision.
+                                These go through the running server when it has the Sheet open;
+                                a refusal is JSON on stderr and exit 1.
   comments <dir> [--all] [--json]
                                 Print open comment threads (slides, whiteboard, data); --all adds resolved.
                                 comments <dir> --wait [--timeout s] is wait.
@@ -556,6 +636,8 @@ const USAGE = `open-artifact-type-server <command>
 `;
 
 export async function main(argv: string[]): Promise<number> {
+  // A Sheet's calls read their own arguments (a payload may be "-", a flag's value a path).
+  if (argv[0] !== undefined && isSheetsCommand(argv[0])) return cmdSheet(argv[0], argv.slice(1));
   const args = parseArgs(argv);
   const command = args.positional[0];
   try {

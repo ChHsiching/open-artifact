@@ -1,0 +1,9 @@
+@import "@open-artifact/ui/styles.css";
+@import "@open-artifact/editor-kit/styles.css";
+@import "./styles/theme.css";
+@import "./styles/kit-core.css";
+@import "./styles/kit-sizes.css";
+@import "./styles/kit-forms.css";
+@import "./styles/kit-dialogs.css";
+@import "./styles/sheet.css";
+@source "./";
