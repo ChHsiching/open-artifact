@@ -5,8 +5,9 @@
  * The top bar holds the way back and the artboard's title, its Export menu,
  * the preview width (Fill only) and Fill / Fit. Fill lays the artboard out
  * at the window's width (or a chosen screen width, scaled down when the
- * window is narrower); Fit shows it at its own size, scaled down to fit. An
- * artboard marked `expand: "fill"` opens in Fill, others in Fit.
+ * window is narrower); Fit shows it at its own size, scaled down to fit. The
+ * last Fill / Fit choice is kept for every artboard and later visits; until
+ * one is made, an artboard marked `expand: "fill"` opens in Fill, others in Fit.
  */
 
 import { ChevronDown, ChevronLeft, Download } from 'lucide-react';
@@ -18,6 +19,7 @@ import { useView } from '../state/view.ts';
 import { exportAllPdf, exportAllPng, exportCanvasZip, exportFigmaHtml, exportHtmlZip, exportJpeg, exportPdf, exportPng, exportSingleHtml, pageArtboards, pngOptions } from '../services/export.ts';
 import { SCREEN_WIDTHS } from '../lib/export-formats.ts';
 import { flowPaper } from '../lib/pagination.ts';
+import { focusedFit, storedFit, storeFit } from '../lib/focused-fit.ts';
 import { BoardFrame } from './BoardFrame.tsx';
 import { ChromeButton, ChromeMenu, ChromeMenuItem, ChromeMenuLabel, ChromeMenuSeparator, Tip, TipGroup, useShellDraw } from '@open-artifact/editor-kit/react';
 import { session } from '../services/session.ts';
@@ -36,8 +38,8 @@ export function FocusedView({ path }: { path: string }) {
   const canvas = useDocument((s) => s.canvas);
   const page = useView((s) => s.page);
   const focus = useView((s) => s.focus);
-  // Fill or Fit, per artboard: each opens as its `expand` says.
-  const [chosen, setChosen] = useState<{ path: string; fit: boolean } | null>(null);
+  // Fill or Fit: the kept choice (null until one is made), across artboards and visits.
+  const [preferred, setPreferred] = useState<boolean | null>(() => storedFit());
   // The width Fill lays the page out at (null: the window's); kept across artboards.
   const [previewWidth, setPreviewWidth] = useState<number | null>(null);
   // In a Shell the Share panel's Export tab exports this artboard (the focused one is "selected").
@@ -73,7 +75,7 @@ export function FocusedView({ path }: { path: string }) {
   });
 
   const title = entry?.title || path.replace(/^.*\//, '').replace(/\.dc\.html$/, '');
-  const fit = chosen?.path === path ? chosen.fit : entry?.expand !== 'fill';
+  const fit = focusedFit(preferred, entry?.expand);
 
   // The frame: its layout size, on-screen scale and position.
   let frame = { width: 0, height: 0, scale: 1, left: 0, top: 0 };
@@ -108,7 +110,13 @@ export function FocusedView({ path }: { path: string }) {
             <>
               {shellFormats ? null : <ExportMenu path={path} page={boardPage} width={entry.w} height={entry.h} shownWidth={fit ? null : frame.width} />}
               {!fit ? <PreviewWidthMenu value={previewWidth} onChange={setPreviewWidth} shown={frame.width} scale={frame.scale} boardWidth={entry.w} /> : null}
-              <FillFit fit={fit} onChange={(next) => setChosen({ path, fit: next })} />
+              <FillFit
+                fit={fit}
+                onChange={(next) => {
+                  setPreferred(next);
+                  storeFit(next);
+                }}
+              />
             </>
           ) : null}
         </header>
