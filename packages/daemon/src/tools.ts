@@ -74,14 +74,14 @@ const NO_TYPE_FITS =
   'No installed type fits. Answer in your reply, or write a plain file; Artifact {action: "list", scope: "types"} shows every type.';
 /** How the agent shows a page its app does not show by itself: its own built-in browser first, else the computer's. */
 const SHOW_IT = "open view_url in your app's built-in browser (its browser panel or tab) if you have one; only when you have none, Artifact {action: \"open\", url} opens it in the computer's browser";
-const AFTER_CREATE_CHECK = `Write the files the instructions describe into root, run Artifact {action: "call", url, name: "check"}, then show it: ${SHOW_IT}.`;
-const AFTER_CREATE = `Write the files the instructions describe into root, then show it: ${SHOW_IT}.`;
-const AFTER_CREATE_OPENING_CHECK = 'Write the files the instructions describe into root, then run Artifact {action: "call", url, name: "check"}. The page opens for the person after your first write.';
-const AFTER_CREATE_OPENING = 'Write the files the instructions describe into root. The page opens for the person after your first write.';
-const AFTER_CREATE_OPEN_CHECK = 'Write the files the instructions describe into root, then run Artifact {action: "call", url, name: "check"}. The page is open: it shows your writes as they land.';
+const AFTER_CREATE_CHECK = `Ask first whatever the instructions say to ask before a first build, then write the files they describe into root, run Artifact {action: "call", url, name: "check"}, then show it: ${SHOW_IT}.`;
+const AFTER_CREATE = `Ask first whatever the instructions say to ask before a first build, then write the files they describe into root, then show it: ${SHOW_IT}.`;
+const AFTER_CREATE_OPENING_CHECK = 'Ask first whatever the instructions say to ask before a first build, then write the files they describe into root, then run Artifact {action: "call", url, name: "check"}. The page opens for the person after your first write.';
+const AFTER_CREATE_OPENING = 'Ask first whatever the instructions say to ask before a first build, then write the files they describe into root. The page opens for the person after your first write.';
+const AFTER_CREATE_OPEN_CHECK = 'Ask first whatever the instructions say to ask before a first build, then write the files they describe into root, then run Artifact {action: "call", url, name: "check"}. The page is open: it shows your writes as they land.';
 const OPEN_NOT_AVAILABLE = 'The app you run in cannot show pages, so nothing opens by itself: once the content is written, give the person view_url.';
 const OPEN_YOURSELF = `Nothing opens by itself here: once the content is written (never while it is empty), ${SHOW_IT}.`;
-const AFTER_CREATE_OPEN = 'Write the files the instructions describe into root. The page is open: it shows your writes as they land.';
+const AFTER_CREATE_OPEN = 'Ask first whatever the instructions say to ask before a first build, then write the files they describe into root. The page is open: it shows your writes as they land.';
 
 /** The reminder when people changed files the agent has not read since (the paths go in `changed_files`, never here). */
 const changedNote = (count: number): string =>

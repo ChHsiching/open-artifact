@@ -16,6 +16,7 @@ import {
   serializeDeckIndex,
   validateViewContext as validateSlidesContext,
 } from '@open-artifact/slides-core';
+import { DATA_MARKER, checkData, dataHistoryIgnoresPath, dataWritesProblem, scaffoldData, validateDataContext } from './data.ts';
 import { WHITEBOARD_MARKER, checkWhiteboard, scaffoldWhiteboard, validateWhiteboardContext, whiteboardHistoryIgnores } from './whiteboard.ts';
 
 /** True when `dir` holds at least one slide file (`<id>.html`). */
@@ -51,6 +52,20 @@ export interface CheckContext {
   symlinks?: readonly string[];
   /** Bytes of the uploads (`_blobs/`). */
   blobBytes?: number;
+  /** The text of an upload, or `null` when it is missing (db-backed types). */
+  readBlob?: (id: string) => string | null;
+  /** The size of an upload in bytes, or `undefined` when it is missing. */
+  blobSize?: (id: string) => number | undefined;
+  /** When a document (`datasets/sales`) was last written, epoch ms (db-backed types). */
+  modifiedAt?: (path: string) => number | undefined;
+  /** The connectors the owner set up (`connectors.json`'s server names); `null` when there is no readable file. */
+  connectors?: ReadonlySet<string> | null;
+}
+
+/** A batch the type refuses before the store writes any of it. */
+export interface WriteRefusal {
+  code: string;
+  message: string;
 }
 
 /** What the server needs to know about a type. */
@@ -84,9 +99,14 @@ export interface TypeDefinition {
    * state that is no content, such as claims, a timer or per-person data.
    */
   historyIgnores?(path: string): boolean;
+  /**
+   * Refuses an agent's db batch the type's page would drop part of (checked
+   * before the store writes anything). `read` gives a document's data now.
+   */
+  writesProblem?(writes: readonly unknown[], read: (path: string) => unknown): WriteRefusal | null;
 }
 
-export type TypeName = 'design' | 'design-system' | 'slides' | 'whiteboard';
+export type TypeName = 'design' | 'design-system' | 'slides' | 'whiteboard' | 'data';
 
 export const TYPES: Record<TypeName, TypeDefinition> = {
   design: {
@@ -147,6 +167,26 @@ export const TYPES: Record<TypeName, TypeDefinition> = {
     store: 'db',
     comments: true,
     historyIgnores: whiteboardHistoryIgnores,
+  },
+  data: {
+    name: 'data',
+    title: 'Data',
+    contentDir: 'db',
+    marker: DATA_MARKER,
+    scaffold: (title) => scaffoldData(title),
+    check: (files, context = {}) =>
+      checkData(files, {
+        ...(context.blobExists ? { blobExists: context.blobExists } : {}),
+        ...(context.readBlob ? { readBlob: context.readBlob } : {}),
+        ...(context.blobSize ? { blobSize: context.blobSize } : {}),
+        ...(context.modifiedAt ? { modifiedAt: context.modifiedAt } : {}),
+        ...(context.connectors !== undefined ? { connectors: context.connectors } : {}),
+      }),
+    validateContext: (value) => validateDataContext(value),
+    store: 'db',
+    comments: true,
+    historyIgnores: dataHistoryIgnoresPath,
+    writesProblem: dataWritesProblem,
   },
 };
 

@@ -7,10 +7,10 @@ import { artifactPath, projectPath, sessionSlot } from '../src/session.ts';
 
 describe('roleAbilities', () => {
   it('gives each role what the host accepts from it', () => {
-    assert.deepEqual(roleAbilities('owner'), { canEdit: true, canComment: true, canRemoveComments: true, canRestore: true, canAsk: true, canSaveToHost: true });
-    assert.deepEqual(roleAbilities('editor'), { canEdit: true, canComment: true, canRemoveComments: true, canRestore: true, canAsk: false, canSaveToHost: false });
-    assert.deepEqual(roleAbilities('commenter'), { canEdit: false, canComment: true, canRemoveComments: false, canRestore: false, canAsk: false, canSaveToHost: false });
-    assert.deepEqual(roleAbilities('viewer'), { canEdit: false, canComment: false, canRemoveComments: false, canRestore: false, canAsk: false, canSaveToHost: false });
+    assert.deepEqual(roleAbilities('owner'), { canEdit: true, canComment: true, canRemoveComments: true, canRestore: true, canAsk: true, canSaveToHost: true, canUseConnectors: true });
+    assert.deepEqual(roleAbilities('editor'), { canEdit: true, canComment: true, canRemoveComments: true, canRestore: true, canAsk: false, canSaveToHost: false, canUseConnectors: false });
+    assert.deepEqual(roleAbilities('commenter'), { canEdit: false, canComment: true, canRemoveComments: false, canRestore: false, canAsk: false, canSaveToHost: false, canUseConnectors: false });
+    assert.deepEqual(roleAbilities('viewer'), { canEdit: false, canComment: false, canRemoveComments: false, canRestore: false, canAsk: false, canSaveToHost: false, canUseConnectors: false });
     assert.equal(roleAbilities('someone-new').canComment, false);
   });
 

@@ -6,6 +6,7 @@
  *   crates/open-artifact-wb-geom   → packages/wasm-wb-geom/generated/   Whiteboard geometry
  *   crates/open-artifact-export    → packages/wasm-export/generated/    export packing (zip, PDF, PNG), run in a Worker
  *   crates/open-artifact-canvas    → packages/wasm-canvas/generated/    the WebGL2 canvas engine
+ *   crates/open-artifact-data-rules → packages/wasm-data-rules/generated/ Data rule patterns (linear-time matching)
  *
  * Each package gets the wasm-bindgen glue (`<crate>.js` + `.d.ts`) and the
  * optimized module embedded as base64 (`bytes.js`), so it loads
@@ -34,6 +35,7 @@ const CRATES = {
   'open-artifact-wb-geom': { pkg: 'packages/wasm-wb-geom', opt: '-O3' },
   'open-artifact-export': { pkg: 'packages/wasm-export', opt: '-O3' },
   'open-artifact-canvas': { pkg: 'packages/wasm-canvas', opt: '-O3' },
+  'open-artifact-data-rules': { pkg: 'packages/wasm-data-rules', opt: '-Oz' },
 };
 
 const FEATURES = ['--enable-bulk-memory', '--enable-nontrapping-float-to-int', '--enable-sign-ext', '--enable-mutable-globals', '--enable-reference-types', '--enable-multivalue'];

@@ -1,0 +1,58 @@
+<meta name="dash-one-writer">
+<link rel="stylesheet" href="app.css">
+<main class="fx" data-read lang="en">
+  <header class="fx-head" id="overview">
+    <h1 class="fx-title" id="title">Sales and signups</h1>
+    <p class="fx-lede" data-read-step>Signups reached <b data-draw="latest" data-source="signups" data-field="signups" data-where="month=2026-10">—</b> in the latest month, <b data-draw="growth" data-source="growth">—</b> on the month before.</p>
+    <div class="fx-filters">
+      <label>Region
+        <select class="dash-select" data-draw="region" aria-label="Region" data-source="regions"></select>
+      </label>
+      <button type="button" class="fx-clear" id="clear-filters">Clear filters</button>
+    </div>
+  </header>
+
+  <nav class="fx-tabs" role="tablist">
+    <button type="button" role="tab" data-tab="revenue" id="tab-revenue">Revenue</button>
+    <button type="button" role="tab" data-tab="signups" id="tab-signups">Signups</button>
+    <button type="button" role="tab" data-tab="support" id="tab-support">Support</button>
+  </nav>
+
+  <section class="fx-page" id="revenue" data-tab-page="revenue">
+    <div class="fx-cards">
+      <article class="fx-card" id="card-revenue">
+        <h2>Revenue</h2>
+        <p class="fx-big"><span data-draw="revenue-total" data-source="revenue_total" data-fetchpriority="high">—</span></p>
+        <p class="fx-note">All months shown, in dollars.</p>
+      </article>
+      <article class="fx-card" id="card-target">
+        <h2>Target</h2>
+        <p class="fx-big"><span data-draw="target-total" data-source="regions" data-field="target">—</span></p>
+        <p class="fx-note">Sum of the region targets for FY27.</p>
+      </article>
+    </div>
+    <figure class="fx-chart" id="revenue-chart" data-source="orders">
+      <figcaption>Revenue by month</figcaption>
+      <div class="fx-chart-body" data-draw="revenue-chart"></div>
+    </figure>
+    <table class="fx-table" id="orders-table" data-source="orders" data-row-key="month" data-fetchpriority="low">
+      <thead><tr><th data-field="region">Region</th><th data-field="month">Month</th><th data-field="revenue">Revenue</th><th data-field="orders">Orders</th></tr></thead>
+      <tbody data-draw="orders-rows"></tbody>
+    </table>
+  </section>
+
+  <section class="fx-page" id="signups" data-tab-page="signups" hidden>
+    <figure class="fx-chart" id="signups-chart" data-source="signups">
+      <figcaption>Signups per month</figcaption>
+      <div class="fx-chart-body" data-draw="signups-chart"></div>
+    </figure>
+    <p class="fx-note" data-read-step>Click a bar to see that month. Picked: <b data-draw="picked">—</b></p>
+  </section>
+
+  <section class="fx-page" id="support" data-tab-page="support" hidden>
+    <h2>Open tickets</h2>
+    <ul class="fx-list" data-source="tickets" data-draw="tickets"></ul>
+    <p class="fx-note">Broken source: <b data-draw="broken" data-source="broken">—</b></p>
+  </section>
+</main>
+<script src="app.js"></script>

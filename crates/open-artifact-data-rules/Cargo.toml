@@ -1,0 +1,13 @@
+[package]
+name = "open-artifact-data-rules"
+description = "Data type rule patterns: JavaScript (u flag) pattern syntax matched in linear time, the same in the editor page and the CLI check."
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+wasm-bindgen.workspace = true
+regex = { version = "1.12", default-features = false, features = ["std", "unicode-gencat"] }

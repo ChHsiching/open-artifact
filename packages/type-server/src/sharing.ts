@@ -11,7 +11,7 @@
  *     network address shows what that role sees.
  *   - editor: changes the artifact and comments. commenter: comments only.
  *     viewer: looks. Only the owner sends to the agent, saves downloads on
- *     this computer and changes the sharing.
+ *     this computer, uses its connectors (`mcp`) and changes the sharing.
  *
  * The page learns who it is from `_api/session` (`viewer`, the `user`
  * capability) and goes read-only by itself; the server refuses what a role
@@ -261,7 +261,7 @@ const COMMENT_WRITES = new Set<string>([API.commentsCreate, API.commentsReply, A
 /** Page routes that change the artifact. */
 const EDIT_WRITES = new Set<string>([API.publish, API.assets, API.dbWrite, API.commentsRemove, API.roomEmit, API.historyRestore, API.historyDismiss]);
 /** Page routes that act on this computer or reach the agent: the owner's alone. */
-const OWNER_WRITES = new Set<string>([API.agentSend, API.commentsSend, API.downloads]);
+const OWNER_WRITES = new Set<string>([API.agentSend, API.commentsSend, API.downloads, API.mcpCall]);
 
 /** Whether the role may make a write call to a page route (reads are everyone's). */
 export function roleMay(role: Role, route: string): boolean {

@@ -11,7 +11,7 @@
  */
 
 /** Version of the capability contract described in this file. */
-export const CONTRACT_VERSION = '1.2.0';
+export const CONTRACT_VERSION = '1.3.0';
 
 /* -------------------------------------------------------------------------- */
 /* Errors                                                                     */
@@ -30,7 +30,9 @@ export type ArtifactErrorCode =
   /** The file or resource does not exist. */
   | 'not_found'
   /** The host could not be reached or answered with an unexpected status. */
-  | 'unavailable';
+  | 'unavailable'
+  /** A connector (`mcp`) call failed; see {@link McpErrorCode}. */
+  | McpErrorCode;
 
 /** One path that failed an optimistic-concurrency check. */
 export interface ConflictPath {
@@ -47,12 +49,15 @@ export class ArtifactError extends Error {
   readonly code: ArtifactErrorCode;
   /** Present for `conflict`: every path whose `ifMatch` failed. */
   readonly paths?: ConflictPath[];
+  /** Present when asking again later may succeed (a busy or timed-out connector). */
+  readonly retryable?: boolean;
 
-  constructor(code: ArtifactErrorCode, message: string, paths?: ConflictPath[]) {
+  constructor(code: ArtifactErrorCode, message: string, paths?: ConflictPath[], retryable?: boolean) {
     super(message);
     this.name = 'ArtifactError';
     this.code = code;
     if (paths) this.paths = paths;
+    if (retryable) this.retryable = true;
   }
 }
 
@@ -556,6 +561,134 @@ export interface HistoryCapability {
 }
 
 /* -------------------------------------------------------------------------- */
+/* mcp: tools of the connectors (MCP servers) the owner set up                */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Codes a connector call rejects with (on an {@link ArtifactError}, whose
+ * `retryable` says when asking again later may work):
+ *
+ * - `server_not_connected`: no connector by that name, or it could not be
+ *   started or reached;
+ * - `needs_reauth`: the connector refused its credentials (HTTP 401/403);
+ * - `not_granted`: this viewer may not use connectors (only the owner may);
+ * - `rate_limited`: the connector is busy (HTTP 429);
+ * - `upstream_error`: the connector answered with a protocol error, failed,
+ *   or did not answer in time;
+ * - `tool_error`, `consent_required`, `selection_required`, `not_in_manifest`,
+ *   `not_declared`, `capability_disabled`, `capability_removed`,
+ *   `server_unavailable`, `response_too_large`: reserved for hosts that
+ *   mediate connectors further; pages handle them.
+ *
+ * A tool that ran and failed is not an error: it resolves with `isError`.
+ */
+export type McpErrorCode =
+  | 'server_not_connected'
+  | 'needs_reauth'
+  | 'not_granted'
+  | 'not_declared'
+  | 'not_in_manifest'
+  | 'consent_required'
+  | 'selection_required'
+  | 'rate_limited'
+  | 'upstream_error'
+  | 'tool_error'
+  | 'capability_disabled'
+  | 'capability_removed'
+  | 'server_unavailable'
+  | 'response_too_large';
+
+/** Every {@link McpErrorCode}. */
+export const MCP_ERROR_CODES: readonly McpErrorCode[] = [
+  'server_not_connected',
+  'needs_reauth',
+  'not_granted',
+  'not_declared',
+  'not_in_manifest',
+  'consent_required',
+  'selection_required',
+  'rate_limited',
+  'upstream_error',
+  'tool_error',
+  'capability_disabled',
+  'capability_removed',
+  'server_unavailable',
+  'response_too_large',
+];
+
+/** One content item of a tool result (MCP `CallToolResult.content`). */
+export type McpContent =
+  | { type: 'text'; text: string; annotations?: JsonRecord; _meta?: JsonRecord }
+  | { type: 'image'; data: string; mimeType: string; annotations?: JsonRecord; _meta?: JsonRecord }
+  | { type: 'audio'; data: string; mimeType: string; annotations?: JsonRecord; _meta?: JsonRecord }
+  | {
+      type: 'resource';
+      resource: { uri: string; mimeType?: string; text?: string; blob?: string; _meta?: JsonRecord };
+      annotations?: JsonRecord;
+      _meta?: JsonRecord;
+    }
+  | { type: 'resource_link'; uri: string; name: string; title?: string; description?: string; mimeType?: string; annotations?: JsonRecord; _meta?: JsonRecord };
+
+/** What a tool answered: the MCP `CallToolResult`, as the connector sent it. */
+export interface McpToolResult {
+  content: McpContent[];
+  structuredContent?: JsonRecord;
+  /** The tool ran and failed; `content` says why. */
+  isError?: boolean;
+  _meta?: JsonRecord;
+}
+
+/** One tool of a connector (MCP `Tool`, the fields pages use). */
+export interface McpToolInfo {
+  name: string;
+  title?: string;
+  description?: string;
+  /** JSON Schema of the tool's arguments. */
+  inputSchema?: JsonRecord;
+}
+
+/**
+ * Where a connector stands: `connected` (it answered, `tools` lists its
+ * tools), `needs_auth` (it refused its credentials), `error` (it could not
+ * be started or reached), `disconnected` (turned off in the configuration).
+ */
+export type McpAuthStatus = 'connected' | 'needs_auth' | 'error' | 'disconnected';
+
+/** One connector, as {@link McpCapability.listTools} lists it. */
+export interface McpServerEntry {
+  /** Its name in the configuration, what {@link McpCapability.callTool} takes. */
+  server: string;
+  kind: 'connector';
+  authStatus: McpAuthStatus;
+  /** Present when `connected`. */
+  tools?: McpToolInfo[];
+  /** Why it is not connected. */
+  error?: string;
+}
+
+/** Options of {@link McpCapability.callTool}. */
+export interface McpCallOptions {
+  /** Cancels the call (it rejects with the signal's reason). */
+  signal?: AbortSignal;
+  /** Milliseconds before the call fails with a retryable `upstream_error`. Default 120 000, at most 600 000. */
+  timeoutMs?: number;
+}
+
+/** Default and largest {@link McpCallOptions.timeoutMs}. */
+export const MCP_CALL_TIMEOUT = { defaultMs: 120_000, maxMs: 600_000 } as const;
+
+/**
+ * The `mcp` capability: calls tools of the connectors (MCP servers) the
+ * owner configured on their computer. Only the owner gets it.
+ */
+export interface McpCapability {
+  /** Calls `tool` of connector `server`; rejects with an {@link McpErrorCode} (see there). */
+  callTool(server: string, tool: string, args: Record<string, unknown>, options?: McpCallOptions): Promise<McpToolResult>;
+  /** Every connector (or only `server`) and, for those connected, their tools. */
+  listTools(server?: string): Promise<{ servers: McpServerEntry[] }>;
+}
+
+/* -------------------------------------------------------------------------- */
 /* The map                                                                    */
 /* -------------------------------------------------------------------------- */
 
@@ -570,6 +703,7 @@ export interface CapabilityMap {
   db: DbCapability;
   comments: CommentsCapability;
   history: HistoryCapability;
+  mcp: McpCapability;
 }
 
 export type CapabilityName = keyof CapabilityMap;

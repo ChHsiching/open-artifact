@@ -1,0 +1,484 @@
+/*
+ * Edit mode, the source marks, the selection pill and the ask box. The page
+ * tokens live on `#dash-root`; the layers sit in `body`, so each token has a
+ * fallback here.
+ */
+
+#dash-root,
+.dash-rows,
+.dash-edit-layer,
+.dash-edit-washes,
+.dash-ask-pill {
+  --dash-ring: light-dark(#6a4fd8, #a891ff);
+}
+
+.dash-edit-layer,
+.dash-edit-washes,
+.dash-edit-veil,
+.dash-ask-box {
+  --dash-e-fg: var(--dash-text-primary, light-dark(#1a1a1a, #efefef));
+  --dash-e-muted: var(--dash-text-secondary, light-dark(#404040, #c2c2c2));
+  --dash-e-bg: var(--dash-page-bg, light-dark(#f9f9f9, #0b0b0b));
+  --dash-e-shadow: var(--dash-shadow-popover, 0 1px 2px rgb(11 11 11 / 0.06), 0 4px 16px rgb(11 11 11 / 0.12));
+  --dash-e-fast: var(--dash-dur-fast, 60ms);
+  --dash-e-snap: 0.1s;
+  --dash-e-base: 0.2s;
+  --dash-e-ease: var(--dash-ease-out, cubic-bezier(0.165, 0.84, 0.44, 1));
+}
+
+:is([data-dash-rule~="light"], [data-dash-bulk~="light"], [data-ground~="light"]) {
+  --dash-ring: #5b3fd0;
+}
+
+:is([data-dash-rule~="dark"], [data-dash-bulk~="dark"], [data-ground~="dark"]) {
+  --dash-ring: #b8a6ff;
+}
+
+:is([data-dash-rule~="violet"], [data-dash-bulk~="violet"], [data-ground~="violet"]) {
+  --dash-ring: #ffffffeb;
+}
+
+@keyframes dash-edit-in {
+  0% {
+    opacity: 0;
+  }
+}
+
+.dash-edit-layer {
+  position: fixed;
+  z-index: 800;
+  pointer-events: none;
+}
+
+.dash-edit-layer,
+.dash-edit-port {
+  overflow: hidden;
+}
+
+.dash-edit-drops {
+  inset: 0;
+}
+
+.dash-edit-layer > *,
+.dash-edit-port > *,
+.dash-edit-drops > * {
+  position: absolute;
+  box-sizing: border-box;
+}
+
+.dash-edit-washes {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  animation: dash-edit-in var(--dash-e-base) var(--dash-e-ease);
+}
+
+.dash-edit-washes > * {
+  position: absolute;
+  border-radius: 6px;
+  background: light-dark(color-mix(in srgb, var(--dash-ring) 7.5%, transparent), color-mix(in srgb, var(--dash-ring) 12.5%, transparent));
+  transition: opacity var(--dash-e-snap) var(--dash-e-ease);
+}
+
+.dash-edit-washes > [data-typing] {
+  opacity: 0;
+}
+
+.dash-edit-layer,
+#dash-root [data-dash-lift="copy"] {
+  --dash-edit-line: light-dark(
+    color-mix(in srgb, var(--dash-text-primary, #1a1a1a) 30%, var(--dash-page-bg, #f9f9f9)),
+    color-mix(in srgb, var(--dash-text-primary, #efefef) 48%, var(--dash-page-bg, #0b0b0b))
+  );
+}
+
+.dash-edit-mark {
+  --dash-edit-accent: var(--dash-ring);
+  --dash-edit-over: light-dark(color-mix(in srgb, var(--dash-edit-accent) 40%, transparent), color-mix(in srgb, var(--dash-edit-accent) 70%, transparent));
+  border-radius: 3px;
+}
+
+.dash-edit-mark[data-slight] {
+  border-radius: 6px;
+}
+
+.dash-edit-mark[data-amid] {
+  border-radius: 4px;
+}
+
+.dash-edit-mark[data-look="over"] {
+  box-shadow: 0 0 0 2px var(--dash-edit-over);
+  opacity: 0;
+  transition: opacity var(--dash-e-fast) linear;
+}
+
+.dash-edit-mark[data-look="over"]:not([data-slight]) {
+  transition: none;
+}
+
+.dash-edit-mark[data-look="over"][data-slight] {
+  box-shadow: 0 0 0 1.5px var(--dash-edit-over);
+}
+
+.dash-edit-mark[data-look="over"][data-on] {
+  opacity: 1;
+  transition: opacity var(--dash-e-snap) var(--dash-e-ease);
+}
+
+.dash-edit-mark[data-look="picked"] {
+  box-shadow:
+    inset 0 0 0 1px var(--dash-e-bg),
+    0 0 0 2px var(--dash-edit-accent),
+    0 0 0 3px var(--dash-e-bg);
+}
+
+.dash-edit-mark[data-look="picked"][data-amid],
+.dash-edit-mark[data-look="caret"] {
+  box-shadow: 0 0 0 1.5px var(--dash-edit-accent);
+}
+
+.dash-edit-grip {
+  width: 14px;
+  height: 24px;
+  cursor: grab;
+  pointer-events: auto;
+  animation: dash-edit-in var(--dash-e-snap) var(--dash-e-ease);
+}
+
+.dash-edit-grip::before {
+  content: "";
+  position: absolute;
+  inset: 0 2px;
+  border: 1px solid var(--dash-edit-line);
+  border-radius: 999px;
+  background: var(--dash-e-bg);
+}
+
+.dash-edit-grip::after {
+  content: "";
+  position: absolute;
+  inset: 7px 4px;
+  background: radial-gradient(circle, var(--dash-e-muted) 1px, transparent 1.25px) -1px -1px / 4px 4px;
+  opacity: 0.5;
+  transition: opacity var(--dash-e-snap);
+}
+
+.dash-edit-grip:hover::before,
+.dash-edit-grip[data-full]::before {
+  inset: 0;
+}
+
+.dash-edit-grip:hover::after,
+.dash-edit-grip[data-full]::after {
+  opacity: 1;
+}
+
+.dash-edit-drop[data-kind="extent"] {
+  outline: 1.5px solid var(--dash-ring);
+  border-radius: 12px;
+}
+
+.dash-edit-drop[data-kind="cell"] {
+  border: 1px dotted color-mix(in srgb, var(--dash-ring) 60%, transparent);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--dash-ring) 5%, transparent);
+}
+
+.dash-edit-drop[data-kind="cell"][data-land] {
+  border: 1.5px dashed color-mix(in srgb, var(--dash-ring) 85%, transparent);
+  background: color-mix(in srgb, var(--dash-ring) 8%, transparent);
+}
+
+.dash-edit-drop[data-kind="gap"] {
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--dash-ring) 40%, transparent);
+}
+
+.dash-edit-drop[data-kind="gap"][data-land] {
+  background: color-mix(in srgb, var(--dash-ring) 90%, transparent);
+}
+
+.dash-edit-veil {
+  position: fixed;
+  inset: 0;
+  z-index: 950;
+  cursor: grabbing;
+}
+
+.dash-edit-veil[data-out] {
+  cursor: not-allowed;
+}
+
+.dash-edit-tip {
+  position: absolute;
+  max-width: 240px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: var(--color-tip, #1f1f1f);
+  color: var(--color-tip-fg, #fff);
+  font: 13px/18px var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+  box-shadow: 0 1px 2px rgb(11 11 11 / 0.06), 0 2px 8px rgb(11 11 11 / 0.08);
+  translate: -50% 0;
+  animation: dash-edit-in var(--dash-e-snap) var(--dash-e-ease);
+}
+
+.dash-edit-tip[data-side="top"] {
+  translate: -50% -100%;
+}
+
+#dash-root [data-dash-lift="home"] {
+  opacity: 0.4 !important;
+}
+
+:where(#dash-root [data-dash-lift="copy"]) {
+  background-color: var(--dash-page-bg);
+}
+
+#dash-root [data-dash-lift="copy"] {
+  z-index: 20;
+  outline: 1px solid var(--dash-edit-line);
+  box-shadow: var(--dash-shadow-popover, 0 1px 2px rgb(11 11 11 / 0.06), 0 4px 16px rgb(11 11 11 / 0.12));
+  transition:
+    scale 0.14s var(--dash-ease-out),
+    opacity 0.14s;
+  will-change: translate, scale;
+}
+
+#dash-root[data-dash-mode="edit"] svg * {
+  pointer-events: none;
+}
+
+#dash-root[data-dash-mode="edit"] [data-dash-words] {
+  pointer-events: auto !important;
+}
+
+#dash-root[data-dash-mode="edit"] [data-read-stage] [data-read-step][aria-current="true"] {
+  display: block;
+}
+
+#dash-root[data-dash-mode="edit"] [data-read-stage] [data-read-step][aria-current="true"] > * {
+  opacity: 1;
+}
+
+#dash-root[data-dash-mode="edit"] * {
+  cursor: default;
+  scroll-margin-block: 56px 16px;
+}
+
+#dash-root[data-dash-mode="edit"] [data-dash-sticky],
+#dash-root[data-dash-mode="edit"] [data-dash-sticky] * {
+  scroll-margin-block: 0;
+}
+
+#dash-root[data-dash-mode="edit"]:focus-visible,
+#dash-root[data-dash-mode="edit"] :focus-visible:not(input, select, textarea) {
+  outline: none;
+}
+
+#dash-root [data-dash-ibeam],
+#dash-root [data-dash-ibeam] :not([data-draw], [data-draw] *) {
+  cursor: text;
+}
+
+#dash-root[data-dash-mode="edit"] [data-dash-kept]:not([data-dash-rule]) {
+  opacity: 0.6;
+  color: inherit !important;
+}
+
+#dash-root[data-dash-mode="edit"] [contenteditable="true"] {
+  -webkit-user-modify: read-write;
+  user-select: text;
+}
+
+#dash-root[data-dash-mode="edit"] [contenteditable="true"] :is(b, strong):not([contenteditable="false"], [contenteditable="false"] *) {
+  font-weight: 600;
+}
+
+#dash-root[data-dash-mode="edit"] [contenteditable="false"] {
+  cursor: default;
+  user-select: all;
+}
+
+::highlight(dash-edit-link) {
+  background-color: color-mix(in srgb, var(--dash-ring) 28%, transparent);
+}
+
+#dash-root[data-dash-mode] [data-dash-rule]:not(s, del) {
+  text-decoration-line: underline !important;
+  text-decoration-style: dotted !important;
+  text-decoration-color: color-mix(in srgb, var(--dash-ring) 80%, transparent) !important;
+  text-decoration-thickness: 1.5px !important;
+  text-decoration-skip-ink: none !important;
+  text-underline-offset: 0.22em !important;
+  cursor: pointer !important;
+  transition: text-decoration-color var(--dash-dur-fast) linear;
+}
+
+#dash-root[data-dash-mode="data"] [data-dash-bulk] {
+  cursor: pointer !important;
+}
+
+#dash-root[data-dash-mode] [data-dash-rule]:is([data-dash-lined], [data-dash-stop]:focus-visible) {
+  text-decoration-color: transparent !important;
+  transition: text-decoration-color 0.1s var(--dash-ease-out);
+}
+
+#dash-root[data-dash-mode] [data-dash-bulk]:not(:focus-visible) {
+  outline: 2px dotted color-mix(in srgb, var(--dash-ring) 70%, transparent) !important;
+  outline-offset: 3px !important;
+}
+
+#dash-root[data-dash-mode] table[data-dash-bulk]:not(:focus-visible) {
+  outline-offset: -2px !important;
+}
+
+#dash-root[data-dash-mode] [data-dash-bulk][data-dash-lined] {
+  outline-color: transparent !important;
+}
+
+#dash-root[data-dash-mode="data"] [data-dash-stop]:focus-visible {
+  outline: 2px solid var(--dash-ring) !important;
+  outline-offset: 2px !important;
+}
+
+#dash-root[data-dash-mode="data"] [data-dash-stop][data-dash-rule]:focus-visible {
+  outline-offset: 1px !important;
+  outline-width: 1.5px !important;
+}
+
+#dash-root[data-dash-mode="data"] table[data-dash-stop]:focus-visible {
+  outline-offset: -2px !important;
+}
+
+#dash-root[data-dash-mode="data"] [data-dash-stop][data-dash-lined]:focus-visible {
+  outline-color: transparent !important;
+}
+
+.dash-ask-pill {
+  position: fixed;
+  z-index: 900;
+  width: max-content;
+}
+
+.dash-ask-box {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(440px, 100vw - 32px);
+  box-sizing: border-box;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--dec-card, light-dark(#fff, #1f1f1f));
+  color: var(--dec-fg, light-dark(#1a1a1a, #efefef));
+  box-shadow: var(--dash-e-shadow);
+  font: 14px/20px var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+  translate: -50% 0;
+  animation: dash-edit-in var(--dash-e-base) var(--dash-e-ease);
+}
+
+.dash-ask-box-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dash-ask-box-title {
+  flex: 1;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.dash-ask-box-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.dash-ask-box-close:hover {
+  background: var(--dec-hover, light-dark(#0000000d, #ffffff14));
+}
+
+.dash-ask-box-about {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: var(--dec-muted, var(--dash-e-muted));
+  font-size: 13px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.dash-ask-box-field {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--dec-line, light-dark(#e5e5e5, #333));
+  border-radius: 8px;
+  background: var(--dec-field, transparent);
+  color: inherit;
+  font: inherit;
+  resize: vertical;
+}
+
+.dash-ask-box-field:focus-visible {
+  outline: 2px solid var(--dec-field-ring, #257de0);
+  outline-offset: -1px;
+}
+
+.dash-ask-box-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dash-ask-box-hint {
+  flex: 1;
+  margin: 0;
+  color: var(--dec-muted, var(--dash-e-muted));
+  font-size: 12px;
+}
+
+.dash-ask-box-hint[data-error] {
+  color: var(--color-bad, light-dark(#a42528, #ff8a8a));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dash-edit-washes > *,
+  .dash-edit-mark[data-look="over"],
+  .dash-edit-mark[data-look="over"][data-on],
+  .dash-edit-grip::after,
+  #dash-root [data-dash-lift="copy"] {
+    transition: none;
+  }
+
+  .dash-edit-washes,
+  .dash-edit-grip,
+  .dash-edit-tip,
+  .dash-ask-box {
+    animation: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .dash-edit-mark[data-look="picked"],
+  .dash-edit-mark[data-look="caret"] {
+    outline: 2px solid Highlight;
+  }
+
+  .dash-edit-mark[data-look="over"][data-on] {
+    outline: 1px solid CanvasText;
+  }
+}

@@ -8,6 +8,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@open-artifact/live-store": "0.1.0",
     "@open-artifact/protocol": "0.1.0",
     "@open-artifact/wasm-wb-geom": "0.1.0"
   },

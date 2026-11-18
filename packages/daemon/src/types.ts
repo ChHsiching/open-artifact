@@ -28,7 +28,7 @@ import {
 import { readJson } from './paths.ts';
 
 /** Type ids the built-in root may provide in this release. */
-export const BUILTIN_TYPE_IDS: readonly string[] = ['design', 'whiteboard', 'slides'];
+export const BUILTIN_TYPE_IDS: readonly string[] = ['design', 'whiteboard', 'slides', 'data'];
 
 /**
  * The built-in type root: `$OPEN_ARTIFACT_BUILTIN_TYPES`, else the repository's

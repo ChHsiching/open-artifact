@@ -1,7 +1,7 @@
 # Open Artifact for Claude Code
 
-Slide decks, design canvases and whiteboards as folders of files that open in one local page where you view, edit
-and comment. Type `/open-artifact slides a 6-slide pitch for this repo` (or `design …`, `whiteboard …`).
+Slide decks, design canvases, whiteboards and data dashboards as folders of files that open in one local page where you view, edit
+and comment. Type `/open-artifact slides a 6-slide pitch for this repo` (or `design …`, `whiteboard …`, `data …`).
 
 ## Install
 

@@ -10,7 +10,7 @@
  *            └─ embeds ─▶ the original page on its own origin
  *                 (http://<id>.frame.localhost:<port>/_f/<ver>/, Site.content)
  *
- * The page gets `window.openArtifact` from the Frame Runtime this server injects
+ * The page gets `window.openartifact` from the Frame Runtime this server injects
  * first in its <head> (client/runtime.ts). Every capability call is a
  * `__frame_cap` postMessage to the inner shell (client/shell.ts), which
  * carries it here over HTTP and pushes events (db changes, room, file and

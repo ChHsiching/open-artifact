@@ -185,6 +185,8 @@ export interface CapError {
   message: string;
   /** Conflicting paths of a `conflict`. */
   paths?: unknown[];
+  /** Whether trying the same call again may work (`mcp`). */
+  retryable?: boolean;
 }
 
 /** Capability messages, Shell → page. */

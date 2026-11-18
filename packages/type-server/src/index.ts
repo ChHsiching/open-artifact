@@ -7,5 +7,7 @@ export * from './store.ts';
 export * from './agent.ts';
 export * from './daemon.ts';
 export * from './types.ts';
+export * from './connectors.ts';
+export * from './mcp-client.ts';
 export { HttpError, mimeOf } from './http.ts';
 export { main } from './cli.ts';

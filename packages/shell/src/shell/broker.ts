@@ -1,7 +1,7 @@
 /**
  * The Shell's capability broker: runs the page's `window.openartifact`
  * calls (`cap_*` in `@open-artifact/protocol`'s `shell.ts`) against the
- * page's backend, the way the frame shell brokers `window.openArtifact`.
+ * page's backend, the way the frame shell brokers `window.openartifact`.
  *
  * The backend is the page's own type server API, reached from the Shell
  * with `createLocalProvider({base})`; the base comes with the page's
@@ -80,7 +80,7 @@ export function rewire(post?: PagePost, caps?: string[]): number {
 function toCapError(error: unknown): CapError {
   if (isArtifactError(error)) {
     const paths = (error as { paths?: unknown[] }).paths;
-    return { code: error.code, message: error.message, ...(paths ? { paths } : {}) };
+    return { code: error.code, message: error.message, ...(paths ? { paths } : {}), ...(error.retryable ? { retryable: true } : {}) };
   }
   return { code: 'unavailable', message: error instanceof Error ? error.message : String(error) };
 }

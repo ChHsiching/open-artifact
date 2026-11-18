@@ -77,6 +77,8 @@ export interface DbHostOptions {
    * and no `db/` folder is made or watched. Default true.
    */
   documents?: boolean;
+  /** Refuses an agent's batch the type's page would drop part of (the type's `writesProblem`). */
+  writesProblem?(writes: readonly unknown[], read: (path: string) => unknown): { code: string; message: string } | null;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -578,6 +580,14 @@ export class DbHost {
         return guarded(() => this.db.readDb(typeof args.path === 'string' && args.path ? args.path : undefined, { query: args.query, limit: args.limit, cursor: args.cursor }));
       case 'open-artifact.db.write': {
         const writes = Array.isArray(args.writes) ? args.writes : [];
+        const problem = this.options.writesProblem?.(writes, (path) => {
+          try {
+            return this.db.readDoc(path);
+          } catch {
+            return null;
+          }
+        });
+        if (problem) throw new HttpError(400, 'invalid', `${problem.message} Nothing was written.`, { refused: problem.code });
         const results = guarded(() => this.db.writeDb(writes, { requireIfMatch: args.require_if_match === true }));
         const changes: Record<string, JsonRecord | null> = {};
         for (const result of results) {

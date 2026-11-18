@@ -27,6 +27,8 @@ import type {
   HistoryRestoreResult,
   JsonRecord,
   JsonValue,
+  McpServerEntry,
+  McpToolResult,
   Peer,
   PublishBatch,
   PublishResult,
@@ -63,6 +65,8 @@ export const API = {
   historyDiff: '_api/history/diff',
   historyRestore: '_api/history/restore',
   historyDismiss: '_api/history/dismiss',
+  mcpTools: '_api/mcp/tools',
+  mcpCall: '_api/mcp/call',
 } as const;
 
 /** Root-relative prefix every upload is served under. */
@@ -100,6 +104,8 @@ export interface ErrorResponse {
   code: ArtifactErrorCode;
   message: string;
   paths?: ConflictPath[];
+  /** Asking again later may succeed (connector calls). */
+  retryable?: boolean;
 }
 
 /** `POST _api/agent/send` request body. */
@@ -222,6 +228,27 @@ export type HistoryRestoreResponse = HistoryRestoreResult;
 export interface HistoryDismissRequest {
   id: string;
 }
+
+/** `GET _api/mcp/tools[?server=]` 200 body (the owner only; others get `not_granted`). */
+export interface McpToolsResponse {
+  servers: McpServerEntry[];
+}
+
+/**
+ * `POST _api/mcp/call` request body (the owner only). The 200 body is the
+ * tool's {@link McpToolResult}; failures are an {@link ErrorResponse} with an
+ * `McpErrorCode`. Closing the request cancels the call.
+ */
+export interface McpCallRequest {
+  server: string;
+  tool: string;
+  args: Record<string, unknown>;
+  /** Default `MCP_CALL_TIMEOUT.defaultMs`. */
+  timeoutMs?: number;
+}
+
+/** `POST _api/mcp/call` 200 body. */
+export type McpCallResponse = McpToolResult;
 
 /** Server-sent events on `GET _api/events?client=<id>`, by event name. */
 export interface ServerEvents {

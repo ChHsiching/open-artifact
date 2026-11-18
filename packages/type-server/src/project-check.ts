@@ -5,9 +5,10 @@
  * links), then the stale copy notes of installed design systems.
  */
 
-import { existsSync, readdirSync, statSync, type Dirent } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync, type Dirent } from 'node:fs';
 import { lstat, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import { connectorsFile, parseConnectors } from './connectors.ts';
 import { readDbFiles } from './db-host.ts';
 import { staleCopyFindings } from './ds-sync.ts';
 import { ArtifactStore } from './store.ts';
@@ -37,38 +38,72 @@ async function scanProject(root: string): Promise<{ sizes: Map<string, number>; 
   return { sizes, symlinks };
 }
 
-/** The uploads of a folder: ids and their total bytes. */
-function scanBlobs(root: string): { ids: Set<string>; bytes: number } {
-  const ids = new Set<string>();
+/** The uploads of a folder: each id's file name and size, and their total bytes. */
+function scanBlobs(root: string): { files: Map<string, { name: string; size: number }>; bytes: number } {
+  const files = new Map<string, { name: string; size: number }>();
   let bytes = 0;
   let names: string[] = [];
   try {
     names = readdirSync(join(root, '_blobs'));
   } catch {
-    return { ids, bytes };
+    return { files, bytes };
   }
   for (const name of names) {
     const id = /^([0-9a-f]{32})\./.exec(name)?.[1];
     if (!id) continue;
-    ids.add(id);
+    let size = 0;
     try {
-      bytes += statSync(join(root, '_blobs', name)).size;
+      size = statSync(join(root, '_blobs', name)).size;
     } catch {
       // removed meanwhile
     }
+    files.set(id, { name, size });
+    bytes += size;
   }
-  return { ids, bytes };
+  return { files, bytes };
+}
+
+/** The connectors a query can call (set up, usable and turned on); `null` when there is no readable file. */
+function configuredConnectors(): ReadonlySet<string> | null {
+  try {
+    const entries = parseConnectors(readFileSync(connectorsFile(), 'utf8'));
+    return new Set([...entries].filter(([, entry]) => entry.config !== undefined && !entry.config.disabled).map(([name]) => name));
+  } catch {
+    return null;
+  }
 }
 
 /** What the type's check gets to know of the folder. */
 export async function checkContextOf(root: string, type: TypeName): Promise<CheckContext> {
   const blobs = scanBlobs(root);
   const context: CheckContext = {
-    blobExists: (id) => blobs.ids.has(id),
+    blobExists: (id) => blobs.files.has(id),
     fileExists: (path) => !path.split('/').some((part) => part === '..' || part === '') && existsSync(join(root, ...path.split('/'))),
     blobBytes: blobs.bytes,
   };
-  if (TYPES[type].store !== 'db') Object.assign(context, await scanProject(root));
+  if (TYPES[type].store !== 'db') {
+    Object.assign(context, await scanProject(root));
+    return context;
+  }
+  context.blobSize = (id) => blobs.files.get(id)?.size;
+  context.readBlob = (id) => {
+    const blob = blobs.files.get(id);
+    if (blob === undefined) return null;
+    try {
+      return readFileSync(join(root, '_blobs', blob.name), 'utf8');
+    } catch {
+      return null;
+    }
+  };
+  context.modifiedAt = (path) => {
+    if (path.split('/').some((part) => part === '..' || part === '')) return undefined;
+    try {
+      return statSync(join(root, 'db', ...path.split('/')) + '.json').mtimeMs;
+    } catch {
+      return undefined;
+    }
+  };
+  context.connectors = configuredConnectors();
   return context;
 }
 

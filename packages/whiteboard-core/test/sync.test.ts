@@ -191,6 +191,17 @@ describe('live board sync', () => {
     assert.equal(transport.docs.get('elements/n1')?.text, 'abc');
   });
 
+  it('clears the pending count when an edit changes no document', async () => {
+    const { transport, timers, doc } = await open();
+    const original = doc.content();
+    assert.equal(doc.setContent(withText(original, 'n1', 'a')), true);
+    assert.equal(doc.getSnapshot().pending, 1);
+    await timers.advance(LIVE_EDIT_DEBOUNCE_MS + 100);
+    assert.equal(transport.batches.length, 0, 'nothing to write');
+    assert.equal(doc.getSnapshot().pending, 0);
+    assert.equal(doc.getSnapshot().status, 'ready');
+  });
+
   it('writes new elements before the order and deletes after it', async () => {
     const { transport, doc } = await open(seedDocs(note('n1', 'a'), note('n2', 'b')));
     doc.setContent({ ...doc.content(), elements: [doc.content().elements[0]!, note('n3', 'c')] });

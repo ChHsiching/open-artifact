@@ -3,7 +3,7 @@
  * read and change the board's content and title.
  */
 
-import { BOARD_RECORD_CODEC } from '../codec.ts';
+import { BOARD_RECORD_CODEC, type OrderCarry } from '../codec.ts';
 import { persistedElementByDerived } from '../derived.ts';
 import type { ElementMeasures } from '../geometry.ts';
 import { canonicalValuesEqual } from '../json.ts';
@@ -65,7 +65,7 @@ export function shareUnchangedBoard(previous: Board, next: Board): Board {
  * composed content (the editor may add steps, such as moving stickers with
  * their hosts).
  */
-export function createBoardLiveCodec(parseContent: (raw: unknown) => BoardContent = parseBoardContent): LiveCodec<Board> {
+export function createBoardLiveCodec(parseContent: (raw: unknown) => BoardContent = parseBoardContent): LiveCodec<Board, OrderCarry> {
   return {
     collections: BOARD_RECORD_CODEC.collections,
     metaPath: BOARD_RECORD_CODEC.metaPath,

@@ -1,0 +1,336 @@
+@import "@open-artifact/ui/styles.css";
+@import "@open-artifact/editor-kit/styles.css";
+@import "./edit/edit.css";
+@source "./";
+
+/*
+ * Chrome tokens: the toolbar, panels, menus and tooltips around the page
+ * share the look of the other editors' chrome.
+ */
+@theme {
+  --color-chrome: var(--dec-card);
+  --color-chrome-fg: var(--dec-fg);
+  --color-chrome-muted: var(--dec-muted);
+  --color-chrome-hover: var(--dec-hover);
+  --color-chrome-pressed: var(--dec-pressed);
+  --color-chrome-pressed-fg: var(--dec-pressed-fg);
+  --color-chrome-line: var(--dec-line);
+  --color-chrome-field: var(--dec-field);
+  --color-chrome-ring: var(--dec-field-ring);
+  --color-chrome-accent: #257de0;
+  /* Focus ring of the shared chrome controls (`@open-artifact/editor-kit`). */
+  --color-chrome-focus: var(--color-chrome-accent);
+  --color-tip: var(--dec-tip);
+  --color-tip-fg: var(--dec-tip-fg);
+  --shadow-chrome: var(--dec-card-shadow);
+  --shadow-chrome-popup: var(--dec-popup-shadow);
+  --font-weight-control: 435;
+}
+
+:root {
+  --dec-ground: #f9f9f7;
+  --dec-card: #ffffff;
+  --dec-fg: rgb(0 0 0 / 0.9);
+  --dec-muted: rgb(0 0 0 / 0.465);
+  --dec-hover: rgb(0 0 0 / 0.05);
+  --dec-field: rgb(255 255 255 / 0.5);
+  --dec-field-ring: rgb(0 0 0 / 0.08);
+  --dec-pressed: rgb(37 125 224 / 0.12);
+  --dec-pressed-fg: #1757ac;
+  --dec-line: rgb(0 0 0 / 0.08);
+  --dec-tip: #0b0b0b;
+  --dec-tip-fg: #ffffff;
+  --dec-card-shadow: 0 0 0 1px rgb(0 0 0 / 0.08), 0 1px 2px 0 rgb(11 11 11 / 0.06), 0 2px 8px 0 rgb(11 11 11 / 0.08);
+  --dec-popup-shadow: 0 0 0 1px rgb(0 0 0 / 0.08), 0 8px 24px rgb(0 0 0 / 0.12), 0 2px 6px rgb(0 0 0 / 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --dec-ground: #0b0b0b;
+    --dec-card: #1f1f1f;
+    --dec-fg: rgb(255 255 255 / 0.93);
+    --dec-muted: rgb(255 255 255 / 0.4);
+    --dec-hover: rgb(255 255 255 / 0.075);
+    --dec-field: rgb(255 255 255 / 0.05);
+    --dec-field-ring: rgb(255 255 255 / 0.12);
+    --dec-pressed-fg: #6aabf1;
+    --dec-line: rgb(255 255 255 / 0.06);
+    --dec-tip: #303030;
+    --dec-tip-fg: rgb(255 255 255 / 0.93);
+    --dec-card-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.04), 0 1px 2px 0 rgb(11 11 11 / 0.06), 0 2px 8px 0 rgb(0 0 0 / 0.24);
+    --dec-popup-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.04), 0 8px 24px rgb(0 0 0 / 0.32), 0 2px 6px rgb(0 0 0 / 0.2);
+  }
+}
+
+:root[data-theme="dark"] {
+  --dec-ground: #0b0b0b;
+  --dec-card: #1f1f1f;
+  --dec-fg: rgb(255 255 255 / 0.93);
+  --dec-muted: rgb(255 255 255 / 0.4);
+  --dec-hover: rgb(255 255 255 / 0.075);
+  --dec-field: rgb(255 255 255 / 0.05);
+  --dec-field-ring: rgb(255 255 255 / 0.12);
+  --dec-pressed-fg: #6aabf1;
+  --dec-line: rgb(255 255 255 / 0.06);
+  --dec-tip: #303030;
+  --dec-tip-fg: rgb(255 255 255 / 0.93);
+  --dec-card-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.04), 0 1px 2px 0 rgb(11 11 11 / 0.06), 0 2px 8px 0 rgb(0 0 0 / 0.24);
+  --dec-popup-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.04), 0 8px 24px rgb(0 0 0 / 0.32), 0 2px 6px rgb(0 0 0 / 0.2);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--t-bg, var(--dec-ground));
+  color: var(--dec-fg);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ------------------------------- layout ---------------------------------- */
+
+.dash-app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.dash-toolbar {
+  position: relative;
+  z-index: 5;
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  height: 48px;
+  padding: 0 8px 0 16px;
+  border-bottom: 1px solid var(--dec-line);
+  background: var(--t-bg, var(--dec-ground));
+}
+
+.dash-toolbar-start {
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.dash-toolbar-center {
+  display: flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.dash-toolbar-center:empty {
+  display: none;
+}
+
+.dash-toolbar-end {
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+}
+
+.dash-attention {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--color-warning, #d97706);
+  box-shadow: 0 0 0 2px var(--dec-card);
+  pointer-events: none;
+}
+
+.dash-attention-bad {
+  background: var(--color-danger, #dc2626);
+}
+
+.dash-body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.dash-main {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: auto;
+}
+
+.dash-above {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  display: flex;
+  justify-content: center;
+  padding: 8px 16px 0;
+}
+
+.dash-above > * {
+  width: min(100%, 720px);
+}
+
+html.dash-no-page #dash-root {
+  display: none;
+}
+
+.dash-empty {
+  display: flex;
+  min-height: 60vh;
+  align-items: center;
+  justify-content: center;
+}
+
+.dash-working-text {
+  animation: dash-working-in 240ms ease-out;
+}
+
+@keyframes dash-working-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+}
+
+.dash-opening {
+  display: flex;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ------------------------------ side panel ------------------------------- */
+
+.dash-side {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  min-width: 0;
+  max-width: calc(100% - 320px);
+  border-left: 1px solid var(--dec-line);
+  background: var(--dec-card);
+}
+
+.dash-panel-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  z-index: 2;
+  width: 8px;
+  cursor: col-resize;
+  outline: none;
+}
+
+.dash-panel-resizer:hover,
+.dash-panel-resizer:focus-visible {
+  background: linear-gradient(to right, transparent 3px, var(--color-chrome-accent) 3px, var(--color-chrome-accent) 5px, transparent 5px);
+}
+
+@media (max-width: 640px) {
+  .dash-side {
+    position: fixed;
+    inset: 48px 0 0 auto;
+    z-index: 6;
+    width: 100% !important;
+    max-width: none;
+  }
+
+  .dash-panel-resizer {
+    display: none;
+  }
+}
+
+/* ------------------------------- comments -------------------------------- */
+
+.dash-comment-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+}
+
+html[data-dash-comment-layer] #dash-root,
+html[data-dash-comment-layer] #dash-root * {
+  cursor: crosshair !important;
+}
+
+[data-dash-comment-hover] {
+  outline: 1.5px dashed #3b63fb !important;
+  outline-offset: 2px;
+}
+
+[data-dash-comment-picked] {
+  outline: 2px solid #3b63fb !important;
+  outline-offset: 2px;
+}
+
+[data-source-item]:not(:hover, :has(:focus-visible)) [data-source-meta] {
+  display: none;
+}
+
+[data-source-item]:not(:hover, :has(:focus-visible)) [data-source-fix] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+[data-source-item]:not([data-fix]):is(:hover, :has(:focus-visible)) [data-source-meta] + [data-source-end] {
+  display: none;
+}
+
+[data-source-item][data-fix]:is(:hover, :has(:focus-visible)) [data-source-end] {
+  visibility: hidden;
+  margin-left: 44px;
+}
+
+@media (pointer: coarse), (hover: none) {
+  [data-source-item]:hover:not(:has(:focus-visible)) [data-source-meta] {
+    display: none;
+  }
+
+  [data-source-item]:not([data-fix]):hover:not(:has(:focus-visible)) [data-source-meta] + [data-source-end] {
+    display: flex;
+  }
+
+  [data-source-item][data-fix] [data-source-end] {
+    visibility: hidden;
+    margin-left: 44px;
+  }
+
+  [data-source-item][data-fix] [data-source-fix] {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+[data-source-group] + [data-source-group],
+[data-source-group] + [data-source-item],
+[data-source-item] + [data-source-group] {
+  margin-top: 14px;
+}
+
+[data-source-group] + [data-source-group]::before,
+[data-source-group] + [data-source-item]::before,
+[data-source-item] + [data-source-group]::before {
+  content: '';
+  position: absolute;
+  inset: -8px 10px auto 8px;
+  border-top: 1px solid var(--color-line);
+}

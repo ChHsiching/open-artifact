@@ -128,6 +128,7 @@ function buildVendor() {
   vendorCopy(join(repo, 'packages', 'daemon', 'harnesses'), join(vendor, 'harnesses'), 'the harness profiles');
   vendorCopy(join(repo, 'artifact-types', 'design'), join(vendor, 'artifact-types', 'design'), 'the design type');
   vendorCopy(join(repo, 'artifact-types', 'whiteboard'), join(vendor, 'artifact-types', 'whiteboard'), 'the whiteboard type');
+  vendorCopy(join(repo, 'artifact-types', 'data'), join(vendor, 'artifact-types', 'data'), 'the data type');
   vendorCopy(join(repo, 'artifact-types', 'slides'), join(vendor, 'artifact-types', 'slides'), 'the slides type');
   vendorCopy(join(repo, 'artifact-types', 'design-system'), join(vendor, 'artifact-types', 'design-system'), 'the design-system type');
 }

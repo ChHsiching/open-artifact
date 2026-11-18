@@ -1,8 +1,8 @@
 # Open Artifact for Antigravity
 
-For Google Antigravity (the `agy` CLI and the Antigravity app). Slide decks, design canvases and whiteboards as
+For Google Antigravity (the `agy` CLI and the Antigravity app). Slide decks, design canvases, whiteboards and data dashboards as
 folders of files that open in one local page where you view, edit and comment: `/open-artifact slides …`,
-`design …` or `whiteboard …`. Needs Node.js 22 or later.
+`design …`, `whiteboard …` or `data …`. Needs Node.js 22 or later.
 
 ## Install
 

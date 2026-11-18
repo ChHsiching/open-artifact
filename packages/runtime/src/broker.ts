@@ -41,6 +41,8 @@ import {
   type DbCapability,
   type DownloadsCapability,
   type HistoryCapability,
+  MCP_CALL_TIMEOUT,
+  type McpCapability,
   type RoomCapability,
   type UserCapability,
   type Viewer,
@@ -65,6 +67,7 @@ export const BROKERED_METHODS: { readonly [K in CapabilityName]: readonly string
   db: ['get', 'list', 'write'],
   comments: ['list', 'create', 'reply', 'setResolved', 'move', 'remove', 'sendToAgent'],
   history: ['list', 'files', 'read', 'readBytes', 'diff', 'restore', 'dismissNotice'],
+  mcp: ['callTool', 'listTools'],
 };
 
 /**
@@ -113,7 +116,8 @@ interface Pending {
 /** Rebuilds the error a Shell sent. */
 function toArtifactError(error: CapError | undefined): ArtifactError {
   const code = (error?.code ?? 'unavailable') as ArtifactErrorCode;
-  return new ArtifactError(code, error?.message ?? 'The Shell refused the call.', error?.paths as ConflictPath[] | undefined);
+  const retryable = (error as { retryable?: unknown } | undefined)?.retryable === true;
+  return new ArtifactError(code, error?.message ?? 'The Shell refused the call.', error?.paths as ConflictPath[] | undefined, retryable);
 }
 
 /** A per-load prefix plus a counter, like the frame runtime's call ids. */
@@ -236,12 +240,23 @@ export function createShellProvider(options: ShellProviderOptions = {}): Capabil
       }, wantTimeoutMs);
     });
 
-  const call = (cap: CapabilityName, method: string, args: unknown[], gesture = false): Promise<unknown> =>
+  const call = (cap: CapabilityName, method: string, args: unknown[], gesture = false, timeoutMs?: number, signal?: AbortSignal): Promise<unknown> =>
     new Promise((resolve, reject) => {
       const id = nextId();
       const entry: Pending = { cap, gen, resolve, reject, timer: null };
       pending.set(id, entry);
-      armTimer(id, entry, CALL_TIMEOUT[cap] ?? DEFAULT_CALL_TIMEOUT);
+      armTimer(id, entry, timeoutMs ?? CALL_TIMEOUT[cap] ?? DEFAULT_CALL_TIMEOUT);
+      if (signal) {
+        // A signal cannot cross postMessage: the call is dropped here and its answer ignored.
+        const abort = (): void => {
+          if (pending.get(id) !== entry) return;
+          pending.delete(id);
+          if (entry.timer) clearTimeout(entry.timer);
+          reject(signal.reason);
+        };
+        if (signal.aborted) return abort();
+        signal.addEventListener('abort', abort, { once: true });
+      }
       post({ openArtifact: 'cap', id, cap, method, args, gen }, gesture);
     });
 
@@ -336,6 +351,19 @@ export function createShellProvider(options: ShellProviderOptions = {}): Capabil
       }
       case 'downloads': {
         const ns: DownloadsCapability = { save: (file) => c('save', [file], true) };
+        return ns;
+      }
+      case 'mcp': {
+        const ns: McpCapability = {
+          callTool: (server, tool, args, opts) => {
+            const timeoutMs = opts?.timeoutMs;
+            const wire = timeoutMs === undefined ? [server, tool, args] : [server, tool, args, { timeoutMs }];
+            // The page waits a little longer than the host does, so the host's own timeout error arrives.
+            const budget = Math.min(timeoutMs ?? MCP_CALL_TIMEOUT.defaultMs, MCP_CALL_TIMEOUT.maxMs) + 15_000;
+            return call('mcp', 'callTool', wire, false, budget, opts?.signal) as ReturnType<McpCapability['callTool']>;
+          },
+          listTools: (server) => c('listTools', server === undefined ? [] : [server]),
+        };
         return ns;
       }
       default:

@@ -77,7 +77,7 @@ export function typeLine(type: TypeSummary, short = false): string {
 }
 
 const INTRO =
-  'Open Artifact lets you make artifacts: typed folders of files (a slide deck, a design canvas, a whiteboard and more) that open as live pages the person can view, edit, comment on and export. You make and change them with the Artifact, ArtifactData and ArtifactComments tools.';
+  'Open Artifact lets you make artifacts: typed folders of files (a slide deck, a design canvas, a whiteboard, a data dashboard and more) that open as live pages the person can view, edit, comment on and export. You make and change them with the Artifact, ArtifactData and ArtifactComments tools.';
 
 const WHERE_OUTPUT_GOES = `<where_output_goes>
 Decide where your output will live before you make anything.

@@ -7,7 +7,7 @@
     {
       "name": "open-artifact",
       "source": "./cursor",
-      "description": "Decks, design canvases, and whiteboards you view, edit and comment on in one local page, with comments sent back to the agent."
+      "description": "Decks, design canvases, whiteboards and dashboards you view, edit and comment on in one local page, with comments sent back to the agent."
     }
   ]
 }

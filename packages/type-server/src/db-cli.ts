@@ -25,7 +25,7 @@ import { IDEA_DOCUMENT_PATTERN, ideaDocumentProblem } from '@open-artifact/white
 import { DbStore, mergePatch, splitPath } from '@open-artifact/server-sdk/db';
 import { resetEdits } from './agent.ts';
 import { detectType } from './server.ts';
-import { TYPES } from './types.ts';
+import { TYPES, contentDirOf, type TypeName } from './types.ts';
 
 /** Prints an error and returns the exit code. */
 function fail(message: string): number {
@@ -33,24 +33,49 @@ function fail(message: string): number {
   return 1;
 }
 
-/** The artifact folder, when it holds a db-backed type. */
-async function dbRoot(dir: string | undefined): Promise<string | string[]> {
-  if (!dir) return ['Pass the artifact folder.'];
-  const root = resolve(dir);
-  const type = await detectType(root);
-  if (!type || TYPES[type].store !== 'db') {
-    const kinds = Object.values(TYPES).filter((t) => t.store === 'db').map((t) => t.name);
-    return [`${root} is not a db-backed artifact (${kinds.join(', ')}).`];
+/** The db-backed type whose marker document a batch writes (a new artifact's first batch), or `null`. */
+function typeWrittenBy(writes: unknown): TypeName | null {
+  if (!Array.isArray(writes)) return null;
+  for (const write of writes) {
+    if (!isPlain(write) || (write.op !== 'set' && write.op !== 'update')) continue;
+    const named = String(write.path ?? (write.collection != null && write.doc_id != null ? `${String(write.collection)}/${String(write.doc_id)}` : '')).replace(/^\/+|\/+$/g, '');
+    const type = Object.values(TYPES).find((t) => t.store === 'db' && t.marker === `${named}.json`);
+    if (type) return type.name;
   }
-  return root;
+  return null;
+}
+
+/** The artifact folder and its type, when it holds a db-backed type (or `writes` starts one there). */
+async function dbRoot(dir: string | undefined, writes?: unknown): Promise<{ root: string; type: TypeName } | string> {
+  if (!dir) return 'Pass the artifact folder.';
+  const root = resolve(dir);
+  const type = (await detectType(root)) ?? typeWrittenBy(writes);
+  if (!type || TYPES[type].store !== 'db') {
+    const kinds = Object.values(TYPES).filter((t) => t.store === 'db').map((t) => `${t.name} (${contentDirOf(t.name)}/${t.marker})`);
+    return `${root} is not a db-backed artifact: ${kinds.join(', ')}. A batch that writes one of those documents starts one.`;
+  }
+  return { root, type };
 }
 
 /** `read-db <dir> [path]`: prints the documents as JSON. */
-export async function cmdReadDb(positional: string[]): Promise<number> {
-  const root = await dbRoot(positional[0]);
-  if (Array.isArray(root)) return fail(root[0]!);
+export async function cmdReadDb(positional: string[], options: { text?: boolean } = {}): Promise<number> {
+  const found = await dbRoot(positional[0]);
+  if (typeof found === 'string') return fail(found);
+  const { root } = found;
   try {
-    console.log(JSON.stringify(new DbStore(root).readDb(positional[1] ?? ''), null, 2));
+    const read = new DbStore(root).readDb(positional[1] ?? '');
+    if (options.text) {
+      // A document's `text` as it is (a page file), for reading or diffing without the JSON quoting.
+      const doc = read as { path?: string; exists?: boolean; data?: { text?: unknown } | null };
+      if (typeof doc.exists !== 'boolean') return fail(`--text reads one document; ${positional[1] || 'the root'} is a collection.`);
+      if (!doc.exists) return fail(`${doc.path} does not exist.`);
+      const text = doc.data?.text;
+      if (typeof text !== 'string') return fail(`${doc.path} has no text field.`);
+      process.stdout.write(text);
+      resetEdits(root);
+      return 0;
+    }
+    console.log(JSON.stringify(read, null, 2));
     // The agent has read the content: people's edits are counted again from here (the view context's `edits`).
     resetEdits(root);
     return 0;
@@ -120,12 +145,18 @@ function checkIdeas(store: DbStore, writes: unknown[]): void {
 
 /** `write-db <dir> <json|file|->`: applies the writes all-or-nothing and prints the results. */
 export async function cmdWriteDb(positional: string[]): Promise<number> {
-  const root = await dbRoot(positional[0]);
-  if (Array.isArray(root)) return fail(root[0]!);
   const source = positional[1];
-  if (!source) return fail('Pass the writes: inline JSON, a file, or - for stdin.');
+  if (positional[0] && !source) return fail('Pass the writes: inline JSON, a file, or - for stdin.');
+  let writes: unknown = null;
   try {
-    const writes = readWrites(source);
+    if (source) writes = readWrites(source);
+  } catch (error) {
+    return refused(error);
+  }
+  const found = await dbRoot(positional[0], writes);
+  if (typeof found === 'string') return fail(found);
+  const { root, type } = found;
+  try {
     const store = new DbStore(root);
     if (Array.isArray(writes)) {
       for (const [index, write] of writes.entries()) {
@@ -135,13 +166,21 @@ export async function cmdWriteDb(positional: string[]): Promise<number> {
         if (write.data !== undefined) write.data = resolveFileRefs(write.data, `writes[${index}].data`);
       }
       checkIdeas(store, writes);
+      const problem = TYPES[type].writesProblem?.(writes, (path) => store.readDoc(path));
+      if (problem) throw new Refusal(problem.code, `${problem.message} Nothing was written.`);
     }
     console.log(JSON.stringify({ writes: store.writeDb(writes) }, null, 2));
     return 0;
   } catch (error) {
-    const code = error instanceof Refusal ? error.code : typeof (error as { code?: unknown })?.code === 'string' ? String((error as { code: string }).code).toUpperCase() : 'INVALID';
-    console.log(JSON.stringify({ error: code, message: (error as Error).message }));
-    console.error((error as Error).message);
-    return 1;
+    return refused(error);
   }
+}
+
+/** Prints a refused batch as `{"error": CODE, "message": …}` and returns the exit code. */
+function refused(error: unknown): number {
+  const code = error instanceof Refusal ? error.code : typeof (error as { code?: unknown })?.code === 'string' ? String((error as { code: string }).code).toUpperCase() : 'INVALID';
+  const message = error instanceof SyntaxError ? `The writes are not JSON: ${error.message}` : (error as Error).message;
+  console.log(JSON.stringify({ error: code, message }));
+  console.error(message);
+  return 1;
 }

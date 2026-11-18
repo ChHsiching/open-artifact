@@ -38,10 +38,13 @@ const LIBRARIES = [
   'design-core',
   'design-system-core',
   'slides-core',
+  'live-store',
   'whiteboard-core',
+  'data-core',
   'wasm-canvas',
   'wasm-export',
   'wasm-wb-geom',
+  'wasm-data-rules',
 ];
 /** Imported by a library but left to the app that uses it, which brings its own copy. */
 const PEERS = new Set(['react', 'react-dom']);
@@ -257,7 +260,7 @@ function stageCli() {
     bin: { 'open-artifact': 'scripts/open-artifact.mjs' },
     files: ['scripts', 'vendor', 'SKILL.md', 'LICENSE', 'NOTICE'],
     engines: rootPkg.engines,
-    keywords: ['artifacts', 'slides', 'design', 'whiteboard', 'mcp', 'agent'],
+    keywords: ['artifacts', 'slides', 'design', 'whiteboard', 'data', 'dashboard', 'mcp', 'agent'],
     ...common(daemon, 'skills/open-artifact'),
   };
   writeJson(join(out, 'package.json'), published);

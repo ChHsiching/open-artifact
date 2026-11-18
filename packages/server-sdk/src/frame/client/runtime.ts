@@ -1,6 +1,6 @@
 /**
  * Frame Runtime of frame-host. Loaded first in an original page's <head>, on
- * the page's own origin. It defines `window.openArtifact`: `use(name)` and the
+ * the page's own origin. It defines `window.openartifact`: `use(name)` and the
  * granted capabilities. Every call is a `__frame_cap` postMessage to the inner
  * shell (the parent frame, whose origin the server wrote into
  * `window.__OPEN_ARTIFACT_FRAME`); the shell carries it to the local backend and
@@ -1009,7 +1009,7 @@ type Fn = (...args: Any[]) => Any;
     },
   };
 
-  // ---- stubs, use(), window.openArtifact -----------------------------------------------------------------------------------
+  // ---- stubs, use(), window.openartifact -----------------------------------------------------------------------------------
 
   /** A declared capability this host cannot serve: every method answers its error code. */
   function stub(name: string): Any {

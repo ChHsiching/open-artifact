@@ -1,0 +1,14 @@
+[
+  { "op": "set", "path": "dash/meta", "data": { "title": "Sales and signups", "lang": "en" } },
+  { "op": "set", "path": "dash/params", "data": { "region": "" } },
+  { "op": "set", "path": "dash/settings", "data": { "updates": "hour" } },
+  { "op": "set", "path": "datasets/signups", "data": { "title": "Monthly signups", "description": "Signups per month. Made up for the tests.", "source": { "kind": "file", "url": "$signups", "name": "signups.csv", "format": "csv" }, "updated": { "at": "2026-11-01T00:00:00Z", "by": "e2e" }, "schedule": "Exported by hand each month", "staleAfterHours": 1440 } },
+  { "op": "set", "path": "datasets/regions", "data": { "title": "Region targets", "description": "FY27 targets per region.", "source": { "kind": "file", "url": "$regions", "name": "regions.json", "format": "json" }, "updated": { "at": "2026-11-01T00:00:00Z", "by": "e2e" }, "fixed": true } },
+  { "op": "set", "path": "datasets/orders", "data": { "title": "Orders by month", "description": "Revenue and orders per region and month.", "source": { "kind": "call", "connector": "sales", "tool": "run_sql", "args": { "query": "SELECT region, month, revenue, orders\nFROM orders\nWHERE ('{{region}}' = '' OR region = '{{region}}')\nORDER BY region, month" }, "langs": { "query": "sql" }, "rules": { "region": { "type": "string", "enum": ["", "North", "South", "East", "West"] } } } } },
+  { "op": "set", "path": "datasets/tickets", "data": { "title": "Support tickets", "description": "Tickets from the help desk.", "source": { "kind": "call", "connector": "sales", "tool": "list_tickets", "args": {} } } },
+  { "op": "set", "path": "datasets/broken", "data": { "title": "Broken source", "description": "A tool that always fails.", "source": { "kind": "call", "connector": "sales", "tool": "broken", "args": {} } } },
+  { "op": "set", "path": "datasets/unused", "data": { "title": "Unused file", "description": "Nothing reads this.", "source": { "kind": "file", "url": "$signups", "name": "signups.csv", "format": "csv" }, "updated": { "at": "2026-11-01T00:00:00Z", "by": "e2e" }, "fixed": true } },
+  { "op": "set", "path": "files/index.html", "data": { "text": { "$file": "index.html" } } },
+  { "op": "set", "path": "files/app.css", "data": { "text": { "$file": "app.css" } } },
+  { "op": "set", "path": "files/app.js", "data": { "text": { "$file": "app.js" } } }
+]

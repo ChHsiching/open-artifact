@@ -43,9 +43,9 @@ import {
   type LiveBoardDocument,
   type LiveSnapshot,
   type LiveCache,
+  localStorageCache,
   type StepDocument,
   type SyncChangeEvent,
-  type SyncDocument,
   type SyncTransport,
 } from '@open-artifact/whiteboard-core';
 import { setBoardSink, setBoardSnapshot, tellRemoteChange, useBoard, type ChangeOptions, type SyncStatus } from '../state/board.ts';
@@ -79,39 +79,13 @@ export function liveBoard(): LiveBoardDocument | null {
   return live;
 }
 
-/** Longest saved copy kept on this device, in characters (local storage holds about 5 MB per site). */
-export const SAVED_COPY_MAX_CHARS = 4_000_000;
-
 /**
  * The saved copy of this page's board in local storage, keyed by the page's
  * path. Too large a copy is dropped rather than kept stale; storage that is
  * unavailable (private windows, blocked site data) just means no copy.
  */
 export function savedCopyCache(key = `wb-saved-copy:${location.pathname}`): LiveCache {
-  return {
-    read() {
-      try {
-        const value: unknown = JSON.parse(localStorage.getItem(key) ?? 'null');
-        if (!Array.isArray(value)) return undefined;
-        const documents = value.filter(
-          (item): item is SyncDocument =>
-            typeof item === 'object' && item !== null && typeof (item as SyncDocument).path === 'string' && typeof (item as SyncDocument).data === 'object' && (item as SyncDocument).data !== null,
-        );
-        return documents.length > 0 ? documents : undefined;
-      } catch {
-        return undefined;
-      }
-    },
-    write(documents) {
-      try {
-        const json = JSON.stringify(documents);
-        if (json.length > SAVED_COPY_MAX_CHARS) localStorage.removeItem(key);
-        else localStorage.setItem(key, json);
-      } catch {
-        // No room or no storage: the board just has no saved copy.
-      }
-    },
-  };
+  return localStorageCache(key);
 }
 
 /** Board store status for an engine status. */

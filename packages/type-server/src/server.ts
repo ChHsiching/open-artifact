@@ -6,7 +6,7 @@
  * URL layout (one server can host both types):
  *
  *     /<type>/<token>/                 the editor page of one open artifact
- *     /<type>/<token>/_api/…           its page API
+ *     /<type>/<token>/_api/…           its page API (`_api/mcp/*`: the owner's connectors, `connectors.ts`)
  *     /<type>/<token>/project/<path>   its raw files (HTML is sandboxed)
  *     /<type>/<token>/…/support.js     the artboard runtime
  *     /_blob/<id>                      uploads of any open artifact
@@ -30,7 +30,7 @@ import { mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { Duplex } from 'node:stream';
 import { homedir } from 'node:os';
-import { basename, extname, isAbsolute, join, normalize, resolve, sep } from 'node:path';
+import { basename, dirname, extname, isAbsolute, join, normalize, resolve, sep } from 'node:path';
 import { DB_LIMITS, ROOM_MESSAGE_MAX_BYTES, type AgentStatus, type FileListing, type Peer, type Viewer } from '@open-artifact/runtime/capabilities';
 import {
   API,
@@ -38,6 +38,8 @@ import {
   SHA_HEADER,
   type AgentSendRequest,
   type FilesResponse,
+  type McpCallRequest,
+  type McpToolsResponse,
   type PeersResponse,
   type PresenceRequest,
   type RoomEmitRequest,
@@ -60,6 +62,8 @@ import { HISTORY_AGENT, HistoryHost, personOf } from './history-host.ts';
 import { findChrome, snapshotPage } from './snapshot.ts';
 import { LanSharing, assertRoleMay, withShim, type ShareChange } from './sharing.ts';
 import { sendArchive } from './archive.ts';
+import { ConnectorsHost } from './connectors.ts';
+import { McpError } from './mcp-client.ts';
 
 /** Version reported by `/__open-artifact/health`. */
 export const SERVER_VERSION = '0.1.0';
@@ -72,6 +76,25 @@ const MAX_UPLOAD = 25 * 1024 * 1024;
 
 /** Largest download handed to the host, bytes. */
 const MAX_DOWNLOAD = 16 * 1024 * 1024;
+
+/** Largest `_api/mcp/call` body, bytes. */
+const MAX_MCP_ARGS = 8 * 1024 * 1024;
+
+/** HTTP status of each connector failure. */
+const MCP_STATUS: Record<string, number> = {
+  server_not_connected: 404,
+  needs_reauth: 401,
+  not_granted: 403,
+  rate_limited: 429,
+  upstream_error: 502,
+};
+
+/** A connector failure as the page API answers it. */
+function mcpHttpError(error: unknown): HttpError {
+  if (error instanceof McpError) return new HttpError(MCP_STATUS[error.code] ?? 502, error.code, error.message, error.retryable ? { retryable: true } : undefined);
+  if (error instanceof HttpError) return error;
+  return new HttpError(502, 'upstream_error', error instanceof Error ? error.message : String(error));
+}
 
 /** The operations the agent can `call` (`GET /__open-artifact/actions`). */
 export const SERVER_ACTIONS = [
@@ -139,6 +162,8 @@ export interface TypeServerOptions {
   lanAddresses?: () => string[];
   /** Whether a request is the owner's (default: it came over loopback). For embedding and tests. */
   isLocal?: (req: IncomingMessage) => boolean;
+  /** The connectors the owner's pages call (`mcp`). Default: one over `connectors.json`, made on first use and stopped with the server. */
+  connectors?: ConnectorsHost;
 }
 
 /** What `/__open-artifact/open` (or the CLI) passes to open an artifact. */
@@ -286,6 +311,15 @@ export async function detectType(root: string): Promise<TypeName | null> {
       /* next */
     }
   }
+  // A db-backed folder whose marker document was removed: its marker's collection still says the type.
+  for (const type of Object.values(TYPES)) {
+    if (type.store !== 'db' || !type.marker.includes('/')) continue;
+    try {
+      if ((await stat(join(root, contentDirOf(type.name), dirname(type.marker)))).isDirectory()) return type.name;
+    } catch {
+      /* next */
+    }
+  }
   return null;
 }
 
@@ -301,6 +335,8 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
   const byId = new Map<string, OpenArtifact>();
   let baseUrl = '';
   let lastActivity = Date.now();
+  let ownConnectors: ConnectorsHost | null = null;
+  const connectors = (): ConnectorsHost => options.connectors ?? (ownConnectors ??= new ConnectorsHost({ log }));
 
   /* ---------------------------------------------------------------------- */
   /* Events                                                                 */
@@ -332,6 +368,7 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
       root: artifact.root,
       // A project-style type with comments gets the comment store alone.
       documents: TYPES[artifact.type].store === 'db',
+      ...(TYPES[artifact.type].writesProblem ? { writesProblem: TYPES[artifact.type].writesProblem } : {}),
       viewerName: viewer.name,
       emit: (name, payload, except) => emit(artifact, name, payload, except),
       onExternal: (paths) => {
@@ -631,6 +668,8 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
         return;
       }
     }
+    // Connectors run on this computer with the owner's credentials: no guest reaches them.
+    if ((route === API.mcpTools || route === API.mcpCall) && who.role !== 'owner') throw new HttpError(403, 'not_granted', 'Only the owner can use connectors.');
     if (method !== 'GET') {
       assertSameOrigin(artifact, req);
       // A guest's role decides what they may write (their page only hides the rest).
@@ -794,6 +833,32 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
         return sendJson(res, 200, { savedTo: target });
       }
 
+      case API.mcpTools: {
+        const server = url.searchParams.get('server');
+        const body: McpToolsResponse = { servers: await connectors().listTools(server ?? undefined) };
+        return sendJson(res, 200, body);
+      }
+
+      case API.mcpCall: {
+        if (method !== 'POST') throw new HttpError(405, 'invalid', 'POST only.');
+        const body = await readJson<Partial<McpCallRequest>>(req, MAX_MCP_ARGS);
+        if (typeof body.server !== 'string' || !body.server || typeof body.tool !== 'string' || !body.tool) throw new HttpError(400, 'invalid', 'server and tool are required.');
+        const args = body.args ?? {};
+        if (typeof args !== 'object' || args === null || Array.isArray(args)) throw new HttpError(400, 'invalid', 'args must be an object.');
+        const timeoutMs = typeof body.timeoutMs === 'number' && Number.isFinite(body.timeoutMs) && body.timeoutMs > 0 ? body.timeoutMs : undefined;
+        // The page closing the request (its signal) cancels the call.
+        const cancel = new AbortController();
+        res.on('close', () => {
+          if (!res.writableFinished) cancel.abort(new McpError('upstream_error', 'The page cancelled the call.'));
+        });
+        try {
+          const result = await connectors().callTool(body.server, body.tool, args, { signal: cancel.signal, ...(timeoutMs === undefined ? {} : { timeoutMs }) });
+          return sendJson(res, 200, result);
+        } catch (error) {
+          throw mcpHttpError(error);
+        }
+      }
+
       case API.roomEmit: {
         if (method !== 'POST') throw new HttpError(405, 'invalid', 'POST only.');
         const body = await readJson<Partial<RoomEmitRequest>>(req, ROOM_MESSAGE_MAX_BYTES + 4096);
@@ -833,7 +898,7 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
     if (name.startsWith('open-artifact.comments.') && !TYPES[type].comments) throw new HttpError(404, 'unknown_action', `No action ${name}: this type has no comments.`);
     if (!name.startsWith('open-artifact.comments.') && TYPES[type].store !== 'db') throw new HttpError(404, 'unknown_action', `No action ${name}: this type keeps no document store.`);
     const args = body.args && typeof body.args === 'object' ? body.args : {};
-    const host = open?.db ?? new DbHost({ root, documents: TYPES[type].store === 'db', viewerName: viewer.name, emit: () => undefined, log });
+    const host = open?.db ?? new DbHost({ root, documents: TYPES[type].store === 'db', ...(TYPES[type].writesProblem ? { writesProblem: TYPES[type].writesProblem } : {}), viewerName: viewer.name, emit: () => undefined, log });
     const run = (): unknown => host.runReserved(name, args);
     try {
       return sendJson(res, 200, open ? await open.run(async () => run()) : run());
@@ -1157,6 +1222,7 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
       if (idleTimer) clearInterval(idleTimer);
       for (const id of [...byId.keys()]) close(id);
       sharing.close();
+      await ownConnectors?.close();
       const closed = new Promise<void>((done) => server.close(() => done()));
       server.closeAllConnections();
       await closed;

@@ -8,7 +8,7 @@ English · [简体中文](README.zh-CN.md)
 > format: one local daemon, one page frame, one `/open-artifact` skill, and a plugin for each agent app.
 
 **Open Artifact lets any coding agent make things people can open, edit and comment on, not just files.** You ask
-your agent for a slide deck, a UI design, a design system or a whiteboard. The agent writes a plain folder of files.
+your agent for a slide deck, a UI design, a design system, a whiteboard or a data dashboard. The agent writes a plain folder of files.
 A local page opens it in a real editor, where you can fix a title, move a sticky note, leave comments, and export. Then
 "Send to agent" sends your comments back to the agent's session.
 
@@ -33,6 +33,7 @@ Everything runs on your machine. No account, no upload, no specific model or ven
 | [Design](artifact-types/design/SKILL.md) | An infinite canvas of live `.dc.html` artboards: screens, components, click-through prototypes, notes, pages | `project/canvas.json` | PNG, JPEG, PDF, HTML |
 | [Design System](artifact-types/design-system/SKILL.md) | A brand book: tokens, colors with contrast checks, type specimens, live component previews, assets. Designs and decks can install it | `project/design-system.json` | — |
 | [Whiteboard](artifact-types/whiteboard/SKILL.md) | A shared infinite board: stickies, shapes, arrows, ink, images, tables, embeds, live cursors, timer | `db/board/meta.json` | PNG |
+| [Data](artifact-types/data/SKILL.md) | A live dashboard or report: datasets from CSV/JSON/text uploads, live MCP connector queries or calculations, drawn by a plain HTML/CSS/d3 page; Sources shows where each number comes from; filters, hand edits, remix drafts | `db/dash/meta.json` | PDF, HTML, JSON |
 
 Each type folder is a self-contained skill: `SKILL.md` tells the agent how to write it, `reference/` documents the
 file format, `artifact-type.json` describes it to hosts, and `scripts/` (built) holds the CLI and editors.
@@ -95,6 +96,7 @@ After rebuilding, install again (or copy the folder again) to update. Then, in a
 /open-artifact slides a 6-slide pitch for this repo
 /open-artifact design three landing page options for a coffee shop
 /open-artifact whiteboard a retro board for last sprint
+/open-artifact data a dashboard of signups by month from signups.csv
 ```
 
 The plugin adds the `Artifact`, `ArtifactData` and `ArtifactComments` MCP tools, the skill, and hooks that bring

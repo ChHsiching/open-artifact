@@ -25,6 +25,7 @@ import {
   type FilesChangedEvent,
   type HistoryCapability,
   type HistoryChangeEvent,
+  type McpCapability,
   type Peer,
   type RoomCapability,
   type RoomMessage,
@@ -54,6 +55,9 @@ import {
   type HistoryResponse,
   type HistoryRestoreRequest,
   type HistoryRestoreResponse,
+  type McpCallRequest,
+  type McpCallResponse,
+  type McpToolsResponse,
   type PeersResponse,
   type PresenceRequest,
   type PublishRequest,
@@ -106,7 +110,7 @@ async function toError(response: Response): Promise<ArtifactError> {
   }
   const fallback: ArtifactErrorCode =
     response.status === 409 ? 'conflict' : response.status === 403 ? 'not_writer' : response.status === 404 ? 'not_found' : 'unavailable';
-  return new ArtifactError(body.code ?? fallback, body.message ?? `HTTP ${response.status}`, body.paths);
+  return new ArtifactError(body.code ?? fallback, body.message ?? `HTTP ${response.status}`, body.paths, body.retryable === true);
 }
 
 /** A random id for this page load, used to suppress echoes of our own writes. */
@@ -399,6 +403,32 @@ export function createLocalProvider(options: LocalProviderOptions = {}): Capabil
           await post<{ ok: true }>(API.historyDismiss, { id } satisfies HistoryDismissRequest);
         },
         onChange: (listener: (event: HistoryChangeEvent) => void) => subscribe('history', listener),
+      };
+      return capability;
+    },
+
+    async mcp() {
+      const { viewer } = await getSession();
+      if (viewer.role !== 'owner') return null;
+      const capability: McpCapability = {
+        callTool: async (server, tool, args, opts) => {
+          const signal = opts?.signal;
+          signal?.throwIfAborted();
+          const body: McpCallRequest = { server, tool, args, ...(opts?.timeoutMs === undefined ? {} : { timeoutMs: opts.timeoutMs }) };
+          try {
+            return await json<McpCallResponse>(API.mcpCall, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify(body),
+              ...(signal ? { signal } : {}),
+            });
+          } catch (error) {
+            // Closing the request cancels the call on the server too.
+            if (signal?.aborted) throw signal.reason;
+            throw error;
+          }
+        },
+        listTools: (server) => json<McpToolsResponse>(API.mcpTools, { cache: 'no-store' }, server === undefined ? undefined : { server }),
       };
       return capability;
     },

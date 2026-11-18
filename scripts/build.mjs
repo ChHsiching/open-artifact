@@ -36,6 +36,7 @@ const EDITORS = {
   design: 'packages/design-editor',
   'design-system': 'packages/design-system-editor',
   whiteboard: 'packages/whiteboard-editor',
+  data: 'packages/data-editor',
   slides: 'packages/slides-editor',
 };
 

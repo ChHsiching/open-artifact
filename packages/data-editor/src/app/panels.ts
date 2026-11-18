@@ -1,0 +1,146 @@
+/**
+ * The side panel beside the page: Sources, Design or History, one at a time,
+ * at a width the viewer drags (kept in this browser). Sources and History
+ * keep their own open flags (`state/sources-ui.ts`, `history/store.ts`);
+ * this module keeps them exclusive and closes Sources and Design while
+ * comments are on.
+ */
+
+import { create } from 'zustand';
+import { announce } from '@open-artifact/editor-kit';
+import { toggleVersionHistory, useVersionHistory } from '../history/store.ts';
+import { useShown } from '../state/shown.ts';
+import { closeSources, openSources, useSourcesUi } from '../state/sources-ui.ts';
+import {
+  DESIGN_CLOSED_MESSAGE,
+  DESIGN_OPEN_MESSAGE,
+  HISTORY_CLOSED_MESSAGE,
+  HISTORY_OPEN_MESSAGE,
+  SOURCES_CLOSED_MESSAGE,
+  SOURCES_OPEN_MESSAGE,
+} from './words.ts';
+
+export type PanelId = 'sources' | 'design' | 'history';
+
+export const PANEL_MIN_WIDTH = 280;
+export const PANEL_MAX_WIDTH = 720;
+export const PANEL_DEFAULT_WIDTH = 380;
+/** The page keeps at least this much room beside the panel. */
+export const PAGE_MIN_WIDTH = 320;
+const WIDTH_KEY = 'open-artifact:data:panel-width';
+
+/** A panel width kept between the bounds and clear of the page's least room. */
+export function clampPanelWidth(width: number, viewport = Number.POSITIVE_INFINITY): number {
+  const max = Math.max(PANEL_MIN_WIDTH, Math.min(PANEL_MAX_WIDTH, viewport - PAGE_MIN_WIDTH));
+  if (!Number.isFinite(width)) return Math.min(PANEL_DEFAULT_WIDTH, max);
+  return Math.round(Math.min(max, Math.max(PANEL_MIN_WIDTH, width)));
+}
+
+/** The panel shown for the open flags (History, then Design, then Sources). */
+export function shownPanel(open: { sources: boolean; design: boolean; history: boolean }): PanelId | null {
+  if (open.history) return 'history';
+  if (open.design) return 'design';
+  if (open.sources) return 'sources';
+  return null;
+}
+
+function readWidth(): number {
+  try {
+    const stored = Number(globalThis.localStorage?.getItem(WIDTH_KEY));
+    return stored > 0 ? clampPanelWidth(stored) : PANEL_DEFAULT_WIDTH;
+  } catch {
+    return PANEL_DEFAULT_WIDTH;
+  }
+}
+
+interface PanelsState {
+  design: boolean;
+  width: number;
+}
+
+export const usePanels = create<PanelsState>()(() => ({ design: false, width: readWidth() }));
+
+/** The open panel. */
+export function usePanel(): PanelId | null {
+  const sources = useSourcesUi((state) => state.open);
+  const design = usePanels((state) => state.design);
+  const history = useVersionHistory((state) => state.open);
+  return shownPanel({ sources, design, history });
+}
+
+export function getPanel(): PanelId | null {
+  return shownPanel({ sources: useSourcesUi.getState().open, design: usePanels.getState().design, history: useVersionHistory.getState().open });
+}
+
+export function openPanel(id: PanelId): void {
+  if (id === 'sources') {
+    if (!useSourcesUi.getState().open) openSources(useSourcesUi.getState().selected);
+  } else if (id === 'design') usePanels.setState({ design: true });
+  else toggleVersionHistory(true);
+}
+
+export function closePanel(id: PanelId | null = getPanel()): void {
+  if (id === 'sources') closeSources();
+  else if (id === 'design') usePanels.setState({ design: false });
+  else if (id === 'history') toggleVersionHistory(false);
+}
+
+export function togglePanel(id: PanelId): void {
+  if (getPanel() === id) closePanel(id);
+  else openPanel(id);
+}
+
+export function setPanelWidth(width: number): void {
+  const next = clampPanelWidth(width, globalThis.innerWidth ?? Number.POSITIVE_INFINITY);
+  if (next === usePanels.getState().width) return;
+  usePanels.setState({ width: next });
+  try {
+    globalThis.localStorage?.setItem(WIDTH_KEY, String(next));
+  } catch {
+    // Kept for this visit only.
+  }
+}
+
+const OPEN_WORDS: Record<PanelId, [string, string]> = {
+  sources: [SOURCES_OPEN_MESSAGE, SOURCES_CLOSED_MESSAGE],
+  design: [DESIGN_OPEN_MESSAGE, DESIGN_CLOSED_MESSAGE],
+  history: [HISTORY_OPEN_MESSAGE, HISTORY_CLOSED_MESSAGE],
+};
+
+/** Keeps one panel open at a time, closes Sources and Design while comments are on and reads the changes out. */
+export function startPanels(): () => void {
+  const opened = (id: PanelId): void => {
+    if (id !== 'sources' && useSourcesUi.getState().open) closeSources();
+    if (id !== 'design' && usePanels.getState().design) usePanels.setState({ design: false });
+    if (id !== 'history' && useVersionHistory.getState().open) toggleVersionHistory(false);
+  };
+  const say = (id: PanelId, open: boolean): void => announce(OPEN_WORDS[id][open ? 0 : 1]);
+  const stops = [
+    useSourcesUi.subscribe((state, previous) => {
+      if (state.open === previous.open) return;
+      if (state.open) opened('sources');
+      say('sources', state.open);
+    }),
+    usePanels.subscribe((state, previous) => {
+      if (state.design === previous.design) return;
+      if (state.design) opened('design');
+      say('design', state.design);
+    }),
+    useVersionHistory.subscribe((state, previous) => {
+      if (state.open === previous.open) return;
+      if (state.open) opened('history');
+      say('history', state.open);
+    }),
+    useShown.subscribe((state, previous) => {
+      if (!state.commenting || previous.commenting) return;
+      if (useSourcesUi.getState().open) closeSources();
+      if (usePanels.getState().design) usePanels.setState({ design: false });
+    }),
+    useShown.subscribe((state, previous) => {
+      if (state.editing && !previous.editing && usePanels.getState().design) usePanels.setState({ design: false });
+    }),
+  ];
+  return () => {
+    for (const stop of stops) stop();
+  };
+}

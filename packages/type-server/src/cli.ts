@@ -3,10 +3,10 @@
  * `open-artifact-type-server`: the command line an agent uses to work on Design and
  * Design System artifacts.
  *
- *     open-artifact-type-server open <dir> [--type design|design-system|slides|whiteboard] [--title T] [--browser] [--lan]
+ *     open-artifact-type-server open <dir> [--type design|design-system|slides|whiteboard|data] [--title T] [--browser] [--lan]
  *     open-artifact-type-server check <dir> [--json]
  *     open-artifact-type-server generate <dir>
- *     open-artifact-type-server upload <dir> <file>… [--group G]
+ *     open-artifact-type-server upload <dir> <file>… [--group G] [--name N]
  *     open-artifact-type-server list [dir…]
  *     open-artifact-type-server wait <dir> [--timeout 600]
  *     open-artifact-type-server context <dir>
@@ -73,7 +73,7 @@ function parseArgs(argv: string[]): Args {
 }
 
 /** Flags that take a value. */
-const VALUE_FLAGS = new Set(['type', 'title', 'timeout', 'port', 'assets', 'idle', 'shell', 'id', 'group', 'enable', 'disable', 'reset', 'role', 'remove', 'out', 'from']);
+const VALUE_FLAGS = new Set(['type', 'name', 'title', 'timeout', 'port', 'assets', 'idle', 'shell', 'id', 'group', 'enable', 'disable', 'reset', 'role', 'remove', 'out', 'from']);
 
 const flag = (args: Args, name: string): string | undefined => {
   const value = args.flags.get(name);
@@ -275,16 +275,22 @@ async function cmdUpload(args: Args): Promise<void> {
   if (files.length === 0) throw new UsageError('Pass one or more files to upload.');
   const group = flag(args, 'group');
   if (group !== undefined && (!group || /[/\\]/.test(group))) throw new UsageError('--group takes a group folder name, without slashes.');
+  const named = flag(args, 'name');
+  if (named !== undefined && (files.length > 1 || !named.trim() || /[/\\]/.test(named)))
+    throw new UsageError('--name names one uploaded file: a file name, without slashes.');
   const store = new ArtifactStore(root);
   for (const file of files) {
-    const blob = await store.putBlob(await readFile(file), mimeOf(file));
+    const bytes = await readFile(file).catch((error: NodeJS.ErrnoException) => {
+      throw error.code === 'ENOENT' || error.code === 'EISDIR' ? new UsageError(`No such file: ${resolve(file)}`) : error;
+    });
+    const name = named ?? basename(file);
+    const blob = await store.putBlob(bytes, mimeOf(name));
     if (group === undefined) {
-      console.log(`/_blob/${blob.id}\t${blob.contentType}\t${blob.size}\t${basename(file)}`);
+      console.log(`/_blob/${blob.id}\t${blob.contentType.split(';')[0]}\t${blob.size}\t${name}`);
       continue;
     }
     // A design system names each upload under assets/<Group>/ by a record in
     // its index; print the record so the agent can write it (with the index, last).
-    const name = basename(file);
     const key = assetKey(name);
     console.log(
       JSON.stringify({
@@ -500,14 +506,15 @@ async function cmdServe(args: Args): Promise<void> {
 
 const USAGE = `open-artifact-type-server <command>
 
-  open <dir> [--type design|design-system|slides|whiteboard] [--title T] [--browser] [--lan] [--json]
+  open <dir> [--type design|design-system|slides|whiteboard|data] [--title T] [--browser] [--lan] [--json]
       Open (creating if empty) an artifact folder in its editor; prints the URL.
       --lan also shares it on the local network and prints the role links.
   check <dir> [--json]          Check project files; exit 1 on errors.
   generate <dir>                Rewrite a design system's generated files (tokens.css, manifest.json, api/).
-  upload <dir> <file>… [--group G]
+  upload <dir> <file>… [--group G] [--name N]
       Store files as uploads; prints /_blob/<id> URLs. With --group (design
       systems), prints the asset record to add under assetGroups.<G>.
+      --name gives one file the name it is shown and typed by.
   list [dir…]                   Find design systems (here, or in the folders given).
   wait <dir> [--timeout 600]    Wait for a request sent from the page; exit 2 on timeout.
   context <dir>                 Print what the viewer has selected and on screen.
@@ -517,14 +524,16 @@ const USAGE = `open-artifact-type-server <command>
   history <dir> restore <n> [path…]
                                 Bring version n back (every file, or the paths given);
                                 the restore is a new version and open pages update.
-  read-db <dir> [path]          Print a db-backed artifact's documents (whiteboard): all paths,
-                                one collection (elements) or one document (board/meta).
+  read-db <dir> [path] [--text] Print a db-backed artifact's documents (whiteboard, data): all paths,
+                                one collection (elements) or one document (board/meta);
+                                --text prints one document's text field as it is.
   write-db <dir> <json|file>    Apply db writes: [{op: set|update|delete, path, data}…];
                                 update merges, {"__delete__": true} removes a key.
                                 {"$file": "path"} in data is that file's text; a refusal
                                 prints {"error": CODE} and writes nothing.
   comments <dir> [--all] [--json]
-                                Print open comment threads (slides, whiteboard); --all adds resolved.
+                                Print open comment threads (slides, whiteboard, data); --all adds resolved.
+                                comments <dir> --wait [--timeout s] is wait.
   comment-reply <dir> <thread> <text|-> [--resolve]
                                 Reply as the agent (- reads the text from stdin); open pages update.
   comment-resolve <dir> <thread> [--reopen]
@@ -571,12 +580,14 @@ export async function main(argv: string[]): Promise<number> {
       case 'history':
         return await cmdHistory(args.positional.slice(1), { json: args.flags.has('json'), all: args.flags.has('all') });
       case 'read-db':
-        return await cmdReadDb(args.positional.slice(1));
+        return await cmdReadDb(args.positional.slice(1), { text: args.flags.has('text') });
       case 'write-db':
         return await cmdWriteDb(args.positional.slice(1));
       case 'share':
         return await cmdShareDir(args);
       case 'comments':
+        // `comments --wait` is `wait`: what the page sends the agent, comments included.
+        if (args.flags.has('wait')) return await cmdWait(args);
         return await cmdComments(args.positional.slice(1), args.flags);
       case 'comment-reply':
         return await cmdCommentReply(args.positional.slice(1), args.flags);

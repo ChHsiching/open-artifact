@@ -14,6 +14,7 @@
  * without conflicts; the order list lives in one small document.
  */
 
+import type { DocumentMap, DocumentValue } from '@open-artifact/live-store/engine';
 import { ELEMENT_ID_PATTERN, MAX_BOARD_ELEMENTS, type Board, type BoardContent, type BoardElement, type BoardInk, type ClaimedArea, type ElementId, type HexColor, type StoredElement, type TimerFields } from './schema.ts';
 import { persistedElementOf } from './derived.ts';
 import { EMPTY_SVG_DATA_URL, normalizeImageSource } from './image-source.ts';
@@ -38,10 +39,7 @@ export const MAX_SYNC_RECORD_DEPTH = 8;
 /** Largest whole board the page keeps syncing. */
 export const MAX_SYNC_BOARD_BYTES = 2_097_152;
 
-/** A stored document's value. */
-export type DocumentValue = Record<string, unknown>;
-/** Documents by path. */
-export type DocumentMap = ReadonlyMap<string, DocumentValue>;
+export type { DocumentMap, DocumentValue };
 
 /** The meta document. */
 export interface BoardMetaRecord {
