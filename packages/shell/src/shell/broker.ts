@@ -46,7 +46,7 @@ interface Backend {
 }
 
 /** Methods that may take long: acked at once so the page uses the long deadline. */
-const SLOW = new Set(['artifact.publish', 'assets.upload', 'downloads.save', 'agent.send', 'db.write', 'comments.sendToAgent', 'history.restore']);
+const SLOW = new Set(['artifact.publish', 'assets.upload', 'downloads.save', 'agent.send', 'db.write', 'comments.sendToAgent', 'history.restore', 'doc.call', 'doc.restore', 'doc.importFile', 'doc.exportFile']);
 
 let gen = 0;
 let backend: Backend | null = null;

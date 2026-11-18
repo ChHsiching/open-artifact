@@ -21,6 +21,20 @@ import type {
   WidgetRequest,
   WidgetResponse,
 } from './sheet-api.ts';
+import type {
+  DocCallAnswer,
+  DocCallRequest,
+  DocExportFormat,
+  DocFrame,
+  DocHistoryResponse,
+  DocImportResponse,
+  DocPaper,
+  DocRestoreRequest,
+  DocRestoreResponse,
+  DocSessionResponse,
+  DocTabResponse,
+  DocVersionResponse,
+} from './doc-api.ts';
 
 /** Version of the capability contract described in this file. */
 export const CONTRACT_VERSION = '1.4.0';
@@ -394,6 +408,12 @@ export interface CommentAuthor {
   name: string;
 }
 
+/** People who reacted to a message with one emoji. */
+export interface CommentReaction {
+  emoji: string;
+  authors: CommentAuthor[];
+}
+
 /** One message of a thread. */
 export interface CommentMessage {
   id: string;
@@ -401,6 +421,16 @@ export interface CommentMessage {
   text: string;
   /** ISO 8601 time. */
   at: string;
+  /** ISO 8601 time of the last edit. */
+  editedAt?: string;
+  /** Who the message asks, as the page named them (`agent` asks the agent). */
+  to?: string[];
+  reactions?: CommentReaction[];
+}
+
+/** What {@link CommentsCapability.reply} takes besides the text. */
+export interface CommentReplyOptions {
+  to?: string[];
 }
 
 /** Where a thread stands with the agent. */
@@ -436,6 +466,8 @@ export interface CommentCreate {
   location?: JsonRecord;
   /** The first message. */
   text: string;
+  /** Who the first message asks. */
+  to?: string[];
 }
 
 /** The `comments` capability, granted to types whose manifest declares `comments: true`. */
@@ -443,7 +475,11 @@ export interface CommentsCapability {
   /** Every thread, open and resolved. */
   list(): Promise<CommentThread[]>;
   create(input: CommentCreate): Promise<CommentThread>;
-  reply(threadId: string, text: string): Promise<CommentThread>;
+  reply(threadId: string, text: string, options?: CommentReplyOptions): Promise<CommentThread>;
+  /** Changes the text of one of the viewer's own messages. */
+  edit(threadId: string, messageId: string, text: string, options?: CommentReplyOptions): Promise<CommentThread>;
+  /** Adds (`on`) or takes back the viewer's reaction to a message. */
+  react(threadId: string, messageId: string, emoji: string, on: boolean): Promise<CommentThread>;
   setResolved(threadId: string, resolved: boolean): Promise<CommentThread>;
   /** Re-anchors a thread (its content moved or was replaced). */
   move(threadId: string, anchor: string, location?: JsonRecord): Promise<CommentThread>;
@@ -570,6 +606,53 @@ export interface HistoryCapability {
   dismissNotice(id: string): Promise<void>;
   /** Subscribes to new versions. Returns an unsubscribe function. */
   onChange(listener: (event: HistoryChangeEvent) => void): () => void;
+}
+
+/* -------------------------------------------------------------------------- */
+/* doc: a doc of tabs whose blocks and characters carry ids                   */
+/* -------------------------------------------------------------------------- */
+
+/** What {@link DocCapability.exportFile} asks for. */
+export interface DocExportQuery {
+  format: DocExportFormat;
+  /** One tab (default: every tab). */
+  tab?: string;
+  paper?: DocPaper;
+}
+
+/** An exported file. */
+export interface DocExportedFile {
+  name: string;
+  mime: string;
+  bytes: Uint8Array;
+  /** What the file could not carry over. */
+  notes: { code: string; message: string; count?: number }[];
+}
+
+/**
+ * The `doc` capability, granted to types whose manifest declares `store: "doc"`. A page takes a writing session,
+ * reads tabs and sends its edits as ops on the revision it holds; every write anyone else makes arrives as a frame.
+ * A write is refused in the answer (`verdict: "deny"`), not by a rejection.
+ */
+export interface DocCapability {
+  /** This page's writing session (`sess` is `null` for a reader) and the doc. */
+  session(): Promise<DocSessionResponse>;
+  /** A tab as the host holds it. */
+  read(tab: string): Promise<DocTabResponse>;
+  /** One member or a batch, on the session's behalf; `opId` makes it safe to send again. */
+  call(request: DocCallRequest): Promise<DocCallAnswer>;
+  /** A tab's kept versions, newest first. */
+  history(tab: string): Promise<DocHistoryResponse>;
+  /** A tab as it stood at a kept rev. */
+  version(tab: string, rev: number): Promise<DocVersionResponse>;
+  /** Brings a tab back as it was at `rev`, as a new write. */
+  restore(request: DocRestoreRequest): Promise<DocRestoreResponse>;
+  /** A .md, .docx or .pdf file as a new tab (`tabName`: its name). */
+  importFile(name: string, bytes: Uint8Array, tabName?: string): Promise<DocImportResponse>;
+  /** The doc, or one tab, as a file. */
+  exportFile(query: DocExportQuery): Promise<DocExportedFile>;
+  /** Subscribes to every write, tab and list change. Returns an unsubscribe function. */
+  onFrame(listener: (frame: DocFrame) => void): () => void;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -735,6 +818,7 @@ export interface CapabilityMap {
   db: DbCapability;
   comments: CommentsCapability;
   history: HistoryCapability;
+  doc: DocCapability;
   mcp: McpCapability;
   sheet: SheetCapability;
 }

@@ -20,7 +20,7 @@ import { Menu as BaseMenu } from '@base-ui/react/menu';
 import { Popover as BasePopover } from '@base-ui/react/popover';
 import { Tooltip as BaseTooltip } from '@base-ui/react/tooltip';
 import { Check, ChevronRight } from 'lucide-react';
-import { forwardRef, useEffect, useState, type ButtonHTMLAttributes, type HTMLAttributes, type ReactElement, type ReactNode } from 'react';
+import { forwardRef, useEffect, useState, type ButtonHTMLAttributes, type CSSProperties, type HTMLAttributes, type ReactElement, type ReactNode } from 'react';
 import type { ChromeDraw, ShellConnection } from '@open-artifact/runtime';
 import { cn } from '@open-artifact/ui';
 
@@ -333,6 +333,7 @@ export interface ChromePopoverProps {
   mark?: ChromeMark;
   /** Popup classes in place of {@link POPUP}. */
   popupBase?: string;
+  style?: CSSProperties;
 }
 
 /** A floating chrome panel anchored to a trigger (or to `anchor`). */
@@ -350,13 +351,14 @@ export function ChromePopover({
   initialFocus = true,
   mark,
   popupBase = POPUP,
+  style,
 }: ChromePopoverProps): ReactNode {
   return (
     <BasePopover.Root open={open} onOpenChange={onOpenChange ? (next) => onOpenChange(next) : undefined}>
       <BasePopover.Trigger render={trigger} />
       <BasePopover.Portal>
         <BasePopover.Positioner side={side} align={align} sideOffset={gap} anchor={anchor ?? undefined} className="z-[1000]">
-          <BasePopover.Popup {...marked(mark)} aria-label={label} initialFocus={initialFocus ? undefined : false} className={cn(popupBase, className)}>
+          <BasePopover.Popup {...marked(mark)} aria-label={label} initialFocus={initialFocus ? undefined : false} className={cn(popupBase, className)} style={style}>
             {children}
           </BasePopover.Popup>
         </BasePopover.Positioner>

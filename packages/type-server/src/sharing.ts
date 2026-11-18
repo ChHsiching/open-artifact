@@ -258,7 +258,7 @@ export class SharingFile {
 /* -------------------------------------------------------------------------- */
 
 /** Page routes a commenter may write: the comment threads (not sending them to the agent). */
-const COMMENT_WRITES = new Set<string>([API.commentsCreate, API.commentsReply, API.commentsResolve, API.commentsMove]);
+const COMMENT_WRITES = new Set<string>([API.commentsCreate, API.commentsReply, API.commentsEdit, API.commentsReact, API.commentsResolve, API.commentsMove]);
 /** Page routes that change the artifact. */
 const EDIT_WRITES = new Set<string>([API.publish, API.assets, API.dbWrite, API.commentsRemove, API.roomEmit, API.historyRestore, API.historyDismiss, SHEET_API.send]);
 /** Page routes that answer with a POST: everyone's, as reads are (a Sheet's widget refuses a write by role itself). */

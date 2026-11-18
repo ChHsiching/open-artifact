@@ -1,0 +1,35 @@
+/* What a previewed version changed, against the one before it. */
+
+.doc-text ins.doc-version-ins {
+  color: var(--doc-ins);
+  background: var(--doc-ins-bg);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--doc-ins) 50%, transparent);
+  text-underline-offset: 2px;
+}
+
+.doc-text del.doc-version-del {
+  color: var(--doc-del);
+  background: var(--doc-del-bg);
+  text-decoration: line-through;
+}
+
+.doc-text .doc-version-block-ins {
+  box-shadow: -3px 0 0 var(--doc-ins);
+  background: var(--doc-ins-bg);
+}
+
+.doc-text .doc-version-block-del {
+  box-shadow: -3px 0 0 var(--doc-del);
+  background: var(--doc-del-bg);
+}
+
+.doc-text .doc-version-block-del ins.doc-version-ins,
+.doc-text .doc-version-block-del del.doc-version-del,
+.doc-text .doc-version-block-ins ins.doc-version-ins {
+  background: none;
+}
+
+.doc-version-text {
+  cursor: default;
+}

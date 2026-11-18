@@ -312,7 +312,7 @@ describe('type server', () => {
     const list = (await (await call('/__open-artifact/actions')).json()) as { actions: { name: string }[] };
     assert.deepEqual(
       list.actions.map((a) => a.name),
-      ['check', 'upload', 'context', 'snapshot', 'read', 'update', 'batch', 'widget', 'info', 'export'],
+      ['check', 'upload', 'context', 'snapshot', 'read', 'update', 'batch', 'widget', 'info', 'export', 'create', 'read', 'update', 'delete', 'batch', 'export', 'import'],
     );
     // The page opened earlier may have written its context: start from none.
     await rm(join(root, '_agent', 'view-context.json'), { force: true });

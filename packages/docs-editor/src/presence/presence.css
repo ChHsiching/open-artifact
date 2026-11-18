@@ -1,0 +1,114 @@
+/* Others' carets, selections and selected blocks in the text. `--peer` is their color, `--peer-ink` text on it. */
+
+.doc-text .doc-peer-caret {
+  position: relative;
+  margin: 0 -1px;
+  border-left: 2px solid var(--peer);
+  word-break: normal;
+  pointer-events: auto;
+  cursor: text;
+}
+
+/* A wider strip than the 2px bar, so hovering it shows the name. */
+.doc-text .doc-peer-caret::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -7px;
+  width: 12px;
+  height: 100%;
+}
+
+.doc-text .doc-peer-label {
+  position: absolute;
+  top: -1.35em;
+  left: -2px;
+  z-index: 3;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--peer);
+  color: var(--peer-ink);
+  font: 500 11px/1.2 ui-sans-serif, system-ui, sans-serif;
+  font-style: normal;
+  letter-spacing: normal;
+  text-decoration: none;
+  white-space: nowrap;
+  user-select: none;
+  pointer-events: none;
+  animation: doc-peer-label 4s linear forwards;
+}
+
+.doc-text .doc-peer-label::before {
+  content: attr(data-name);
+}
+
+.doc-text .doc-peer-label.is-quiet {
+  opacity: 0;
+  animation: none;
+}
+
+.doc-text .doc-peer-caret:hover > .doc-peer-label {
+  opacity: 1;
+  animation: none;
+}
+
+@keyframes doc-peer-label {
+  0%,
+  85% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.doc-text .doc-peer-selection {
+  border-radius: 1px;
+}
+
+.doc-text .doc-peer-block {
+  position: relative;
+  outline: 1.5px solid var(--peer);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.doc-text .doc-peer-block[data-peer-name]::before {
+  content: attr(data-peer-name);
+  position: absolute;
+  bottom: calc(100% + 2px);
+  right: -2px;
+  z-index: 3;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--peer);
+  color: var(--peer-ink);
+  font: 500 11px/1.2 ui-sans-serif, system-ui, sans-serif;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.doc-text .doc-peer-block[data-peer-name]:hover::before {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .doc-text .doc-peer-label {
+    animation-timing-function: steps(1, end);
+  }
+}
+
+@media print {
+  .doc-text .doc-peer-caret,
+  .doc-text .doc-peer-block[data-peer-name]::before {
+    display: none;
+  }
+  .doc-text .doc-peer-selection {
+    background: none !important;
+  }
+  .doc-text .doc-peer-block {
+    outline: none;
+  }
+}

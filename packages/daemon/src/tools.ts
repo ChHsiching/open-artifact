@@ -495,6 +495,7 @@ export class Tools {
       "- Do not run the script's open, serve, share or wait commands: Open Artifact serves the page. The person shares it from the page's Share panel (Artifact {action: \"open\", url, panel: \"share\"}).",
       `- Comments and requests sent from the page come to you as "${COMMENT_HEADER}" / "${REQUEST_HEADER}" messages; read them with ArtifactComments {action: "read", url} and answer with {action: "reply", url, thread_id, text}.`,
       type.store === 'db' ? `- The document store: ArtifactData (${DATA_ACTIONS.join(', ')}).` : null,
+      type.store === 'doc' ? '- The doc is written through its actions (create, read, update, batch, delete, export, import with Artifact call), never with Artifact publish files.' : null,
       '- The person may edit the files from the page: read them again before changing them.',
       opening === 'after_first_write'
         ? `- Write the content first${check ? ', then run check' : ''}. The page opens for the person after your first write.`

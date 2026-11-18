@@ -1,0 +1,151 @@
+@import "@open-artifact/ui/styles.css";
+@import "@open-artifact/editor-kit/styles.css";
+@import "./editor/text.css";
+@source "./";
+
+@theme {
+  --color-chrome: var(--doc-card);
+  --color-chrome-fg: var(--doc-fg);
+  --color-chrome-muted: var(--doc-muted);
+  --color-chrome-hover: var(--doc-hover);
+  --color-chrome-pressed: var(--doc-pressed);
+  --color-chrome-pressed-fg: var(--doc-pressed-fg);
+  --color-chrome-line: var(--doc-line);
+  --color-chrome-field: var(--doc-field);
+  --color-chrome-ring: var(--doc-field-ring);
+  --color-chrome-accent: var(--doc-accent);
+  --color-chrome-focus: var(--doc-accent);
+  --color-tip: var(--doc-tip);
+  --color-tip-fg: var(--doc-tip-fg);
+  --shadow-chrome: var(--doc-card-shadow);
+  --shadow-chrome-popup: var(--doc-popup-shadow);
+  --font-weight-control: 435;
+  --color-page: var(--doc-page);
+  --color-ground: var(--doc-ground);
+  --color-ins: var(--doc-ins);
+  --color-del: var(--doc-del);
+}
+
+:root {
+  --doc-ground: #f9f9f7;
+  --doc-page: #ffffff;
+  --doc-card: #ffffff;
+  --doc-fg: rgb(0 0 0 / 0.9);
+  --doc-text: #1f1f1e;
+  --doc-muted: rgb(0 0 0 / 0.5);
+  --doc-faint: rgb(0 0 0 / 0.3);
+  --doc-hover: rgb(0 0 0 / 0.05);
+  --doc-field: rgb(255 255 255 / 0.5);
+  --doc-field-ring: rgb(0 0 0 / 0.08);
+  --doc-pressed: rgb(37 125 224 / 0.12);
+  --doc-pressed-fg: #1757ac;
+  --doc-line: rgb(0 0 0 / 0.08);
+  --doc-rule: rgb(0 0 0 / 0.12);
+  --doc-accent: #257de0;
+  --doc-link: #1a64c2;
+  --doc-code-bg: rgb(0 0 0 / 0.04);
+  --doc-mark: #fff3a3;
+  --doc-ins: #1f7a3d;
+  --doc-ins-bg: rgb(46 160 67 / 0.12);
+  --doc-del: #b42318;
+  --doc-del-bg: rgb(220 38 38 / 0.1);
+  --doc-comment: rgb(255 196 0 / 0.28);
+  --doc-comment-active: rgb(255 196 0 / 0.55);
+  --doc-find: rgb(255 210 0 / 0.45);
+  --doc-find-current: rgb(255 140 0 / 0.6);
+  --doc-selected: rgb(37 125 224 / 0.25);
+  --doc-tip: #0b0b0b;
+  --doc-tip-fg: #ffffff;
+  --doc-card-shadow: 0 0 0 1px rgb(0 0 0 / 0.08), 0 1px 2px 0 rgb(11 11 11 / 0.06), 0 2px 8px 0 rgb(11 11 11 / 0.08);
+  --doc-popup-shadow: 0 0 0 1px rgb(0 0 0 / 0.08), 0 8px 24px rgb(0 0 0 / 0.12), 0 2px 6px rgb(0 0 0 / 0.08);
+  --doc-text-red: #b42318;
+  --doc-text-yellow: #8a5a00;
+  --doc-text-green: #17803d;
+  --doc-text-teal: #0b7a6b;
+  --doc-text-purple: #6a4bc4;
+  --doc-serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
+  --doc-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --doc-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+@layer base {
+  :root[data-theme="dark"] {
+    --doc-ground: #0b0b0b;
+    --doc-page: #161616;
+    --doc-card: #1f1f1f;
+    --doc-fg: rgb(255 255 255 / 0.93);
+    --doc-text: rgb(255 255 255 / 0.9);
+    --doc-muted: rgb(255 255 255 / 0.45);
+    --doc-faint: rgb(255 255 255 / 0.28);
+    --doc-hover: rgb(255 255 255 / 0.075);
+    --doc-field: rgb(255 255 255 / 0.05);
+    --doc-field-ring: rgb(255 255 255 / 0.12);
+    --doc-pressed-fg: #6aabf1;
+    --doc-line: rgb(255 255 255 / 0.08);
+    --doc-rule: rgb(255 255 255 / 0.14);
+    --doc-link: #6aabf1;
+    --doc-code-bg: rgb(255 255 255 / 0.06);
+    --doc-mark: rgb(255 214 0 / 0.3);
+    --doc-ins: #6fd08c;
+    --doc-ins-bg: rgb(46 160 67 / 0.2);
+    --doc-del: #ff8a80;
+    --doc-del-bg: rgb(248 81 73 / 0.18);
+    --doc-tip: #303030;
+    --doc-tip-fg: rgb(255 255 255 / 0.93);
+    --doc-card-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.04), 0 1px 2px 0 rgb(11 11 11 / 0.06), 0 2px 8px 0 rgb(0 0 0 / 0.24);
+    --doc-popup-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.04), 0 8px 24px rgb(0 0 0 / 0.32), 0 2px 6px rgb(0 0 0 / 0.2);
+    --doc-text-red: #ff8a80;
+    --doc-text-yellow: #f2c14e;
+    --doc-text-green: #6fd08c;
+    --doc-text-teal: #5fd3c0;
+    --doc-text-purple: #b49cff;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --doc-ground: #0b0b0b;
+    --doc-page: #161616;
+    --doc-card: #1f1f1f;
+    --doc-fg: rgb(255 255 255 / 0.93);
+    --doc-text: rgb(255 255 255 / 0.9);
+    --doc-muted: rgb(255 255 255 / 0.45);
+    --doc-faint: rgb(255 255 255 / 0.28);
+    --doc-hover: rgb(255 255 255 / 0.075);
+    --doc-field: rgb(255 255 255 / 0.05);
+    --doc-field-ring: rgb(255 255 255 / 0.12);
+    --doc-pressed-fg: #6aabf1;
+    --doc-line: rgb(255 255 255 / 0.08);
+    --doc-rule: rgb(255 255 255 / 0.14);
+    --doc-link: #6aabf1;
+    --doc-code-bg: rgb(255 255 255 / 0.06);
+    --doc-mark: rgb(255 214 0 / 0.3);
+    --doc-ins: #6fd08c;
+    --doc-ins-bg: rgb(46 160 67 / 0.2);
+    --doc-del: #ff8a80;
+    --doc-del-bg: rgb(248 81 73 / 0.18);
+    --doc-tip: #303030;
+    --doc-tip-fg: rgb(255 255 255 / 0.93);
+    --doc-card-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.04), 0 1px 2px 0 rgb(11 11 11 / 0.06), 0 2px 8px 0 rgb(0 0 0 / 0.24);
+    --doc-popup-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.04), 0 8px 24px rgb(0 0 0 / 0.32), 0 2px 6px rgb(0 0 0 / 0.2);
+    --doc-text-red: #ff8a80;
+    --doc-text-yellow: #f2c14e;
+    --doc-text-green: #6fd08c;
+    --doc-text-teal: #5fd3c0;
+    --doc-text-purple: #b49cff;
+  }
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--doc-ground);
+  color: var(--doc-fg);
+  font-family: var(--doc-sans);
+  -webkit-font-smoothing: antialiased;
+}

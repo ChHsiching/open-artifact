@@ -2,7 +2,7 @@
   "name": "open-artifact",
   "displayName": "Open Artifact",
   "version": "0.1.0",
-  "description": "Make slide decks, design canvases, whiteboards, spreadsheets, data dashboards and design systems you view, edit, comment on and export in one local page; comments come back to the agent.",
+  "description": "Make slide decks, design canvases, whiteboards, spreadsheets, data dashboards, docs and design systems you view, edit, comment on and export in one local page; comments come back to the agent.",
   "logo": "assets/icon.png",
   "author": {
     "name": "Jim Liu 宝玉",

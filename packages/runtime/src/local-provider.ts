@@ -21,6 +21,7 @@ import {
   type CommentThread,
   type DbCapability,
   type DbChangeEvent,
+  type DocCapability,
   type DownloadsCapability,
   type FilesChangedEvent,
   type HistoryCapability,
@@ -43,6 +44,8 @@ import {
   type CommentReplyRequest,
   type CommentResolveRequest,
   type CommentSendRequest,
+  type CommentEditRequest,
+  type CommentReactRequest,
   type CommentsResponse,
   type CommentThreadResponse,
   type DbGetResponse,
@@ -69,6 +72,14 @@ import {
   type SessionResponse,
 } from './http-api.ts';
 import { SHEET_API, SHEET_EVENT, type ImportFileResponse, type SheetFrame, type SheetSendResponse, type WidgetResponse } from './sheet-api.ts';
+import {
+  DOC_API,
+  type DocHistoryRequest,
+  type DocImportResponse,
+  type DocReadRequest,
+  type DocSessionRequest,
+  type DocVersionRequest,
+} from './doc-api.ts';
 
 /**
  * Why the page's access changed: `removed` (the server now refuses this
@@ -77,6 +88,8 @@ import { SHEET_API, SHEET_EVENT, type ImportFileResponse, type SheetFrame, type 
  * another role).
  */
 export type AccessChange = 'removed' | 'changed';
+
+type DocExportedNotes = Awaited<ReturnType<DocCapability['exportFile']>>['notes'];
 
 /** Options of {@link createLocalProvider}. */
 export interface LocalProviderOptions {
@@ -378,7 +391,10 @@ export function createLocalProvider(options: LocalProviderOptions = {}): Capabil
       const capability: CommentsCapability = {
         list: async () => (await json<CommentsResponse>(API.comments, { cache: 'no-store' })).threads,
         create: (input) => thread(API.commentsCreate, { input } satisfies CommentCreateRequest),
-        reply: (threadId, text) => thread(API.commentsReply, { threadId, text } satisfies CommentReplyRequest),
+        reply: (threadId, text, options) => thread(API.commentsReply, { threadId, text, ...(options?.to?.length ? { to: options.to } : {}) } satisfies CommentReplyRequest),
+        edit: (threadId, messageId, text, options) =>
+          thread(API.commentsEdit, { threadId, messageId, text, ...(options?.to ? { to: options.to } : {}) } satisfies CommentEditRequest),
+        react: (threadId, messageId, emoji, on) => thread(API.commentsReact, { threadId, messageId, emoji, on } satisfies CommentReactRequest),
         setResolved: (threadId, resolved) => thread(API.commentsResolve, { threadId, resolved } satisfies CommentResolveRequest),
         move: (threadId, anchor, location) => thread(API.commentsMove, { threadId, anchor, ...(location ? { location } : {}) } satisfies CommentMoveRequest),
         remove: async (threadId, messageId) => {
@@ -386,6 +402,45 @@ export function createLocalProvider(options: LocalProviderOptions = {}): Capabil
         },
         sendToAgent: (threadId) => thread(API.commentsSend, { threadId } satisfies CommentSendRequest),
         onChange: (listener: (threads: CommentThread[]) => void) => subscribe('comments', listener),
+      };
+      return capability;
+    },
+
+    async doc() {
+      const { stores } = await getSession();
+      if (!stores?.doc) return null;
+      const capability: DocCapability = {
+        session: () => post(DOC_API.session, { client } satisfies DocSessionRequest),
+        read: (tab) => post(DOC_API.read, { tab } satisfies DocReadRequest),
+        call: (request) => post(DOC_API.call, { ...request, client }),
+        history: (tab) => post(DOC_API.history, { tab } satisfies DocHistoryRequest),
+        version: (tab, rev) => post(DOC_API.version, { tab, rev } satisfies DocVersionRequest),
+        restore: (request) => post(DOC_API.restore, request),
+        importFile: (name, bytes, tabName) =>
+          json<DocImportResponse>(
+            DOC_API.importFile,
+            { method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body: bytes as BodyInit },
+            { name, ...(tabName ? { tabName } : {}) },
+          ),
+        exportFile: async (query) => {
+          let response: Response;
+          try {
+            response = await fetch(url(DOC_API.exportFile, { format: query.format, ...(query.tab ? { tab: query.tab } : {}), ...(query.paper ? { paper: query.paper } : {}) }), { cache: 'no-store' });
+          } catch (error) {
+            throw new ArtifactError('unavailable', error instanceof Error ? error.message : String(error));
+          }
+          if (!response.ok) throw await toError(response);
+          const disposition = response.headers.get('content-disposition') ?? '';
+          const name = decodeURIComponent(/filename\*=UTF-8''([^;]+)/.exec(disposition)?.[1] ?? '') || `doc.${query.format === 'markdown' ? 'md' : query.format}`;
+          let notes: DocExportedNotes = [];
+          try {
+            notes = JSON.parse(decodeURIComponent(response.headers.get('x-doc-export-notes') ?? '%5B%5D')) as DocExportedNotes;
+          } catch {
+            /* no notes */
+          }
+          return { name, mime: response.headers.get('content-type') ?? 'application/octet-stream', bytes: new Uint8Array(await response.arrayBuffer()), notes };
+        },
+        onFrame: (listener) => subscribe('doc', listener),
       };
       return capability;
     },

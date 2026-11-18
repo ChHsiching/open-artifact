@@ -1,0 +1,204 @@
+/* Code blocks: the bar, the live rendering above the source, and highlight colours. */
+:root {
+  --code-keyword: #a626a4;
+  --code-string: #3f7f3f;
+  --code-number: #b35900;
+  --code-comment: #7c7c7c;
+  --code-title: #2a5db0;
+  --code-type: #986801;
+  --code-attr: #b35900;
+  --code-tag: #c0392b;
+  --code-meta: #4078f2;
+  --code-deletion: #b42318;
+  --code-addition: #17803d;
+}
+
+:root[data-theme="dark"] {
+  --code-keyword: #d19aef;
+  --code-string: #98c379;
+  --code-number: #e5a06b;
+  --code-comment: #8b8b8b;
+  --code-title: #79b8ff;
+  --code-type: #e5c07b;
+  --code-attr: #e5a06b;
+  --code-tag: #ff8a80;
+  --code-meta: #82aaff;
+  --code-deletion: #ff8a80;
+  --code-addition: #6fd08c;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --code-keyword: #d19aef;
+    --code-string: #98c379;
+    --code-number: #e5a06b;
+    --code-comment: #8b8b8b;
+    --code-title: #79b8ff;
+    --code-type: #e5c07b;
+    --code-attr: #e5a06b;
+    --code-tag: #ff8a80;
+    --code-meta: #82aaff;
+    --code-deletion: #ff8a80;
+    --code-addition: #6fd08c;
+  }
+}
+
+.doc-text .code-block {
+  position: relative;
+  background: var(--doc-code-bg);
+  border-radius: 8px;
+}
+
+.doc-text .code-block pre {
+  background: transparent;
+  border-radius: 0;
+  padding-top: 0.25em;
+}
+
+.doc-text .code-block[data-source-hidden] pre {
+  display: none;
+}
+
+.doc-text .code-block-bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 32px;
+  padding: 4px 6px 0;
+  font-family: var(--doc-sans);
+  font-size: 12px;
+  user-select: none;
+}
+
+.doc-text .code-block-render {
+  padding: 0.6em 1em 0.9em;
+  overflow-x: auto;
+  color: var(--doc-text);
+  font-family: var(--doc-sans);
+  font-size: 1rem;
+  white-space: normal;
+}
+
+.doc-text .code-block:not([data-source-hidden]) .code-block-render {
+  border-bottom: 1px solid var(--doc-line);
+}
+
+.doc-text .code-block-render[hidden] {
+  display: none;
+}
+
+.doc-text .code-block-output[data-stale] {
+  opacity: 0.5;
+}
+
+.doc-text .code-block-output svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.doc-text .code-block-output table {
+  table-layout: auto;
+  width: auto;
+  min-width: 50%;
+}
+
+.doc-text .code-block-output .katex-display {
+  margin: 0.25em 0;
+}
+
+.doc-text .code-block-output li.task {
+  list-style: none;
+}
+
+.doc-text .code-block-output li.task input {
+  margin: 0 0.35em 0 -1.3em;
+}
+
+.doc-text .code-block-status {
+  color: var(--doc-muted);
+  font-size: 13px;
+}
+
+.doc-text .code-block-status[hidden] {
+  display: none;
+}
+
+.doc-text .code-block-status[data-state="error"] {
+  color: var(--doc-text-red);
+  font-family: var(--doc-mono);
+  white-space: pre-wrap;
+}
+
+/* Highlight tokens */
+.doc-text .code-block .hljs-keyword,
+.doc-text .code-block .hljs-selector-tag,
+.doc-text .code-block .hljs-built_in,
+.doc-text .code-block .hljs-literal {
+  color: var(--code-keyword);
+}
+
+.doc-text .code-block .hljs-string,
+.doc-text .code-block .hljs-regexp,
+.doc-text .code-block .hljs-char,
+.doc-text .code-block .hljs-template-tag {
+  color: var(--code-string);
+}
+
+.doc-text .code-block .hljs-number,
+.doc-text .code-block .hljs-symbol,
+.doc-text .code-block .hljs-bullet {
+  color: var(--code-number);
+}
+
+.doc-text .code-block .hljs-comment,
+.doc-text .code-block .hljs-quote {
+  color: var(--code-comment);
+  font-style: italic;
+}
+
+.doc-text .code-block .hljs-title,
+.doc-text .code-block .hljs-section,
+.doc-text .code-block .hljs-function {
+  color: var(--code-title);
+}
+
+.doc-text .code-block .hljs-type,
+.doc-text .code-block .hljs-class,
+.doc-text .code-block .hljs-variable.language_ {
+  color: var(--code-type);
+}
+
+.doc-text .code-block .hljs-attr,
+.doc-text .code-block .hljs-attribute,
+.doc-text .code-block .hljs-property,
+.doc-text .code-block .hljs-params {
+  color: var(--code-attr);
+}
+
+.doc-text .code-block .hljs-tag,
+.doc-text .code-block .hljs-name,
+.doc-text .code-block .hljs-selector-id,
+.doc-text .code-block .hljs-selector-class {
+  color: var(--code-tag);
+}
+
+.doc-text .code-block .hljs-meta,
+.doc-text .code-block .hljs-link {
+  color: var(--code-meta);
+}
+
+.doc-text .code-block .hljs-deletion {
+  color: var(--code-deletion);
+}
+
+.doc-text .code-block .hljs-addition {
+  color: var(--code-addition);
+}
+
+.doc-text .code-block .hljs-emphasis {
+  font-style: italic;
+}
+
+.doc-text .code-block .hljs-strong {
+  font-weight: 600;
+}

@@ -3,7 +3,7 @@
  * `open-artifact-type-server`: the command line an agent uses to work on Design and
  * Design System artifacts.
  *
- *     open-artifact-type-server open <dir> [--type design|design-system|slides|whiteboard|data|sheets] [--title T] [--browser] [--lan]
+ *     open-artifact-type-server open <dir> [--type design|design-system|slides|whiteboard|data|sheets|docs] [--title T] [--browser] [--lan]
  *     open-artifact-type-server check <dir> [--json]
  *     open-artifact-type-server generate <dir>
  *     open-artifact-type-server upload <dir> <file>… [--group G] [--name N]
@@ -49,6 +49,8 @@ import { readEdits } from './agent.ts';
 import { SheetRefusalError } from '@open-artifact/sheets-core';
 import { SheetStore } from './sheets/store.ts';
 import { SheetsCommandError, assertSheetFor, isSheetsCommand, runSheetCall, sheetCallOf, type SheetCall } from './sheets/cli.ts';
+import { runDocAction } from './docs/actions.ts';
+import { DocsCommandError, docCommandOf, isDocsCommand, printDocAnswer, type DocCommand, type DocsCommand } from './docs/cli.ts';
 
 const SELF = fileURLToPath(import.meta.url);
 
@@ -496,6 +498,45 @@ async function cmdSheet(command: string, argv: string[]): Promise<number> {
   }
 }
 
+/** A doc's action through a running server that has the doc open, so its pages see the write at once; else `null`. */
+async function docActionThrough(record: ServerRecord, root: string, command: DocCommand): Promise<Record<string, unknown> | null> {
+  const { artifacts } = await openArtifact<{ artifacts: { id: string; root: string }[] }>(record, 'list');
+  const open = artifacts.find((a) => a.root === root);
+  if (!open) return null;
+  const response = await fetch(new URL(`__open-artifact/actions/${command.name}`, record.url), {
+    method: 'POST',
+    headers: { authorization: `Bearer ${record.secret}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ id: open.id, root, args: command.args }),
+    signal: AbortSignal.timeout(300_000),
+  });
+  return (await response.json()) as Record<string, unknown>;
+}
+
+/**
+ * `create|read|update|batch|delete|export|import <dir> …`: a doc's call, through the running server when it has the
+ * doc open, else on the folder. JSON on stdout (exit 1 when the doc refused it); a mistake is JSON on stderr, exit 2.
+ */
+async function cmdDoc(name: DocsCommand, argv: string[]): Promise<number> {
+  try {
+    const dir = argv[0];
+    if (!dir || dir.startsWith('--')) throw new DocsCommandError('MISSING_FOLDER', `Pass the doc's folder: ${name} <dir>.`);
+    const root = resolve(dir);
+    const command = docCommandOf(name, argv.slice(1));
+    const record = await liveServer();
+    let body = record ? await docActionThrough(record, root, command) : null;
+    if (!body) {
+      const owner = { id: 'owner', name: process.env.OPEN_ARTIFACT_USER || 'You' };
+      body = (await runDocAction(command.name, command.args, { root, owner })).body;
+      if (body.ok === true && (name === 'create' || name === 'import')) body.next = `Open it for the user: open-artifact open ${dir}`;
+    }
+    return printDocAnswer(command, body);
+  } catch (error) {
+    const code = error instanceof DocsCommandError ? error.code : 'ERROR';
+    process.stderr.write(`${JSON.stringify({ error: code, message: error instanceof Error ? error.message : String(error) })}\n`);
+    return 2;
+  }
+}
+
 async function cmdStatus(): Promise<void> {
   const record = await liveServer();
   if (!record) {
@@ -576,7 +617,7 @@ async function cmdServe(args: Args): Promise<void> {
 
 const USAGE = `open-artifact-type-server <command>
 
-  open <dir> [--type design|design-system|slides|whiteboard|data|sheets] [--title T] [--browser] [--lan] [--json]
+  open <dir> [--type design|design-system|slides|whiteboard|data|sheets|docs] [--title T] [--browser] [--lan] [--json]
       Open (creating if empty) an artifact folder in its editor; prints the URL.
       --lan also shares it on the local network and prints the role links.
   check <dir> [--json]          Check project files; exit 1 on errors.
@@ -611,6 +652,20 @@ const USAGE = `open-artifact-type-server <command>
   info <dir>                    A Sheet's id, title and revision.
                                 These go through the running server when it has the Sheet open;
                                 a refusal is JSON on stderr and exit 1.
+  create <dir> <birth> | --markdown <file> [--name N]
+                                Start a doc: {name, doc: {markdown, blocks?}, batch?}.
+  read <dir> [<tab> [--view | --parent ID | --since REV | --at REV | --search TEXT | --markdown | --history | --suggestions]]
+                                The doc's tabs, or a tab (outline by default); read <dir> <call> takes {ref, payload}.
+  update <dir> <call> [--tab T] Ops on a tab body: {ref, payload: {ops}} or {tab?, ops}.
+  batch <dir> <call>            Several members at once: {batch: [...]} (tabs, dropdown lists, ops).
+  delete <dir> <call>           {ref: {object: "file", id}}: remove a tab.
+  export <dir> [--tab T] [--format markdown|docx|pdf|html] [--paper a4|letter] [--out F]
+                                The doc as markdown (on stdout unless --out), Word, PDF or a page to print.
+  import <dir> <file> [--name N]
+                                A .md, .docx or .pdf as a new tab, or as the doc when the folder holds none.
+                                A doc's calls go through the running server when it has the doc open;
+                                <call> is JSON, a file or - (stdin); exit 1 when the doc refused it.
+                                read, update, batch and export go to the Sheet or the doc the folder holds.
   comments <dir> [--all] [--json]
                                 Print open comment threads (slides, whiteboard, data); --all adds resolved.
                                 comments <dir> --wait [--timeout s] is wait.
@@ -636,8 +691,13 @@ const USAGE = `open-artifact-type-server <command>
 `;
 
 export async function main(argv: string[]): Promise<number> {
-  // A Sheet's calls read their own arguments (a payload may be "-", a flag's value a path).
-  if (argv[0] !== undefined && isSheetsCommand(argv[0])) return cmdSheet(argv[0], argv.slice(1));
+  // A Sheet's and a doc's calls read their own arguments (a payload may be "-", a flag's value a path).
+  // read, update, batch and export are both's: the folder's type says whose.
+  const call = argv[0];
+  if (call !== undefined && (isSheetsCommand(call) || isDocsCommand(call))) {
+    const toDoc = isDocsCommand(call) && (!isSheetsCommand(call) || (argv[1] !== undefined && (await detectType(resolve(argv[1]))) === 'docs'));
+    return toDoc ? cmdDoc(call as DocsCommand, argv.slice(1)) : cmdSheet(call, argv.slice(1));
+  }
   const args = parseArgs(argv);
   const command = args.positional[0];
   try {

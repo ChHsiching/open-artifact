@@ -21,6 +21,8 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { join } from 'node:path';
 import {
   DB_LIMITS,
+  type CommentAuthor,
+  type CommentReaction,
   type CommentThread,
   type DbChangeEvent,
   type DbDocument,
@@ -35,6 +37,8 @@ import {
   type CommentReplyRequest,
   type CommentResolveRequest,
   type CommentSendRequest,
+  type CommentEditRequest,
+  type CommentReactRequest,
   type CommentsResponse,
   type CommentThreadResponse,
   type DbGetResponse,
@@ -42,7 +46,7 @@ import {
   type DbWriteRequest,
   type ServerEvents,
 } from '@open-artifact/runtime/http-api';
-import { AGENT_AUTHOR, COMMENTS_FILE, CommentStore, agentView, type Author, type Thread } from '@open-artifact/server-sdk/comments';
+import { AGENT_AUTHOR, COMMENTS_FILE, CommentStore, agentView, type Author, type MessageReaction, type Thread } from '@open-artifact/server-sdk/comments';
 import { DB_DIR, DbStore, docPathsOf, docSha256, splitPath } from '@open-artifact/server-sdk/db';
 import { countEdits, resetEdits } from './agent.ts';
 import { HttpError, readJson, sendJson } from './http.ts';
@@ -141,6 +145,8 @@ export function toHttpError(error: unknown): unknown {
       return new HttpError(409, 'conflict', message, extra);
     case 'not_found':
       return new HttpError(404, 'not_found', message);
+    case 'forbidden':
+      return new HttpError(403, 'forbidden', message);
     default:
       return new HttpError(503, 'unavailable', message);
   }
@@ -182,11 +188,29 @@ export function pageThread(thread: Thread): CommentThread {
     ...(thread.agent ? { agent: { status: thread.agent.status } } : {}),
     messages: thread.messages.map((message) => ({
       id: message.id,
-      author: { kind: message.author?.kind === 'agent' ? 'agent' : 'person', name: message.author?.name ?? '' },
+      author: pageAuthor(message.author),
       text: message.text,
       at: message.at,
+      ...(message.editedAt ? { editedAt: message.editedAt } : {}),
+      ...(message.to?.length ? { to: [...message.to] } : {}),
+      ...(message.reactions?.length ? { reactions: pageReactions(message.reactions) } : {}),
     })),
   };
+}
+
+function pageAuthor(author: Author | undefined): CommentAuthor {
+  return { kind: author?.kind === 'agent' ? 'agent' : 'person', name: author?.name ?? '' };
+}
+
+/** Reactions grouped by emoji, in the order each emoji first appeared. */
+function pageReactions(reactions: readonly MessageReaction[]): CommentReaction[] {
+  const byEmoji = new Map<string, CommentAuthor[]>();
+  for (const reaction of reactions) {
+    const authors = byEmoji.get(reaction.emoji) ?? [];
+    authors.push(pageAuthor(reaction.author));
+    byEmoji.set(reaction.emoji, authors);
+  }
+  return [...byEmoji].map(([emoji, authors]) => ({ emoji, authors }));
 }
 
 /** The text of the request that hands a thread to the agent (the thread itself travels as data). */
@@ -512,7 +536,7 @@ export class DbHost {
         const { input } = await readJson<Partial<CommentCreateRequest>>(req, MAX_COMMENT_BODY);
         if (!isPlain(input) || typeof input.anchor !== 'string') throw new HttpError(400, 'invalid', 'input {anchor, label, text} is required.');
         const thread = guarded(() =>
-          this.comments.create({ anchor: input.anchor, label: input.label, detail: input.detail, location: input.location, text: input.text, author: this.viewer(as?.name) }),
+          this.comments.create({ anchor: input.anchor, label: input.label, detail: input.detail, location: input.location, text: input.text, to: input.to, author: this.viewer(as?.name) }),
         );
         this.commentsChanged();
         sendJson(res, 200, { thread: pageThread(thread) } satisfies CommentThreadResponse);
@@ -521,7 +545,23 @@ export class DbHost {
       case API.commentsReply: {
         postOnly();
         const body = await readJson<Partial<CommentReplyRequest>>(req, MAX_COMMENT_BODY);
-        const { thread } = guarded(() => this.comments.addMessage(body.threadId, this.viewer(as?.name), body.text));
+        const { thread } = guarded(() => this.comments.addMessage(body.threadId, this.viewer(as?.name), body.text, { to: body.to }));
+        this.commentsChanged();
+        sendJson(res, 200, { thread: pageThread(thread) } satisfies CommentThreadResponse);
+        return true;
+      }
+      case API.commentsEdit: {
+        postOnly();
+        const body = await readJson<Partial<CommentEditRequest>>(req, MAX_COMMENT_BODY);
+        const thread = guarded(() => this.comments.editMessage(body.threadId, body.messageId, this.viewer(as?.name), body.text, body.to));
+        this.commentsChanged();
+        sendJson(res, 200, { thread: pageThread(thread) } satisfies CommentThreadResponse);
+        return true;
+      }
+      case API.commentsReact: {
+        postOnly();
+        const body = await readJson<Partial<CommentReactRequest>>(req, MAX_COMMENT_BODY);
+        const thread = guarded(() => this.comments.react(body.threadId, body.messageId, this.viewer(as?.name), body.emoji, body.on !== false));
         this.commentsChanged();
         sendJson(res, 200, { thread: pageThread(thread) } satisfies CommentThreadResponse);
         return true;

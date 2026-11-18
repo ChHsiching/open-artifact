@@ -3,7 +3,7 @@
   "version": "0.2.2",
   "private": true,
   "type": "module",
-  "description": "Local type server and command line of the Design, Design System, Slides, Whiteboard and Data artifact types.",
+  "description": "Local type server and command line of the Design, Design System, Slides, Whiteboard, Data and Docs artifact types.",
   "bin": {
     "open-artifact-type-server": "./src/cli.ts"
   },
@@ -19,8 +19,10 @@
     "@open-artifact/slides-core": "0.2.2",
     "@open-artifact/whiteboard-core": "0.2.2",
     "@open-artifact/data-core": "0.2.2",
+    "@open-artifact/docs-core": "0.2.2",
     "@open-artifact/sheets-core": "0.2.2",
-    "@open-artifact/wasm-sheets": "0.2.2"
+    "@open-artifact/wasm-sheets": "0.2.2",
+    "pdfjs-dist": "6.4.299"
   },
   "license": "Apache-2.0"
 }

@@ -1,0 +1,72 @@
+/**
+ * Folded headings: what follows a folded heading, up to the next heading of its level or above, is hidden. Folds are
+ * the viewer's own, kept by the heading's id for the page's life.
+ */
+import type { Node as PMNode } from 'prosemirror-model';
+import { type Command, type EditorState, Plugin, PluginKey } from 'prosemirror-state';
+import { Decoration, DecorationSet } from 'prosemirror-view';
+import { schema } from './schema.ts';
+
+export const foldKey = new PluginKey<ReadonlySet<string>>('docFold');
+
+const levelOf = (node: PMNode) => (node.type === schema.nodes.paragraph ? ((node.attrs.heading as number | null) ?? 0) : 0);
+
+export function foldedIds(state: EditorState): ReadonlySet<string> {
+  return foldKey.getState(state) ?? new Set();
+}
+
+function decorations(doc: PMNode, folded: ReadonlySet<string>): DecorationSet {
+  const decos: Decoration[] = [];
+  let hiding = 0;
+  doc.forEach((node, pos) => {
+    const level = levelOf(node);
+    if (hiding && level && level <= hiding) hiding = 0;
+    if (hiding) {
+      decos.push(Decoration.node(pos, pos + node.nodeSize, { class: 'doc-folded-away' }));
+      return;
+    }
+    if (level) {
+      const isFolded = !!node.attrs.bid && folded.has(node.attrs.bid);
+      decos.push(Decoration.node(pos, pos + node.nodeSize, { class: isFolded ? 'doc-heading doc-heading-folded' : 'doc-heading' }));
+      if (isFolded) hiding = level;
+    }
+  });
+  return DecorationSet.create(doc, decos);
+}
+
+export function foldPlugin(): Plugin<ReadonlySet<string>> {
+  return new Plugin<ReadonlySet<string>>({
+    key: foldKey,
+    state: {
+      init: () => new Set(),
+      apply: (tr, value) => {
+        const toggle = tr.getMeta(foldKey) as string | undefined;
+        if (!toggle) return value;
+        const next = new Set(value);
+        if (next.has(toggle)) next.delete(toggle);
+        else next.add(toggle);
+        return next;
+      },
+    },
+    props: {
+      decorations: state => decorations(state.doc, foldedIds(state)),
+    },
+  });
+}
+
+/** Folds or unfolds a heading by its id. */
+export const toggleFold =
+  (bid: string): Command =>
+  (state, dispatch) => {
+    if (dispatch) dispatch(state.tr.setMeta(foldKey, bid));
+    return true;
+  };
+
+/** Folds or unfolds the heading the cursor is in. */
+export const toggleFoldHere: Command = (state, dispatch) => {
+  const { $from } = state.selection;
+  if ($from.depth !== 1) return false;
+  const node = $from.parent;
+  if (!levelOf(node) || !node.attrs.bid) return false;
+  return toggleFold(node.attrs.bid)(state, dispatch);
+};

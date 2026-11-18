@@ -39,6 +39,7 @@ import {
   type CommentsCapability,
   type ConflictPath,
   type DbCapability,
+  type DocCapability,
   type DownloadsCapability,
   type HistoryCapability,
   MCP_CALL_TIMEOUT,
@@ -66,8 +67,9 @@ export const BROKERED_METHODS: { readonly [K in CapabilityName]: readonly string
   room: ['self', 'presence', 'peers', 'emit'],
   downloads: ['save'],
   db: ['get', 'list', 'write'],
-  comments: ['list', 'create', 'reply', 'setResolved', 'move', 'remove', 'sendToAgent'],
+  comments: ['list', 'create', 'reply', 'edit', 'react', 'setResolved', 'move', 'remove', 'sendToAgent'],
   history: ['list', 'files', 'read', 'readBytes', 'diff', 'restore', 'dismissNotice'],
+  doc: ['session', 'read', 'call', 'history', 'version', 'restore', 'importFile', 'exportFile'],
   mcp: ['callTool', 'listTools'],
   sheet: ['read', 'send', 'widget', 'importFile'],
 };
@@ -85,6 +87,7 @@ export const BROKERED_EVENTS = {
   comments: { onChange: 'threads' },
   history: { onChange: 'change' },
   sheet: { onFrame: 'frame' },
+  doc: { onFrame: 'frame' },
 } as const satisfies Partial<Record<CapabilityName, Readonly<Record<string, string>>>>;
 
 const CALL_TIMEOUT: Partial<Record<CapabilityName, number>> = { downloads: 150_000, assets: 272_000, user: 20_000 };
@@ -330,7 +333,9 @@ export function createShellProvider(options: ShellProviderOptions = {}): Capabil
         const ns: CommentsCapability = {
           list: () => c('list'),
           create: (input) => c('create', [input]),
-          reply: (threadId, text) => c('reply', [threadId, text]),
+          reply: (threadId, text, options) => c('reply', options ? [threadId, text, options] : [threadId, text]),
+          edit: (threadId, messageId, text, options) => c('edit', options ? [threadId, messageId, text, options] : [threadId, messageId, text]),
+          react: (threadId, messageId, emoji, on) => c('react', [threadId, messageId, emoji, on]),
           setResolved: (threadId, resolved) => c('setResolved', [threadId, resolved]),
           move: (threadId, anchor, location) => c('move', location ? [threadId, anchor, location] : [threadId, anchor]),
           remove: (threadId, messageId) => c('remove', messageId ? [threadId, messageId] : [threadId]),
@@ -359,6 +364,20 @@ export function createShellProvider(options: ShellProviderOptions = {}): Capabil
           restore: (n, paths) => c('restore', paths ? [n, paths] : [n]),
           dismissNotice: (id) => c('dismissNotice', [id]),
           onChange: (listener) => listen('history', BROKERED_EVENTS.history.onChange, listener),
+        };
+        return ns;
+      }
+      case 'doc': {
+        const ns: DocCapability = {
+          session: () => c('session'),
+          read: (tab) => c('read', [tab]),
+          call: (request) => c('call', [request]),
+          history: (tab) => c('history', [tab]),
+          version: (tab, rev) => c('version', [tab, rev]),
+          restore: (request) => c('restore', [request]),
+          importFile: (name, bytes, tabName) => c('importFile', tabName === undefined ? [name, bytes] : [name, bytes, tabName], true),
+          exportFile: (query) => c('exportFile', [query], true),
+          onFrame: (listener) => listen('doc', BROKERED_EVENTS.doc.onFrame, listener),
         };
         return ns;
       }

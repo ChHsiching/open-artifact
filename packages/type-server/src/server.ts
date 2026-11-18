@@ -31,7 +31,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { Duplex } from 'node:stream';
 import { homedir } from 'node:os';
 import { basename, dirname, extname, isAbsolute, join, normalize, resolve, sep } from 'node:path';
-import { DB_LIMITS, ROOM_MESSAGE_MAX_BYTES, type AgentStatus, type FileListing, type Peer, type Viewer } from '@open-artifact/runtime/capabilities';
+import { DB_LIMITS, ROOM_MESSAGE_MAX_BYTES, canEdit, type AgentStatus, type FileListing, type Peer, type Viewer } from '@open-artifact/runtime/capabilities';
 import {
   API,
   BLOB_PREFIX,
@@ -68,7 +68,10 @@ import { SHEET_API, type SheetReadRequest, type SheetSendRequest, type WidgetReq
 import { SheetRefusalError } from '@open-artifact/sheets-core';
 import { SheetStore, type Viewer as SheetViewer } from './sheets/store.ts';
 import { SHEET_ACTIONS, SheetsCommandError, assertSheetFor, isSheetsCommand, runSheetCall, type SheetCall } from './sheets/cli.ts';
-import { canEdit } from '@open-artifact/runtime/capabilities';
+import { DOC_API, type DocCallRequest, type DocHistoryRequest, type DocReadRequest, type DocRestoreRequest, type DocSessionRequest, type DocVersionRequest } from '@open-artifact/runtime/doc-api';
+import { DocHost, DocRequestError } from './docs/host.ts';
+import { DOC_ACTIONS, type DocActionName, isDocAction, runDocAction } from './docs/actions.ts';
+import { exportDocFile, importDocFile, DocTransferError } from './docs/transfer.ts';
 
 /** Version reported by `/__open-artifact/health`. */
 export const SERVER_VERSION = '0.1.0';
@@ -237,6 +240,8 @@ class OpenArtifact {
   history: HistoryHost | null = null;
   /** The workbook of a Sheet (`sheets/store.ts`). */
   sheet: SheetStore | null = null;
+  /** The doc of a Docs artifact (`docs/host.ts`). */
+  doc: DocHost | null = null;
 
   readonly id: string;
   /** Random URL segment; whoever has the page URL can use the artifact. */
@@ -426,6 +431,19 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
       log: (line) => log(`${artifact.id}: ${line}`),
     });
 
+  /** A Docs artifact's doc, its writes heard by every page and reported to the daemon. */
+  const makeDocHost = (artifact: OpenArtifact): DocHost =>
+    new DocHost({
+      root: artifact.root,
+      owner: { id: viewer.id, name: viewer.name },
+      emit: (frame, except) => {
+        emit(artifact, 'doc', frame, except);
+        if (frame.kind === 'project') artifact.title = frame.project.name;
+        if (frame.kind === 'tab') void reportTouch(daemon, artifact.id, frame.by === 'agent' ? 'agent' : 'owner', [`doc/tabs/${frame.tab}.json`]);
+      },
+      log: (line) => log(`${artifact.id}: ${line}`),
+    });
+
   /**
    * The version history of an artifact. A restore is written the way pages'
    * writes are (events for every page, the daemon told), then recorded.
@@ -474,6 +492,7 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
       closed = true;
       closeSheet?.();
       if (artifact.clients.get(id) === client) artifact.clients.delete(id);
+      artifact.doc?.release(id);
       peerViewers.delete(`${artifact.id}\0${id}`);
       if (artifact.peers.delete(id)) emit(artifact, 'peers', peerList(artifact));
       if (artifact.clients.size === 0) stopWatching(artifact);
@@ -485,6 +504,7 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
     if (!closed) {
       client.send('agent', agentFor(client.viewer, await refreshStatus(artifact)));
       client.send('peers', peerList(artifact));
+      if (artifact.doc) client.send('doc', { kind: 'stream' });
     }
     // A Sheet's stream: a snapshot and the clock first, then a frame per edit.
     if (!closed && artifact.sheet) closeSheet = artifact.sheet.open(sheetViewer(client.viewer), (frame) => client.send('sheet', frame));
@@ -529,8 +549,8 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
   /** Starts watching while at least one page is connected. */
   const startWatching = async (artifact: OpenArtifact): Promise<void> => {
     if (artifact.watcher || artifact.statusTimer) return;
-    if (artifact.sheet) {
-      // A Sheet's files change only through its store, which tells the pages itself.
+    if (artifact.sheet || artifact.doc) {
+      // A Sheet's or a doc's files change only through its store or host, which tells the pages itself.
       artifact.statusTimer = setInterval(() => refreshStatus(artifact).catch(() => undefined), 3_000);
       return;
     }
@@ -609,8 +629,9 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
       artifact = new OpenArtifact(id, randomBytes(16).toString('hex'), type, root, title);
       byId.set(id, artifact);
       byToken.set(artifact.token, artifact);
-      // A Sheet keeps its own versions: its edit log.
+      // A Sheet keeps its own versions: its edit log. A doc keeps its own versions, per tab.
       if (TYPES[type].store === 'workbook') artifact.sheet = makeSheetStore(artifact);
+      else if (TYPES[type].store === 'doc') artifact.doc = makeDocHost(artifact);
       else artifact.history = makeHistoryHost(artifact);
       if (TYPES[type].store === 'db' || TYPES[type].comments) artifact.db = makeDbHost(artifact);
     } else {
@@ -720,6 +741,56 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
     }
   };
 
+  /** The `doc` capability's routes (DOC_API). */
+  const handleDoc = async (artifact: OpenArtifact, route: string, req: IncomingMessage, res: ServerResponse, url: URL, who: Viewer): Promise<void> => {
+    const doc = artifact.doc;
+    if (!doc) throw new HttpError(404, 'not_found', 'This artifact is not a doc.');
+    try {
+      if (route === DOC_API.exportFile) {
+        const file = await exportDocFile(doc.store, { id: viewer.id, name: viewer.name }, url.searchParams);
+        return send(res, 200, file.bytes, file.mime, {
+          'content-disposition': `attachment; filename="${file.name.replace(/[^\x20-\x7e]|"/g, '_')}"; filename*=UTF-8''${encodeURIComponent(file.name)}`,
+          'x-doc-export-notes': encodeURIComponent(JSON.stringify(file.notes)),
+          'cache-control': 'no-store',
+        });
+      }
+      if (req.method !== 'POST') throw new HttpError(405, 'invalid', 'POST only.');
+      if (route === DOC_API.importFile) {
+        if (!canEdit(who.role)) throw new HttpError(403, 'not_writer', 'Only editors can import a file.');
+        const bytes = await readBody(req, MAX_UPLOAD);
+        const answer = await artifact.run(async () => importDocFile(doc, url.searchParams, bytes));
+        return sendJson(res, 200, answer);
+      }
+      const body = await readJson<Record<string, unknown>>(req, 64 * 1024 * 1024);
+      switch (route) {
+        case DOC_API.session:
+          return sendJson(res, 200, doc.session((body as unknown as DocSessionRequest).client, who));
+        case DOC_API.read:
+          return sendJson(res, 200, doc.read((body as unknown as DocReadRequest).tab, who));
+        case DOC_API.call: {
+          const request = body as unknown as DocCallRequest & { client?: string };
+          const answer = await artifact.run(async () => doc.call(request, typeof request.client === 'string' ? request.client : '', who));
+          if (answer.verdict === 'allow' && artifact.title !== doc.title) artifact.title = doc.title;
+          return sendJson(res, 200, answer);
+        }
+        case DOC_API.history:
+          return sendJson(res, 200, doc.history((body as unknown as DocHistoryRequest).tab));
+        case DOC_API.version: {
+          const request = body as unknown as DocVersionRequest;
+          return sendJson(res, 200, doc.version(request.tab, Number(request.rev)));
+        }
+        default: {
+          const request = body as unknown as DocRestoreRequest;
+          return sendJson(res, 200, await artifact.run(async () => doc.restore(request.tab, Number(request.rev), typeof request.ifRev === 'number' ? request.ifRev : undefined, who)));
+        }
+      }
+    } catch (error) {
+      if (error instanceof DocRequestError) throw new HttpError(error.status, error.code === 'guard_mismatch' ? 'conflict' : error.code === 'not_writer' ? 'not_writer' : error.status === 404 ? 'not_found' : 'invalid', error.message, { code: error.code });
+      if (error instanceof DocTransferError) throw new HttpError(error.status, 'invalid', error.message, { code: error.code });
+      throw error;
+    }
+  };
+
   const handleApi = async (artifact: OpenArtifact, route: string, req: IncomingMessage, res: ServerResponse, url: URL, who: Viewer = viewer): Promise<void> => {
     const method = req.method ?? 'GET';
     // The Shell's broker calls from the Shell's origin: let it read the answers.
@@ -758,6 +829,7 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
             ...(artifact.db ? { db: artifact.db.documents, comments: TYPES[artifact.type].comments === true } : {}),
             ...(artifact.history ? { history: true } : {}),
             ...(artifact.sheet ? { sheet: true } : {}),
+            ...(artifact.doc ? { doc: true } : {}),
           },
         };
         return sendJson(res, 200, body);
@@ -946,6 +1018,15 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
       case SHEET_API.widget:
       case SHEET_API.importFile:
         return handleSheet(artifact, route, req, res, url, who);
+      case DOC_API.session:
+      case DOC_API.read:
+      case DOC_API.call:
+      case DOC_API.history:
+      case DOC_API.version:
+      case DOC_API.restore:
+      case DOC_API.importFile:
+      case DOC_API.exportFile:
+        return handleDoc(artifact, route, req, res, url, who);
 
       default:
         if (artifact.history && (await artifact.history.handle(route, req, res, url, who))) return;
@@ -1024,16 +1105,22 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
     return { image, width, height, bytes: png.length, note: SNAPSHOT_NOTE };
   };
 
-  /**
-   * A Sheet's call (`read`, `update`, `batch`, `widget`, `info`, `export`): on the open Sheet's store, so its pages
-   * hear of an update at once, or on one made for the call when the Sheet is not open here.
-   */
-  const runSheetAction = async (name: SheetCall['name'], body: Partial<ActionRequest>, res: ServerResponse): Promise<void> => {
+  /** The folder a Sheet's or a doc's call names, the artifact open on it here, and its type. */
+  const callTargetOf = async (body: Partial<ActionRequest>): Promise<{ root: string; open: OpenArtifact | undefined; type: TypeName | null }> => {
     const opened = typeof body.id === 'string' ? byId.get(body.id) : undefined;
     const root = typeof body.root === 'string' && isAbsolute(body.root) ? resolve(body.root) : opened?.root;
     if (!root) throw new HttpError(400, 'invalid_argument', 'root (an absolute path) is required.');
     const open = opened?.root === root ? opened : [...byId.values()].find((a) => a.root === root);
     const type = open?.type ?? (await detectType(root)) ?? (hosted.size === 1 ? [...hosted][0]! : null);
+    return { root, open, type };
+  };
+
+  /**
+   * A Sheet's call (`read`, `update`, `batch`, `widget`, `info`, `export`): on the open Sheet's store, so its pages
+   * hear of an update at once, or on one made for the call when the Sheet is not open here.
+   */
+  const runSheetAction = async (name: SheetCall['name'], body: Partial<ActionRequest>, res: ServerResponse): Promise<void> => {
+    const { root, open, type } = await callTargetOf(body);
     if (type !== 'sheets' || !hosted.has(type)) throw new HttpError(404, 'unknown_action', `No action ${name}: ${root} is not a Sheet.`);
     const call: SheetCall = { name, args: body.args && typeof body.args === 'object' ? (body.args as SheetCall['args']) : {} };
     const run = (store: SheetStore): unknown => runSheetCall(store, call);
@@ -1062,11 +1149,37 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
     }
   };
 
+  /**
+   * A doc's call (`read`, `update`, `create`, `delete`, `batch`, `export`, `import`): on the open doc's host, so its
+   * pages hear of a write at once, or on the folder when the doc is not open here.
+   */
+  const runDocCall = async (name: DocActionName, body: Partial<ActionRequest>, res: ServerResponse): Promise<void> => {
+    const { root, open, type } = await callTargetOf(body);
+    if (type !== 'docs' || !hosted.has(type)) throw new HttpError(404, 'unknown_action', `No action ${name}: ${root} is not a doc.`);
+    const args = body.args && typeof body.args === 'object' ? (body.args as Record<string, unknown>) : {};
+    const owner = { id: viewer.id, name: viewer.name };
+    const answer = open?.doc
+      ? await open.run(async () => runDocAction(name, args, { root, owner, host: open.doc! }))
+      : await runDocAction(name, args, { root, owner });
+    if (open?.doc) {
+      open.externalAt = Date.now();
+      void refreshStatus(open).catch(() => undefined);
+      open.title = open.doc.title;
+    }
+    return sendJson(res, answer.status, answer.body);
+  };
+
   /** `POST /__open-artifact/actions/<name> {id, root, args}`: the agent's `call`. */
   const runAction = async (name: string, req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const body = await readJson<Partial<ActionRequest>>(req, 64 * 1024 * 1024);
     if (name.startsWith('open-artifact.')) return runReserved(name, body, res);
-    if (isSheetsCommand(name) && SHEET_ACTIONS.some((action) => action.name === name)) return runSheetAction(name, body, res);
+    const sheetAction = isSheetsCommand(name) && SHEET_ACTIONS.some((action) => action.name === name);
+    if (sheetAction || isDocAction(name)) {
+      // read, update, batch and export are both a Sheet's and a doc's: the folder's type says whose.
+      if (!isDocAction(name)) return runSheetAction(name as SheetCall['name'], body, res);
+      if (!sheetAction || (await callTargetOf(body)).type === 'docs') return runDocCall(name, body, res);
+      return runSheetAction(name as SheetCall['name'], body, res);
+    }
     if (!SERVER_ACTIONS.some((action) => action.name === name)) throw new HttpError(404, 'unknown_action', `No action ${name}.`);
     const opened = typeof body.id === 'string' ? byId.get(body.id) : undefined;
     const root = typeof body.root === 'string' && isAbsolute(body.root) ? resolve(body.root) : opened?.root;
@@ -1144,7 +1257,7 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
           artifacts: [...byId.values()].map((a) => ({ id: a.id, type: a.type, root: a.root, title: a.title, url: pageUrl(a), pages: a.clients.size })),
         });
       case 'actions':
-        if (req.method === 'GET') return sendJson(res, 200, { actions: [...SERVER_ACTIONS, ...(hosted.has('sheets') ? SHEET_ACTIONS : [])] });
+        if (req.method === 'GET') return sendJson(res, 200, { actions: [...SERVER_ACTIONS, ...(hosted.has('sheets') ? SHEET_ACTIONS : []), ...(hosted.has('docs') ? DOC_ACTIONS : [])] });
         throw new HttpError(404, 'unknown_action', 'Name the action: /__open-artifact/actions/<name>.');
       default:
         // Reserved `open-artifact.*` actions (db, comments) are answered in runReserved.

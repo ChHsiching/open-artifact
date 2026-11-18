@@ -73,6 +73,20 @@ function harness(options: { fallback?: CapabilityProvider; answer?: boolean } = 
           return { me: async () => ({ id: 'owner', name: 'You', role: 'owner' }) } as never;
         case 'agent':
           return { send: record('send'), status: record('status'), onStatus: () => () => {} } as never;
+        case 'doc':
+          return {
+            importFile: (fileName: string, bytes: Uint8Array, tabName?: string) => {
+              calls.push({ method: 'doc.importFile', args: [fileName, bytes, tabName] });
+              return Promise.resolve({ tab: 'aaaaaaaa-0001', name: tabName ?? fileName });
+            },
+            exportFile: (query: unknown) => {
+              calls.push({ method: 'doc.exportFile', args: [query] });
+              return Promise.resolve({ name: 'Plan.docx', mime: 'application/zip', bytes: new Uint8Array([80, 75, 3, 4]), notes: [] });
+            },
+            onFrame: () => () => {},
+          } as never;
+        case 'comments':
+          return { edit: record('edit'), react: record('react'), onChange: () => () => {} } as never;
         default:
           return null;
       }
@@ -186,6 +200,35 @@ test('events of a granted capability reach the page', async () => {
   h.emitFiles({ changes: { 'project/a': 'y' }, author: 'agent' });
   await new Promise((resolve) => setTimeout(resolve, 5));
   assert.deepEqual(seen, [{ changes: { 'project/a': 'y' }, author: 'agent' }]);
+});
+
+test('a doc import and export carry bytes both ways, and comment edits and reactions go through', async () => {
+  const h = harness();
+  h.setActivation(true);
+  const runtime = createRuntime(h.provider);
+  const doc = await runtime.use('doc');
+  assert.ok(doc);
+  await doc.importFile('notes.md', new TextEncoder().encode('# Hi'), 'Notes');
+  const [name, bytes, tabName] = h.calls.find((c) => c.method === 'doc.importFile')!.args as [string, Uint8Array, string];
+  assert.equal(name, 'notes.md');
+  assert.ok(bytes instanceof Uint8Array);
+  assert.equal(new TextDecoder().decode(bytes), '# Hi');
+  assert.equal(tabName, 'Notes');
+  const file = await doc.exportFile({ format: 'docx' } as never);
+  assert.ok(file.bytes instanceof Uint8Array);
+  assert.deepEqual([...file.bytes], [80, 75, 3, 4]);
+
+  const comments = await runtime.use('comments');
+  assert.ok(comments);
+  await comments.edit('c_1', 'm_1', 'New words', { to: ['agent'] });
+  await comments.react('c_1', 'm_1', '👍', true);
+  assert.deepEqual(
+    h.calls.filter((c) => c.method.startsWith('comments.')).map((c) => [c.method, c.args]),
+    [
+      ['comments.edit', ['c_1', 'm_1', 'New words', { to: ['agent'] }]],
+      ['comments.react', ['c_1', 'm_1', '👍', true]],
+    ],
+  );
 });
 
 test('agent.send without a click is staged, with one it is sent', async () => {

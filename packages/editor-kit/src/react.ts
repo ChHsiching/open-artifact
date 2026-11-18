@@ -12,5 +12,6 @@ export * from './collab/PresenceViews.tsx';
 export * from './Announcer.tsx';
 export * from './chrome.tsx';
 export * from './FindBar.tsx';
+export * from './PanelEdge.tsx';
 /** Key labels for the chrome's shortcut chips (also in the pure entry). */
 export { ALT, MOD, SHIFT } from './keys.ts';

@@ -2,7 +2,7 @@
  * Comment threads of a frame artifact, in the shared `comments.json` format
  * (version 1) the other Open Artifact types write:
  * `{version: 1, threads: [{id: 'c_…', anchor, label, detail?, location, status, agent?, createdAt, updatedAt,
- * resolvedAt?, messages: [{id: 'm_…', author: {kind, name}, text, at, editedAt?}]}]}`.
+ * resolvedAt?, messages: [{id: 'm_…', author: {kind, name}, text, at, editedAt?, to?, reactions?}]}]}`.
  *
  * An original page anchors a comment with its own object; it is kept whole
  * under `location.custom` and `anchor` is its stable JSON text, so the page
@@ -28,13 +28,28 @@ export interface Author {
 
 export const AGENT_AUTHOR: Readonly<Author> = Object.freeze({ kind: 'agent', name: 'agent' });
 
+/** One person's emoji on a message. */
+export interface MessageReaction {
+  emoji: string;
+  author: Author;
+  at: string;
+}
+
 export interface CommentMessage {
   id: string;
   author: Author;
   text: string;
   at: string;
   editedAt?: string;
+  /** Who the message asks, as the page named them (`agent` asks the agent). */
+  to?: string[];
+  reactions?: MessageReaction[];
 }
+
+/** At most this many recipients on a message. */
+const TO_MAX = 20;
+/** The longest emoji a reaction may be (a sequence with modifiers). */
+const EMOJI_MAX = 32;
 
 export interface ThreadAgentState {
   status: 'pending' | 'delivered' | 'replied';
@@ -144,8 +159,9 @@ export class CommentStore {
     }
   }
 
-  create(input: { anchor?: unknown; label?: unknown; detail?: unknown; location?: unknown; text: unknown; author?: Author }): Thread {
+  create(input: { anchor?: unknown; label?: unknown; detail?: unknown; location?: unknown; text: unknown; to?: unknown; author?: Author }): Thread {
     const body = checkText(input.text);
+    const to = checkTo(input.to);
     return this.mutate((doc) => {
       const at = now();
       const thread: Thread = {
@@ -157,19 +173,20 @@ export class CommentStore {
         status: 'open',
         createdAt: at,
         updatedAt: at,
-        messages: [{ id: newId('m_'), author: input.author ?? { ...AGENT_AUTHOR }, text: body, at }],
+        messages: [{ id: newId('m_'), author: input.author ?? { ...AGENT_AUTHOR }, text: body, at, ...(to ? { to } : {}) }],
       };
       doc.threads.push(thread);
       return thread;
     });
   }
 
-  addMessage(threadId: unknown, author: Author, text: unknown, { resolve = false }: { resolve?: boolean } = {}): { thread: Thread; message: CommentMessage } {
+  addMessage(threadId: unknown, author: Author, text: unknown, { resolve = false, to }: { resolve?: boolean; to?: unknown } = {}): { thread: Thread; message: CommentMessage } {
     const body = checkText(text);
+    const recipients = checkTo(to);
     return this.mutate((doc) => {
       const thread = this.find(doc, threadId);
       const at = now();
-      const message: CommentMessage = { id: newId('m_'), author, text: body, at };
+      const message: CommentMessage = { id: newId('m_'), author, text: body, at, ...(recipients ? { to: recipients } : {}) };
       thread.messages.push(message);
       thread.updatedAt = at;
       if (author.kind === 'agent') {
@@ -179,6 +196,42 @@ export class CommentStore {
         setStatus(thread, 'open', at);
       }
       return { thread, message };
+    });
+  }
+
+  /** Changes the text (and recipients, when given) of `author`'s own message. */
+  editMessage(threadId: unknown, messageId: unknown, author: Author, text: unknown, to?: unknown): Thread {
+    const body = checkText(text);
+    const recipients = to === undefined ? undefined : checkTo(to);
+    return this.mutate((doc) => {
+      const thread = this.find(doc, threadId);
+      const message = findMessage(thread, messageId);
+      if (!sameAuthor(message.author, author)) throw new FrameError('forbidden', 'Only its author edits a comment.', 403);
+      const at = now();
+      message.text = body;
+      message.editedAt = at;
+      if (to !== undefined) {
+        if (recipients) message.to = recipients;
+        else delete message.to;
+      }
+      thread.updatedAt = at;
+      return thread;
+    });
+  }
+
+  /** Adds (`on`) or takes back `author`'s `emoji` on a message; adding one already there changes nothing. */
+  react(threadId: unknown, messageId: unknown, author: Author, emoji: unknown, on: boolean): Thread {
+    if (typeof emoji !== 'string' || !emoji.trim() || emoji.length > EMOJI_MAX) throw new FrameError('invalid_argument', 'A reaction is one emoji.');
+    return this.mutate((doc) => {
+      const thread = this.find(doc, threadId);
+      const message = findMessage(thread, messageId);
+      const reactions = message.reactions ?? [];
+      const mine = reactions.findIndex((r) => r.emoji === emoji && sameAuthor(r.author, author));
+      if (on && mine < 0) reactions.push({ emoji, author, at: now() });
+      if (!on && mine >= 0) reactions.splice(mine, 1);
+      if (reactions.length) message.reactions = reactions;
+      else delete message.reactions;
+      return thread;
     });
   }
 
@@ -240,6 +293,24 @@ function setStatus(thread: Thread, status: Thread['status'], at: string): void {
   else delete thread.resolvedAt;
 }
 
+function findMessage(thread: Thread, messageId: unknown): CommentMessage {
+  const message = thread.messages.find((m) => m.id === messageId);
+  if (!message) throw new FrameError('not_found', `No message ${String(messageId)} in thread ${thread.id}.`, 404);
+  return message;
+}
+
+const sameAuthor = (a: Author | undefined, b: Author): boolean => a?.kind === b.kind && a.name === b.name;
+
+/** The recipients a message names: short non-empty strings, without repeats; none is `undefined`. */
+function checkTo(to: unknown): string[] | undefined {
+  if (to === undefined || to === null) return undefined;
+  if (!Array.isArray(to) || to.length > TO_MAX || !to.every((name) => typeof name === 'string' && name && name.length <= 200)) {
+    throw new FrameError('invalid_argument', `to is a list of at most ${TO_MAX} names.`);
+  }
+  const names = [...new Set(to as string[])];
+  return names.length ? names : undefined;
+}
+
 function checkText(text: unknown): string {
   if (typeof text !== 'string' || !text.trim()) throw new FrameError('invalid_argument', 'A comment needs text.');
   if (text.length > TEXT_MAX) throw new FrameError('invalid_argument', `A comment is at most ${TEXT_MAX} characters.`);
@@ -268,6 +339,8 @@ export function agentView(thread: Thread, n?: number): Record<string, unknown> {
       text: m.text,
       at: m.at,
       ...(m.editedAt ? { editedAt: m.editedAt } : {}),
+      ...(m.to?.length ? { to: m.to } : {}),
+      ...(m.reactions?.length ? { reactions: m.reactions.map((r) => `${r.emoji} ${r.author.kind === 'agent' ? 'agent' : r.author.name}`) } : {}),
     })),
   };
 }

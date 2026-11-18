@@ -80,7 +80,14 @@ interface PageThread {
   location: Record<string, unknown>;
   status: 'open' | 'resolved';
   agent?: { status: string };
-  messages: { id: string; author: { kind: string; name: string }; text: string }[];
+  messages: {
+    id: string;
+    author: { kind: string; name: string };
+    text: string;
+    to?: string[];
+    editedAt?: string;
+    reactions?: { emoji: string; authors: { kind: string; name: string }[] }[];
+  }[];
 }
 
 describe('whiteboard type server', () => {
@@ -240,6 +247,27 @@ describe('whiteboard type server', () => {
 
       const replied = ((await (await post('_api/comments/reply', { threadId: thread.id, text: 'Agreed' })).json()) as { thread: PageThread }).thread;
       assert.equal(replied.messages.length, 2);
+      const addressed = ((await (await post('_api/comments/reply', { threadId: thread.id, text: 'Over to you', to: ['agent', 'agent'] })).json()) as { thread: PageThread })
+        .thread;
+      assert.deepEqual(addressed.messages[2]!.to, ['agent']);
+      const firstId = thread.messages[0]!.id;
+      const edited = ((await (await post('_api/comments/edit', { threadId: thread.id, messageId: firstId, text: 'Too vague, say more' })).json()) as { thread: PageThread }).thread;
+      assert.equal(edited.messages[0]!.text, 'Too vague, say more');
+      assert.ok(edited.messages[0]!.editedAt);
+      const react = async (emoji: string, on: boolean) =>
+        ((await (await post('_api/comments/react', { threadId: thread.id, messageId: firstId, emoji, on })).json()) as { thread: PageThread }).thread;
+      await react('👍', true);
+      await react('👍', true);
+      const liked = await react('🎉', true);
+      assert.deepEqual(liked.messages[0]!.reactions, [
+        { emoji: '👍', authors: [{ kind: 'person', name: 'Ada' }] },
+        { emoji: '🎉', authors: [{ kind: 'person', name: 'Ada' }] },
+      ]);
+      const unliked = await react('👍', false);
+      assert.deepEqual(unliked.messages[0]!.reactions?.map((r) => r.emoji), ['🎉']);
+      assert.equal((await post('_api/comments/react', { threadId: thread.id, messageId: firstId, emoji: '', on: true })).status, 400);
+      await post('_api/comments/remove', { threadId: thread.id, messageId: addressed.messages[2]!.id });
+
       const resolved = ((await (await post('_api/comments/resolve', { threadId: thread.id, resolved: true })).json()) as { thread: PageThread }).thread;
       assert.equal(resolved.status, 'resolved');
       const reopened = ((await (await post('_api/comments/resolve', { threadId: thread.id, resolved: false })).json()) as { thread: PageThread }).thread;

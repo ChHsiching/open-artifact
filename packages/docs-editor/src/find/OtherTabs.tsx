@@ -1,0 +1,148 @@
+/** The find bar's "Other tabs" row: which of the doc's other tabs have matches, and a list that opens one. */
+import { ChromeMenu, ChromeMenuItem, ChromeMenuLabel, ChromeMenuSeparator } from '@open-artifact/editor-kit/react';
+import { ChevronDown } from 'lucide-react';
+import { type ReactNode, type RefObject, useEffect, useMemo, useRef, useState } from 'react';
+import { CallDenied, docClient } from '../app/doc-client.ts';
+import { showTab } from '../app/start.ts';
+import { orderedTabs, useDocs } from '../app/store.ts';
+import { CountCache, type TabCount, type TabToCount, afterOpen, countTabs } from './other-tabs.ts';
+import { setFindBar } from './store.ts';
+
+/** How long the words rest before the other tabs are asked. */
+const SETTLE_MS = 400;
+
+interface NamedTab extends TabToCount {
+  name: string;
+}
+
+export interface OtherTabsView {
+  shown: boolean;
+  rows: Array<{ id: string; name: string; hits: number }>;
+  searching: boolean;
+  uncounted: number;
+}
+
+async function serverCount(tab: TabToCount, query: string, caseSensitive: boolean): Promise<number | null> {
+  try {
+    const answer = await docClient().call({ member: { verb: 'read', ref: { object: 'node', id: tab.node }, payload: { kind: 'search', text: query, caseSensitive } } });
+    return typeof answer.hits === 'number' && Number.isInteger(answer.hits) && answer.hits >= 0 ? answer.hits : null;
+  } catch (error) {
+    if (error instanceof CallDenied) return null;
+    throw error;
+  }
+}
+
+export function useOtherTabs(open: boolean, query: string, caseSensitive: boolean): OtherTabsView {
+  const files = useDocs(state => state.project?.files);
+  const activeTab = useDocs(state => state.activeTab);
+  const [cache] = useState(() => new CountCache());
+  const [counts, setCounts] = useState<ReadonlyMap<string, TabCount>>(() => new Map());
+  const left = useRef(activeTab);
+
+  const tabs = useMemo<NamedTab[]>(() => orderedTabs(files ?? []).map(file => ({ id: file.id, node: file.content.id, rev: file.rev, name: file.name })), [files]);
+  const others = useMemo(() => afterOpen(tabs, activeTab), [tabs, activeTab]);
+
+  useEffect(() => {
+    // The tab just left may have been edited here since the server last counted it.
+    if (left.current && left.current !== activeTab) cache.forget(left.current);
+    left.current = activeTab;
+  }, [activeTab, cache]);
+
+  useEffect(() => {
+    if (!open || !query || !others.length) {
+      setCounts(new Map());
+      return undefined;
+    }
+    setCounts(new Map(others.map(tab => [tab.id, cache.get(tab, query, caseSensitive) ?? 'pending'] as const)));
+    let stop = () => undefined as void;
+    const timer = setTimeout(() => {
+      stop = countTabs({
+        tabs: others,
+        query,
+        caseSensitive,
+        cache,
+        count: tab => serverCount(tab, query, caseSensitive),
+        onCount: (id, count) => setCounts(before => new Map(before).set(id, count)),
+        onEnd: () => undefined,
+      });
+    }, SETTLE_MS);
+    return () => {
+      clearTimeout(timer);
+      stop();
+    };
+  }, [open, query, caseSensitive, others, cache]);
+
+  return useMemo(() => {
+    const rows: OtherTabsView['rows'] = [];
+    let searching = false;
+    let uncounted = 0;
+    for (const tab of tabs) {
+      if (tab.id === activeTab) continue;
+      const count = counts.get(tab.id);
+      if (count === 'pending') searching = true;
+      else if (count === 'uncounted') uncounted++;
+      else if (typeof count === 'number' && count > 0) rows.push({ id: tab.id, name: tab.name, hits: count });
+    }
+    return { shown: open && query !== '' && others.length > 0, rows, searching, uncounted };
+  }, [tabs, activeTab, counts, open, query, others.length]);
+}
+
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+/** Puts the keyboard in `field`, again while a closing menu would hand it back to its button. */
+function keepFocus(field: RefObject<HTMLInputElement | null>, ms = 400): void {
+  const until = performance.now() + ms;
+  const hold = () => {
+    if (field.current && document.activeElement !== field.current) field.current.focus();
+    if (performance.now() < until) requestAnimationFrame(hold);
+  };
+  hold();
+}
+
+/** Opens a tab from the list: its first match is shown, and the find field keeps the keyboard. */
+function jumpTo(tab: string, findField: RefObject<HTMLInputElement | null>): void {
+  setFindBar({ firstOnOpen: true });
+  showTab(tab);
+  keepFocus(findField);
+}
+
+export function OtherTabsRow({ view, findField }: { view: OtherTabsView; findField: RefObject<HTMLInputElement | null> }): ReactNode {
+  const [listed, setListed] = useState<OtherTabsView['rows'] | null>(null);
+  const rows = listed ?? view.rows;
+  if (!rows.length) {
+    const note = view.searching ? 'Searching other tabs…' : view.uncounted > 0 ? `${plural(view.uncounted, 'tab', 'tabs')} not searched` : 'No matches in other tabs';
+    return (
+      <span className="min-w-0 truncate text-[12px] text-chrome-muted" aria-live="polite">
+        {note}
+      </span>
+    );
+  }
+  return (
+    <ChromeMenu
+      onOpenChange={open => setListed(open ? view.rows : null)}
+      className="max-h-[min(20rem,60vh)] overflow-y-auto"
+      trigger={
+        <button
+          type="button"
+          aria-label={plural(rows.length, 'tab with matches', 'tabs with matches')}
+          className="inline-flex h-7 items-center gap-1 rounded-[8px] px-2 text-[13px] text-chrome-fg ring-1 ring-chrome-line hover:bg-chrome-hover"
+        >
+          {plural(rows.length, 'tab', 'tabs')}
+          <ChevronDown className="size-3.5 text-chrome-muted" strokeWidth={1.5} />
+        </button>
+      }
+    >
+      {rows.map(row => (
+        <ChromeMenuItem key={row.id} shortcut={String(row.hits)} title={`${row.name}, ${plural(row.hits, 'match', 'matches')}`} onSelect={() => jumpTo(row.id, findField)}>
+          {row.name}
+        </ChromeMenuItem>
+      ))}
+      {view.uncounted > 0 ? (
+        <>
+          <ChromeMenuSeparator />
+          <ChromeMenuLabel>{plural(view.uncounted, 'tab', 'tabs')} not searched</ChromeMenuLabel>
+        </>
+      ) : null}
+    </ChromeMenu>
+  );
+}

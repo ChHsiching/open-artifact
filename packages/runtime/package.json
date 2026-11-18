@@ -9,7 +9,8 @@
     "./capabilities": "./src/capabilities.ts",
     "./http-api": "./src/http-api.ts",
     "./untrusted": "./src/untrusted.ts",
-    "./sheet-api": "./src/sheet-api.ts"
+    "./sheet-api": "./src/sheet-api.ts",
+    "./doc-api": "./src/doc-api.ts"
   },
   "dependencies": {
     "@open-artifact/protocol": "0.2.2"

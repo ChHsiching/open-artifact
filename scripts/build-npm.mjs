@@ -42,6 +42,7 @@ const LIBRARIES = [
   'whiteboard-core',
   'data-core',
   'sheets-core',
+  'docs-core',
   'wasm-canvas',
   'wasm-export',
   'wasm-wb-geom',
@@ -257,12 +258,12 @@ function stageCli() {
     name: '@open-artifact/cli',
     version: daemon.version,
     description:
-      'The open-artifact command: the local Open Artifact daemon with its Shell and the built-in types (slides, design, design system, whiteboard, data), an MCP server for agent apps, and the hooks that bring page comments back to the agent.',
+      'The open-artifact command: the local Open Artifact daemon with its Shell and the built-in types (slides, design, design system, whiteboard, data, docs), an MCP server for agent apps, and the hooks that bring page comments back to the agent.',
     type: 'module',
     bin: { 'open-artifact': 'scripts/open-artifact.mjs' },
     files: ['scripts', 'vendor', 'SKILL.md', 'LICENSE', 'NOTICE'],
     engines: rootPkg.engines,
-    keywords: ['artifacts', 'slides', 'design', 'design-system', 'whiteboard', 'data', 'dashboard', 'mcp', 'agent'],
+    keywords: ['artifacts', 'slides', 'design', 'design-system', 'whiteboard', 'data', 'docs', 'dashboard', 'mcp', 'agent'],
     ...common(daemon, 'skills/open-artifact'),
   };
   writeJson(join(out, 'package.json'), published);

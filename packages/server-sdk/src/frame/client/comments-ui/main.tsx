@@ -176,6 +176,8 @@ export function mount(host: HTMLElement, bridge: FrameCommentsBridge, options: F
       await bridge.cap('reply', { threadId: id, text });
       return latest(id);
     },
+    edit: () => Promise.reject(new Error('Editing a comment is not available here.')),
+    react: () => Promise.reject(new Error('Reactions are not available here.')),
     async setResolved(id, resolved) {
       await bridge.cap('resolve', { threadId: id, resolved });
       return latest(id);

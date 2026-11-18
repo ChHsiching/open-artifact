@@ -1,0 +1,38 @@
+{
+  "name": "@open-artifact/docs-editor",
+  "version": "0.2.2",
+  "private": true,
+  "type": "module",
+  "description": "The Docs artifact editor: tabs of rich text with tables, code, pictures and chips, comments, an agent's suggestions to accept or reject, find and replace, version history, imports and exports.",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite"
+  },
+  "dependencies": {
+    "@open-artifact/docs-core": "0.2.2",
+    "@open-artifact/editor-kit": "0.2.2",
+    "@open-artifact/runtime": "0.2.2",
+    "@open-artifact/ui": "0.2.2",
+    "gemoji": "8.1.0",
+    "highlight.js": "11.11.1",
+    "katex": "0.16.27",
+    "mermaid": "12.2.0",
+    "prosemirror-commands": "1.7.2",
+    "prosemirror-dropcursor": "1.8.4",
+    "prosemirror-gapcursor": "1.4.1",
+    "prosemirror-history": "1.5.1",
+    "prosemirror-inputrules": "1.5.1",
+    "prosemirror-keymap": "1.2.3",
+    "prosemirror-model": "1.25.12",
+    "prosemirror-schema-list": "1.5.1",
+    "prosemirror-state": "1.4.4",
+    "prosemirror-tables": "1.8.5",
+    "prosemirror-transform": "1.12.2",
+    "prosemirror-view": "1.42.8"
+  },
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@open-artifact/type-server": "0.2.2",
+    "@types/katex": "0.16.7"
+  }
+}

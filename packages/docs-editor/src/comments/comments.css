@@ -1,0 +1,12 @@
+/* A comment on a table cell or a whole block (an empty paragraph, a picture): the block is tinted, the open one more. */
+
+.doc-text .doc-comment-cell,
+.doc-text .doc-comment-block {
+  background: var(--doc-comment);
+  box-shadow: inset 0 -2px 0 rgb(255 196 0 / 0.8);
+}
+
+.doc-text .doc-comment-cell.doc-comment-cell-active,
+.doc-text .doc-comment-block.doc-comment-block-active {
+  background: var(--doc-comment-active);
+}

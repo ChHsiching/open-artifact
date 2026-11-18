@@ -5,6 +5,8 @@
  *   dist/server/cli.mjs                 the `open-artifact-type-server` CLI and type server (one file, Node ≥ 22)
  *   dist/server/support.js              the board runtime loaded by every artboard
  *   dist/server/editors/<type>/         each editor page (Vite)
+ *   dist/server/pdf-reader.mjs          PDF.js, loaded only when a PDF is imported into a doc
+ *   dist/server/pdf-cmaps/              its character maps
  *
  * and then copies the whole of `dist/server/` into `artifact-types/<type>/scripts/`
  * (git ignores it), so a type folder works on its own once installed. Every
@@ -25,6 +27,7 @@ import { build as esbuild } from 'esbuild';
 import { build as vite } from 'vite';
 import { chmod, cp, mkdir, rm } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -39,6 +42,7 @@ const EDITORS = {
   data: 'packages/data-editor',
   slides: 'packages/slides-editor',
   sheets: 'packages/sheets-editor',
+  docs: 'packages/docs-editor',
 };
 
 const only = (() => {
@@ -81,6 +85,29 @@ async function buildCli() {
   await chmod(outfile, 0o755);
   // The workbook engine, read from beside the bundle (`@open-artifact/wasm-sheets/node`).
   await cp(join(ROOT, 'packages/wasm-sheets/generated/open_artifact_sheets_bg.wasm'), join(OUT, 'sheets.wasm'));
+}
+
+/**
+ * PDF.js on its own, loaded only when a PDF is imported (type-server/src/docs/import-pdf.ts looks for
+ * pdf-reader.mjs and pdf-cmaps/ beside the CLI). Its canvas is optional, for drawing pages, which an import doesn't do.
+ */
+async function buildPdfReader() {
+  await rm(join(OUT, 'pdf-cmaps'), { recursive: true, force: true });
+  await esbuild({
+    entryPoints: [join(ROOT, 'packages/type-server/src/docs/pdf-reader.ts')],
+    outfile: join(OUT, 'pdf-reader.mjs'),
+    bundle: true,
+    minify: true,
+    format: 'esm',
+    platform: 'node',
+    target: 'node22',
+    external: ['@napi-rs/canvas'],
+    legalComments: 'none',
+    logLevel: 'warning',
+    banner: { js: '// PDF.js (Apache-2.0), bundled for importing PDFs into a doc.' },
+  });
+  const pdfjs = dirname(createRequire(join(ROOT, 'packages/type-server/package.json')).resolve('pdfjs-dist/package.json'));
+  await cp(join(pdfjs, 'cmaps'), join(OUT, 'pdf-cmaps'), { recursive: true });
 }
 
 async function buildEditors() {
@@ -164,6 +191,7 @@ if (!only) await rm(join(OUT, 'editors'), { recursive: true, force: true });
 const started = Date.now();
 if (wants('support')) await buildSupport();
 if (wants('cli')) await buildCli();
+if (wants('cli')) await buildPdfReader();
 if (wants('editors')) await buildEditors();
 if (wants('types') || only === 'editors' || only === 'cli' || only === 'support') await copyIntoTypes();
 if (wants('shell')) await buildShell();

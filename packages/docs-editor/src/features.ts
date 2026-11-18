@@ -1,0 +1,15 @@
+/** Loads every feature of the page, each of which fills its slots and answers its keys. */
+import './selbar/index.ts';
+import './blockmenu/index.ts';
+import './history/index.ts';
+import './presence/index.ts';
+import './tabs/index.ts';
+import './page/index.ts';
+import './find/index.ts';
+import './topbar/index.ts';
+import './insert/index.ts';
+import './images/index.ts';
+import './comments/index.ts';
+import './tables/index.ts';
+import './code/index.ts';
+import './suggest/index.ts';

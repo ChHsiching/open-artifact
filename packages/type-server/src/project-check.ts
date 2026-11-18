@@ -13,6 +13,7 @@ import { readDbFiles } from './db-host.ts';
 import { staleCopyFindings } from './ds-sync.ts';
 import { ArtifactStore } from './store.ts';
 import { EDITS_FILE, META_FILE, SHEET_DIR } from './sheets/store.ts';
+import { readDocFiles } from './docs/type.ts';
 import { TYPES, type CheckContext, type CheckFinding, type TypeName } from './types.ts';
 
 /** Every file under `project/` with its size, and the symbolic links met (never followed). */
@@ -125,7 +126,8 @@ function readSheetFiles(root: string): Map<string, string> {
 export async function runCheck(root: string, type: TypeName): Promise<{ files: Map<string, string>; findings: CheckFinding[] }> {
   // A db-backed type is checked from its documents (paths already start with `db/` in findings).
   const store = TYPES[type].store;
-  const files = store === 'db' ? readDbFiles(root) : store === 'workbook' ? readSheetFiles(root) : await new ArtifactStore(root).readProject();
+  const files =
+    store === 'db' ? readDbFiles(root) : store === 'workbook' ? readSheetFiles(root) : store === 'doc' ? readDocFiles(root) : await new ArtifactStore(root).readProject();
   const findings = TYPES[type].check(files, await checkContextOf(root, type));
   try {
     findings.push(...staleCopyFindings(root, type));

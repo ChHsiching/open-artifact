@@ -32,6 +32,7 @@
 | [Design](artifact-types/design/SKILL.md) | 由实时 `.dc.html` 画板组成的无限画布：界面、组件、可点击原型、便签、多页面 | `project/canvas.json` | PNG、JPEG、PDF、HTML |
 | [Design System](artifact-types/design-system/SKILL.md) | 品牌手册：设计令牌（tokens）、带对比度检查的颜色、字体样张、实时组件预览、素材。Design 和 Slides 都可以安装它 | `project/design-system.json` | — |
 | [Whiteboard](artifact-types/whiteboard/SKILL.md) | 多人共享的无限白板：便利贴、形状、箭头、手绘、图片、表格、嵌入网页、实时光标、计时器 | `db/board/meta.json` | PNG |
+| [Docs](artifact-types/docs/SKILL.md) | 分标签页的在线文档：标题、列表、表格、图片、日期、提及和下拉选项；可接受或拒绝的修改建议、评论、每个标签页各自的版本历史；可导入 Markdown、Word 和 PDF | `doc/doc.json` | Markdown、Word、PDF、HTML |
 
 每个类型文件夹都是一个独立的 skill：`SKILL.md` 告诉 Agent 怎么写，`reference/` 说明文件格式，`artifact-type.json`
 向宿主描述这个类型，`scripts/`（构建产物）里是命令行工具和编辑器。
@@ -93,6 +94,7 @@ mkdir -p ~/.cursor/plugins/local && cp -R ./dist/plugins/cursor ~/.cursor/plugin
 /open-artifact slides a 6-slide pitch for this repo
 /open-artifact design three landing page options for a coffee shop
 /open-artifact whiteboard a retro board for last sprint
+/open-artifact docs 一份 2027 年的招聘计划，包括岗位、预算和时间线
 ```
 
 插件会添加 `Artifact`、`ArtifactData` 和 `ArtifactComments` 三个 MCP 工具、这个 skill，以及把页面评论带回会话的
@@ -147,7 +149,7 @@ node scripts/build-wasm.mjs   # 需要 cargo + wasm32-unknown-unknown、wasm-bin
 
 | 路径 | 内容 |
 |---|---|
-| `artifact-types/` | 四种类型，各自是一个 skill：`SKILL.md`、`reference/`、`artifact-type.json`。 |
+| `artifact-types/` | 七种类型，各自是一个 skill：`SKILL.md`、`reference/`、`artifact-type.json`。 |
 | `skills/open-artifact/` | 统一的 `/open-artifact <type>` skill；`vendor/`（构建产物）里是 daemon。 |
 | `plugins/` | 为各个 Agent 应用打包的 skill，带 hooks 和 MCP 配置（[README](plugins/README.md)）。 |
 | **平台** | |

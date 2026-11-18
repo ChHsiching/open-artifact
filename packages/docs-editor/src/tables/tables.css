@@ -1,0 +1,63 @@
+/* Cell colours: the palette's colours follow the theme; any other stored colour is drawn as it is. */
+:root {
+  --table-cell-gray: #f0efec;
+  --table-cell-red: #fbebeb;
+  --table-cell-orange: #f9ece7;
+  --table-cell-yellow: #f9eeda;
+  --table-cell-green: #e5f4e4;
+  --table-cell-blue: #e7f1fb;
+  --table-cell-purple: #efedff;
+  --table-drop: var(--doc-accent);
+}
+
+:root[data-theme="dark"] {
+  --table-cell-gray: #2c2b29;
+  --table-cell-red: #3d2423;
+  --table-cell-orange: #3b2a22;
+  --table-cell-yellow: #3a3020;
+  --table-cell-green: #213325;
+  --table-cell-blue: #1f2d3d;
+  --table-cell-purple: #2c2740;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --table-cell-gray: #2c2b29;
+    --table-cell-red: #3d2423;
+    --table-cell-orange: #3b2a22;
+    --table-cell-yellow: #3a3020;
+    --table-cell-green: #213325;
+    --table-cell-blue: #1f2d3d;
+    --table-cell-purple: #2c2740;
+  }
+}
+
+.doc-text td[data-background],
+.doc-text th[data-background] {
+  background-color: var(--cell-bg, transparent);
+}
+
+.doc-text :is(td, th)[data-background="#f0efec"] { background-color: var(--table-cell-gray); }
+.doc-text :is(td, th)[data-background="#fbebeb"] { background-color: var(--table-cell-red); }
+.doc-text :is(td, th)[data-background="#f9ece7"] { background-color: var(--table-cell-orange); }
+.doc-text :is(td, th)[data-background="#f9eeda"] { background-color: var(--table-cell-yellow); }
+.doc-text :is(td, th)[data-background="#e5f4e4"] { background-color: var(--table-cell-green); }
+.doc-text :is(td, th)[data-background="#e7f1fb"] { background-color: var(--table-cell-blue); }
+.doc-text :is(td, th)[data-background="#efedff"] { background-color: var(--table-cell-purple); }
+
+[data-cell-swatch="none"] { background: transparent; }
+[data-cell-swatch="#f0efec"] { background: var(--table-cell-gray); }
+[data-cell-swatch="#fbebeb"] { background: var(--table-cell-red); }
+[data-cell-swatch="#f9ece7"] { background: var(--table-cell-orange); }
+[data-cell-swatch="#f9eeda"] { background: var(--table-cell-yellow); }
+[data-cell-swatch="#e5f4e4"] { background: var(--table-cell-green); }
+[data-cell-swatch="#e7f1fb"] { background: var(--table-cell-blue); }
+[data-cell-swatch="#efedff"] { background: var(--table-cell-purple); }
+
+.table-drop-line {
+  background: var(--doc-muted);
+}
+
+.table-drop-line[data-allowed] {
+  background: var(--table-drop);
+}

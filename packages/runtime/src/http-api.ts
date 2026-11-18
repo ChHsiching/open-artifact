@@ -36,6 +36,7 @@ import type {
   Viewer,
 } from './capabilities.ts';
 import type { SheetFrame } from './sheet-api.ts';
+import type { DocFrame } from './doc-api.ts';
 
 /** Route paths, relative to the page base. */
 export const API = {
@@ -56,6 +57,8 @@ export const API = {
   comments: '_api/comments',
   commentsCreate: '_api/comments/create',
   commentsReply: '_api/comments/reply',
+  commentsEdit: '_api/comments/edit',
+  commentsReact: '_api/comments/react',
   commentsResolve: '_api/comments/resolve',
   commentsMove: '_api/comments/move',
   commentsRemove: '_api/comments/remove',
@@ -79,7 +82,7 @@ export interface SessionResponse {
   viewer: Viewer;
   agent: AgentStatus;
   /** Stores the type keeps beside its files; absent ones are not offered (`db` / `comments` resolve `null`). */
-  stores?: { db?: boolean; comments?: boolean; history?: boolean; sheet?: boolean };
+  stores?: { db?: boolean; comments?: boolean; history?: boolean; sheet?: boolean; doc?: boolean };
 }
 
 /** `GET _api/files` */
@@ -167,6 +170,23 @@ export interface CommentCreateRequest {
 export interface CommentReplyRequest {
   threadId: string;
   text: string;
+  to?: string[];
+}
+
+/** `POST _api/comments/edit` request body. */
+export interface CommentEditRequest {
+  threadId: string;
+  messageId: string;
+  text: string;
+  to?: string[];
+}
+
+/** `POST _api/comments/react` request body. */
+export interface CommentReactRequest {
+  threadId: string;
+  messageId: string;
+  emoji: string;
+  on: boolean;
 }
 
 /** `POST _api/comments/resolve` request body. */
@@ -269,6 +289,8 @@ export interface ServerEvents {
   history: HistoryChangeEvent;
   /** A frame of the workbook's edit log (types with `store: "workbook"`). */
   sheet: SheetFrame;
+  /** A write to a doc, its tabs or its dropdown lists (types with `store: "doc"`). */
+  doc: DocFrame;
 }
 
 export type ServerEventName = keyof ServerEvents;
