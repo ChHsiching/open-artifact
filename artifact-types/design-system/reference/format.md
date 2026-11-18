@@ -132,10 +132,13 @@ A complete small HTML document per component (or just its body: the page wraps i
 `data-theme` on its own element.
 
 Rules: render ONE component (a few states); no `<iframe>/<frame>/<object>/<embed>/<portal>/<noscript>`
-(error); images: a relative path (`../../<path>`), an upload's `/_blob/<id>`, or `data:`. By URL load only
-Google Fonts and the system's own files (relative `href`/`src`/`fetch`, scripts too); link bundle.js or a
-library and it loads twice. Not checked, except: an `http(s)` `src`/`href` other than Google Fonts not pinned to an
-exact version (`d3@7.9.0`, `/7.9.0/`) is a warning — never a bare name, a range or a tag (`d3`, `d3@7`, `@latest`).
+(error); images: a relative path (`../../<path>`), an upload's `/_blob/<id>`, or `data:`. Outside, load
+only script CDNs and Google Fonts; inside, the system's own files (relative `href`/`src`/`fetch`, scripts too);
+link bundle.js or a library and it loads twice. Pin every CDN URL to an exact version (`d3@7.9.0` on jsDelivr or
+unpkg, `d3/7.9.0/…` on cdnjs, `cdn.tailwindcss.com/3.4.17`), never a bare name, a range or a tag (`d3`, `d3@7`,
+`@latest`); an unpinned `http(s)` `src`/`href` other than Google Fonts is a warning. Choose a version at least two
+weeks old. Any version you knew before this conversation is old enough; if you look versions up, skip any published
+in the last two weeks.
 **Line 1 is the marker**
 `<!-- @dsCard group="…" height=N subtitle="…" -->` (missing: warning): `group` sections the
 table (absent ⇒ ungrouped), `height` = row px (40–4000, else 120; fixed, it does not grow), `width` = layout px,

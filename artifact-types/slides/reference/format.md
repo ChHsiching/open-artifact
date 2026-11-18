@@ -223,7 +223,9 @@ a sandboxed frame. The content is the BODY of a page (inline `<style>` and `<scr
 reach it: use a system font stack. Its background is transparent until painted; people cannot click or
 type into it. A DIRECT child of `<section>`, pinned, with a width and a height (inside a `<div>`, or in
 the flow, is an error); at most 16 KB each and 8 per slide. Thumbnails, the overview and exports show a
-placeholder, not the page. The check does not read its contents, so keep its text 24px and up.
+placeholder, not the page. The check does not read its contents, so keep its text 24px and up. In an
+embed, animate with CSS `@keyframes`, not SMIL (SMIL can stand still until its first loop ends), and
+keep it light: one canvas, not a heavy page, or presenting on a phone can stall.
 
 ## Shapes, icons and connectors
 

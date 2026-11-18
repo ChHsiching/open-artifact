@@ -67,8 +67,7 @@ intentionality, not intensity. Then execute with precision:
   Diagonal flow. Grid-breaking elements. Generous negative space OR
   controlled density.
 - **Backgrounds & visual details**: create atmosphere and depth rather
-  than defaulting to solid colors — noise textures, gradient meshes (never a
-  generic gradient wash),
+  than defaulting to solid colors — gradient meshes, noise textures,
   geometric patterns, layered transparencies, dramatic shadows,
   decorative borders, grain overlays.
 

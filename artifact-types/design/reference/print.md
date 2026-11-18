@@ -1,8 +1,6 @@
 # Print design — posters, flyers, brochures, documents, anything that leaves as a PDF
 
-Printed work leaves as a PDF in one of two shapes. (This editor has no PDF
-export yet: the fields below are kept in `canvas.json` and an exporter
-follows them; design to these rules all the same.) Decide which
+Printed work leaves through Export PDF in one of two shapes. Decide which
 BEFORE the first artboard; if the brief doesn't say and someone can
 answer, ask in plain terms ("one designed page each, or text that flows
 onto pages? what size?") — nobody to ask: documents flow, everything else

@@ -139,7 +139,9 @@ the brand's REAL sources (codebase, attached files, decks, guidelines).
   theme, each with a proposed fix, before editing anything. That is what
   each ask means on its own — the user's explicit instructions take
   precedence over these definitions, and a real source's own colors stay
-  exact, as above.
+  exact, as above. `sample-seazar-tokens.json` beside this file is a worked
+  `tokens.json` showing all of this (three themes, usage on every token), and
+  `example.json` a whole small system.
 - **Guidelines say what the consumer provides** (props, children,
   container, data) plus when to use it and the do/don'ts.
 - **Seed real substance:** every theme filled where it differs, the type

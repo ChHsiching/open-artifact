@@ -1,36 +1,31 @@
-# Making something else from a canvas
+# Making something from this canvas
 
-Read this FIRST when asked for a deck, a document, a page in another tool, or another width of a page made
-from artboards on this canvas.
+Read this FIRST when asked for a deck, an animation, a document, a page in another tool, or another width of a
+page made from artboards on this canvas.
 
-## Which artboards, in which order
+## A deck, an animation or a doc made from artboards
 
-Use the artboards named or selected (`open-artifact context <root>`); with none named, every artboard on the page
-in view. Read them in reading order: rows top to bottom, each row left to right (`project/canvas.json` `boards`
-gives each one's `x`, `y`). An artboard is one part of the new thing: its `title` (or file name) names it, its
-copy is the content, its look is the brief (colours, type, spacing carry over). Leave the artboards as they are:
-never move, resize or edit one to make something from it.
+Read `project/canvas.json` and the artboards it is to be made from: the ones named or selected (`open-artifact
+context <root>`), else all on the page in view, in reading order (rows top to bottom, each left to right;
+`boards` gives each one's `x`, `y`). An artboard is one part: its `title` (or file name) names it, its copy is the
+content, its look is the brief. Make the thing in its own type, never a picture of the canvas: one slide or section
+per artboard unless the content asks otherwise, the text retyped as text, the images uploaded into the new artifact
+(`open-artifact upload` there, from this canvas's `_blobs/`); an installed design system goes along, installed in
+the new artifact the same way from its source folder. Leave the artboards as they are: never move, resize or edit
+one for this.
 
-## A deck or a document
-
-Make it as an artifact of its own type (a Slides deck, a document), never a picture of the canvas: one slide or
-section per artboard unless the content asks otherwise, the text retyped as text, the images uploaded into the
-new artifact (`open-artifact upload` there, from this canvas's `_blobs/`). An installed design system goes along:
-install it in the new artifact the same way, from its source folder.
-
-Then hand it over on this canvas with a link card, as part of delivering what was asked, without being asked:
-
-1. Read `project/canvas.json` again right before you write it; change only your one entry.
-2. Add to `notes`, under a key not already there:
-   `"deck1": {"kind": "link", "x": 0, "y": 680, "href": "<the new artifact's link>", "title": "Spring menu deck"}`.
-   `href` is the link verbatim (a local page's url, or its folder path when it has no url); `title` its name; NO
-   `text` (with `text` it becomes a sticky and the link is lost).
-3. Place it on bare canvas 120 px under the artboard it was made from, left edges level (made from a row: under
-   the row's first artboard). When something stands there, go down that column to the first bare ground, 120 px
-   under the last artboard. Never right of the rightmost artboard: the next artboard goes there. It covers no
-   artboard, title or note. On a canvas with pages, give it that artboard's `page`.
-4. One card per artifact: none for one that already has a card, none for something unrelated to this canvas. No
-   link to give: no card; say in your reply where the new artifact is.
+Then hand it over on the canvas: add one entry to `notes` in `project/canvas.json`, under a key not already there,
+`"deck1":{"kind":"link","x":0,"y":680,"href":"<the new artifact's link>","text":"Spring menu deck"}`: `href` is the
+new artifact's link verbatim (its page's url, or its folder path when it has none), `text` its name (without it the
+card shows the bare link). It draws a card 280 px wide that opens the artifact. Put it on bare canvas under what it
+was made from: 120 px under that artboard, left edges level (made from a whole row: under the row's first
+artboard). If something stands there or a row below leaves it no room, go down its column to the first bare
+ground, 120 px under the last artboard there. Never right of the rightmost artboard: that is where the next
+artboard goes. It covers nothing: no artboard, name strip, title or note. On a canvas with pages give it that
+artboard's `page`. One card for each artifact; none for an artifact that already has one, none for one that has
+nothing to do with this canvas. No link to give: no card; say in your reply where the new artifact is. Change only
+the index (Revising: read it again right before you write it, change only your key). This is part of delivering
+what was asked, so do it without being asked.
 
 ## Another design tool
 

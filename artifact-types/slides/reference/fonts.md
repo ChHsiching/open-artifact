@@ -48,8 +48,10 @@ it. Faces left out are named in the export notes; the next face in the stack sho
 
 ## Using a typeface
 
-- Set it once per slide on the `<section>` (`font-family:Inter, Arial, sans-serif`) so it inherits, and
-  on headings (`font-family:'Space Grotesk', Arial, sans-serif`).
+- In a deck with `format`, set it once in `project/deck.css`: `body { font-family: Inter, Arial,
+  sans-serif }` for the whole deck, and a rule for the headings (`h1, h2, h3 { font-family: 'Space
+  Grotesk', Arial, sans-serif }`). In an inline deck, set it on each `<section>` so it inherits, and on
+  headings.
 - Quote names with spaces.
 - End every stack with a basic face, then a generic. Basic faces work on any computer: Arial, Verdana,
   Tahoma, Trebuchet MS, Georgia, Times New Roman, Courier New, Brush Script MT (also Helvetica,

@@ -129,10 +129,15 @@ and give an element an `id` only when you would anyway (the ids people see then 
 
 You never need to compute the hash: every minted id of a slide shares it, so read `n` from the entry
 and count. For the `plan` slide in SKILL.md (hash `1ezvxn6`): `e0-1ezvxn6` is its flow root;
-`e0-1ezvxn6/0` the `<h2>`; `e0-1ezvxn6/1` the row `<div>`; `e0-1ezvxn6/1/0` the first card in that
-row; `e0-1ezvxn6/1/0/1` the card's `<p>`; `e0-1ezvxn6/1/1` the picture. The pinned source line is
-`e1-1ezvxn6`. Had the card been written `<div id="onboarding" …>`, the card would be `onboarding` and
-its `<p>` `onboarding/1`.
+`e0-1ezvxn6/0` the `<h2>`; `e0-1ezvxn6/1` the `.cards` `<div>`; `e0-1ezvxn6/1/0` the first card in that
+row; `e0-1ezvxn6/1/0/0` the card's `<h3>`; `e0-1ezvxn6/1/1` the picture; `e0-1ezvxn6/2` the source line
+(had `project/deck.css` pinned `.source` with `position:absolute`, it would be `e1-1ezvxn6`). Had the card
+been written `<div id="onboarding" class="card">`, the card would be `onboarding` and its `<h3>`
+`onboarding/0`.
+
+In a deck with a `format` key the page counts the slide as it reads it, so a wrapper, a spacer or a
+reordered grid cell can shift a path: name the box back by its label before you change it, and if the
+entry has no label, or the box you find isn't plainly the one the person means, ask.
 
 A minted name never repeats an `id` written on the slide (the page picks another number when one
 would), so never write ids of the form `e<digits>-…` yourself.

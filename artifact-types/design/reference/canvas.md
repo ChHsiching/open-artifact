@@ -80,8 +80,8 @@ Keyed by id (`[A-Za-z0-9_-]{1,40}`), fewer than 1000. Every note has `x`, `y` an
   group notes with ⌘G and selecting one then selects its whole group. Keep the list when you move or
   restyle a note; drop an id from it only to take the note out of that group. Two or more notes make a
   group; a lone id means nothing.
-- `kind: "link"` is a card that opens another artifact: `{"kind":"link","x":0,"y":680,"href":"<its link>","title":"Spring menu deck"}`,
-  no `text` (with `text` it becomes a sticky). When you make something else (a deck, a document) from
+- `kind: "link"` is a card that opens another artifact: `{"kind":"link","x":0,"y":680,"href":"<its link>","text":"Spring menu deck"}`,
+  280 px wide; `text` is its name (left out, the card shows the bare link). When you make something else (a deck, a document) from
   artboards, add one under what it was made from: 120 px below that artboard, left edges level, on bare
   canvas, never right of the rightmost artboard; one per artifact. No link to give: no card; say in
   your reply where it is.

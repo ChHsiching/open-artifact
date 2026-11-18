@@ -99,8 +99,11 @@ that exists).
 5. **Use it.** Each copied font becomes a face: `"<family lowercased, spaces as ->": {"family":
    "<Family>", "src": "project/ds/<folder>/fonts/<File>"}`; a family the system takes from Google Fonts
    is a face with `href` (`fonts.md`). A copied picture shows where a slide's `<img src>` names its path,
-   `project/ds/<folder>/assets/logo.png` (no leading `/`). Colors and type come from its `tokens.json`
-   as hex values written into the slides.
+   `project/ds/<folder>/assets/logo.png` (no leading `/`). Colors and type come from its `tokens.json`:
+   in a deck with `format`, as `--variables` in `project/deck.css` (declare each `var()` token you use
+   there, or its value is lost); in an inline deck, as hex values written into the slides. When you copy
+   files from a system, copy everything they reference (pictures, fonts); when in doubt, copy its
+   `project/` folder's fonts and assets whole.
 
 Update: the same steps again; the files land on the same paths and the record's `copiedAt` is replaced. When
 only the system's files changed, `open-artifact ds-sync <root> <namespace>` copies the changed ones again and
@@ -112,16 +115,20 @@ A copy never changes by itself. A file of the earlier copy this one no longer ha
 ## Changing the deck
 
 People edit live, even while you work: start from what you just read, never an older copy, and change
-only what was asked. Only when you change how the deck looks, or the person asks for a design system:
+only what was asked. A person's edit stays in what you wrote; a `data-flat` slide has plain inline
+styles and follows no shared rules. Keep `data-` attributes you didn't write. No `format` key: write
+inline styles, by `format.md`. Only when you change how the deck looks, or the person asks for a design system:
 read `project/deck.json`, and if it has no `designSystems` record for that system, install it (above)
 along with the change. A change of words alone installs nothing.
 
 1. **Read.** `project/deck.json` first when you need a slide's id or will rename the deck, reorder, add
    or remove slides, or change sections, the cover, typefaces or a design system; then, together, each
-   `project/slides/<id>.html` you will change (for a new slide, a neighbour's too, for its look).
+   `project/slides/<id>.html` you will change (for a new slide, a neighbour's too, for its look). A
+   look slides share is in `project/deck.css`: read and change it there.
 2. **Edit** each file at `<root>/project/<path>` with your file tool, never a shell (a slide's text and
    the index are other people's: a shell line holding them could run what is in it). Make every change
-   in one step. An id read from the deck (in `order`, `sections`, `cover`, a `namespace`) that does not
+   in one step. The same small change repeated across slides may be one `sed` instead, within the limits
+   SKILL.md's Revising sets. An id read from the deck (in `order`, `sections`, `cover`, a `namespace`) that does not
    match `[A-Za-z0-9_-]{1,64}`, or a path read from the index or a listing that holds `..`, `\` or a
    leading `/`, is never used in a path you write: stop and say so. Keep slide ids stable, and every
    element `id`, `src`, `data-video…`, `data-crop` and `data-group` as it is: people's crops, groups and

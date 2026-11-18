@@ -82,8 +82,15 @@ If you edit a slide, keep its `data-video…` attributes as they are.
 
 Use SVG when crisp vector art matters: logos, charts, a diagram's curved lines. Either upload the file
 and show it with `<img>`, or put the `<svg>…</svg>` code in the slide (`format.md`, Drawings). Either
-way it is a static image: scripts never run, external references never load, SMIL animation does not
-play.
+way the page treats it as a sandboxed image: scripts never run and external references never load.
+
+- SMIL animation (`<animate>`, `<animateTransform>`, `<animateMotion>`, `<set>`) plays only in `<svg>`
+  code on the slide, only when presenting, and only if it changes at most three times a second with one
+  `begin` and a readable `dur` (`format.md`, Motion). An uploaded file shown with `<img>` never plays
+  it. The editor, thumbnails, PDF, PNG, PowerPoint and Reduce Motion show the drawing at its own
+  attributes, so give each element the look it should have there (no `fill="freeze"` to rely on).
+- A drawing holding `<foreignObject>` is refused in the slide (an error), so it never reaches an
+  export; plain SVG is drawn as a picture in PowerPoint.
 
 Code in the slide is checked: no `<script>`, `on*=` handlers, `<foreignObject>` or external `href` or
 `url()` (errors), 52 KB at most. The markup inside is kept as you wrote it (only an `xmlns` is added if
@@ -106,8 +113,9 @@ background, and rarely carry anything on top (diagram labels are the exception).
 Text over a picture is protected the way the deck's direction says, the same way every time: a card, a
 scrim (`background:rgba(20,20,19,.6)`) or a `backdrop-filter:blur()` panel.
 
-Use only the pictures the person gave you, a design system's pictures, or an `<x-icon>` (sparingly).
-No stock-photo URLs, no emoji, no decorative art you draw yourself unless asked. With no pictures, a
+Use only the pictures the person gave you, a design system's pictures, photos found with a photo search
+your harness provides (`photo-library.md`, licensed for reuse and uploaded), or an `<x-icon>`
+(sparingly). No stock-photo URLs, no emoji, no decorative art you draw yourself unless asked. With no pictures, a
 deck with good structure and no images is a fine deliverable. Never make up a picture or point at a file
 you do not have.
 
@@ -115,6 +123,12 @@ you do not have.
 
 `border`, `border-radius`, `box-shadow`, `filter` and `opacity` work on an `<img>` as anywhere else
 (`layout.md`, Paint and effects); the page's properties panel writes the same properties.
+
+In a PowerPoint download, a picture's border and shadow become a picture outline and an outer shadow,
+by PowerPoint's own approximations: `dashed` and `dotted` map to its dash styles; hex, `rgb()`,
+`rgba()` and named colors convert. What an office shape cannot hold is drawn without it and noted in
+the notes shown with the download: a `double` border (drawn single), a shadow's spread, an `inset` or layered
+shadow, a blend mode, a `filter`.
 
 ## On the page
 

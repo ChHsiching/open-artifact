@@ -70,6 +70,36 @@ the property (the table in `format.md` is what survives). Motion is kept apart f
 slide: the editor, thumbnails and exports draw every slide at rest (fragments shown, animations at
 their own style), and it plays only when presenting (below).
 
+What to write instead of what is dropped (`→` names the replacement; with no arrow, nothing replaces
+it):
+
+- Stacking: `z-index`, `order` → source order; later elements paint on top (`format.md`, The slide).
+- Layout: `float`, `columns`, `display:table` or `inline-block` side by side → flex or grid.
+  `vertical-align`, `align-content` → `align-items`. `position:fixed` or `sticky` → `absolute`.
+  `width:fit-content` → `align-self:start` in a flex column.
+- Grid: `grid-template-areas`, `grid-area`, `grid-auto-*`, named lines, line numbers, `minmax()`,
+  `auto-fill` → tracks of px, `fr`, `auto` or `repeat(N, …)`, cells in source order, `span N` to widen
+  one.
+- Clipping: `clip-path`, `mask` → `border-radius` with `overflow:hidden`, or an `<svg>`. `overflow:auto`
+  or `scroll` → `hidden`, on a `<div>`.
+- Fills: `url()` backgrounds, `background-size`, `background-position` → an `<img>` (a `url()` fills
+  only text, with `background-clip:text`). `conic-gradient` or a second gradient layer → one
+  gradient, or an `<svg>`. `object-position`.
+- Borders: `outline` → `border`. A `border` needs its style word (`solid`, `dashed`, …).
+- Transforms: 3D functions; functions out of the order translate, rotate, scale, skew; `filter:
+  drop-shadow()` → `box-shadow`.
+- Text: `word-break`, `hyphens`, `text-wrap`, `text-overflow`, `-webkit-line-clamp` → size the box.
+  `writing-mode` → a pinned `<p>` turned with `transform:rotate(…)`. `font-variant`,
+  `font-feature-settings` → `font-variant-numeric:tabular-nums`. `white-space` other than `normal` or
+  `nowrap` → `<br>`. `text-indent`.
+- Inside a line: a phrase keeps only colour, bold, italic and underline. A size, face, padding or pill
+  → a block of its own.
+- Tables: cell borders, `border-collapse`, `border-spacing`: every cell is ruled already. Fills →
+  `background` on a `<tr>`, not on cells or `<thead>`.
+- Caps: the ranges in `format.md`'s table (a `font-size` of 8–400px, `gap` 512, `padding` 256, 24 grid
+  tracks, 2–8 gradient stops, 8 shadow layers, …) hold here too: `open-artifact check` names a value
+  past one and what became of it.
+
 ## Motion
 
 When presenting, a source slide plays what `project/deck.css` gives it, as the slide appears:
