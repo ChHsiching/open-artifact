@@ -9,7 +9,7 @@
 
 import { existsSync, type Dirent } from 'node:fs';
 import { readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
-import { join, relative, sep } from 'node:path';
+import { basename, join, relative, sep } from 'node:path';
 import { ArtifactStore } from './store.ts';
 
 /** Files larger than this are not searched for references (uploads are never referenced from them). */
@@ -77,6 +77,7 @@ export async function deleteAsset(root: string, given: string | undefined): Prom
   if (!blob) throw new AssetError('NOT_FOUND', `No upload ${id} in ${join(root, '_blobs')}.`);
   const users = await referencesTo(root, id);
   if (users.length) throw new AssetError('IN_USE', `/_blob/${id} is still named by ${users.join(', ')}; change or delete those first. Nothing was removed.`);
+  if (basename(blob.file) === id) await rm(blob.file + '.json', { force: true });
   await rm(blob.file, { force: true });
   return { deleted: `/_blob/${id}`, file: blob.file };
 }

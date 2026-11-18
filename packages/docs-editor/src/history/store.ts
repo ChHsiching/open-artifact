@@ -23,6 +23,12 @@ export interface Preview {
 
 export type Busy = 'restoring' | 'copying' | null;
 
+/** What a previewed version is compared with: the one before it, or the tab as it is now. */
+export type CompareWith = 'previous' | 'current';
+
+/** What a restore is compared with: the version before it, or the version it brought back. */
+export type RestoreBase = 'previous' | 'restored';
+
 export interface HistoryState {
   /** The tab the list is of. */
   tab: string | null;
@@ -35,6 +41,9 @@ export interface HistoryState {
   preview: Preview | null;
   /** Show what the previewed version changed. */
   compare: boolean;
+  compareWith: CompareWith;
+  /** For a restore: set back to `previous` with each version picked. */
+  restoreBase: RestoreBase;
   /** Versions read so far, by `<tab>:<rev>`. */
   docs: Record<string, DocState>;
   /** A version that could not be read, by `<tab>:<rev>`. */
@@ -51,7 +60,9 @@ export const useVersionHistory = create<HistoryState>(() => ({
   shown: PAGE_VERSIONS,
   expanded: {},
   preview: null,
-  compare: false,
+  compare: true,
+  compareWith: 'previous',
+  restoreBase: 'previous',
   docs: {},
   docErrors: {},
   busy: null,

@@ -240,7 +240,7 @@
   pointer-events: none;
 }
 
-.wb-hollow .wb-shape-svg path {
+.wb-hollow .wb-shape-svg > path:first-child {
   pointer-events: stroke;
 }
 

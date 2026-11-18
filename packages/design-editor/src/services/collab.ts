@@ -10,6 +10,7 @@ import { commentOnSelection, designComments, startComments, useComments } from '
 import { designHistory, startHistory } from './history.ts';
 import { startCollabPresence } from './presence.ts';
 import { useDocument } from '../state/document.ts';
+import { session } from './session.ts';
 import { useView } from '../state/view.ts';
 
 export { collabAside } from '@open-artifact/editor-kit';
@@ -22,6 +23,12 @@ export const designCollab = createCollab({
     onSurface: () => useView.getState().mode === 'canvas',
     showSurface: () => useView.getState().focus(null),
     commentOnSelection,
+    requestCommentMode(on) {
+      const shell = session().shell;
+      if (!shell) return false;
+      shell.requestCommentMode(on);
+      return true;
+    },
     readOnly: () => useDocument.getState().readOnly,
   },
 });
@@ -48,8 +55,6 @@ export const collabChromeReport = (): Pick<ChromeReport, 'comments' | 'history'>
 export const subscribeCollab = (report: () => void): void => void designCollab.subscribe(report);
 /** Runs a Shell command that belongs to comments or history; returns whether it did. */
 export const handleCollabCommand = (command: ChromeCommand): boolean => designCollab.handleCommand(command);
-/** Opens or closes the comment list (closing the history panel). */
-export const toggleCommentList = (open?: boolean): void => designCollab.toggleCommentList(open);
 /** Opens or closes the history panel (closing the comment list). */
 export const toggleHistoryPanel = (open?: boolean): void => designCollab.toggleHistoryPanel(open);
 /** Which collaboration panel is open on the right (a React hook). */

@@ -13,11 +13,12 @@
  * over is the system README's call, made at install time.
  */
 
-import { copyFileSync, lstatSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { constants, copyFileSync, lstatSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import type { CheckFinding, TypeName } from './types.ts';
 
-const FOLDER = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+const FOLDER = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
 const MAX_FILES = 2000;
 const MAX_FILE_BYTES = 64 * 1024 * 1024;
 const SYSTEM_INDEX = 'design-system.json';
@@ -138,12 +139,13 @@ export function compareSystem(project: string, root: string, record: SystemRecor
   if (!found.project) return { ...diff, skipped: found.reason };
   diff.source = dirname(found.project);
   const copy = join(project, 'ds', record.namespace);
-  if (!plain(copy, 'dir')) return { ...diff, missing: true };
+  if (!plain(project, 'dir') || !plain(join(project, 'ds'), 'dir') || !plain(copy, 'dir')) return { ...diff, missing: true };
   for (const rel of walk(copy)) {
     const mine = join(copy, rel);
     const theirs = join(found.project, rel);
     if (!plain(mine, 'file')) continue;
-    if (!plain(theirs, 'file')) {
+    const parents = rel.split('/').slice(0, -1);
+    if (parents.some((_, i) => !plain(join(found.project!, ...parents.slice(0, i + 1)), 'dir')) || !plain(theirs, 'file')) {
       diff.removed.push(rel);
       continue;
     }
@@ -204,7 +206,7 @@ function stamp(project: string, indexFile: string, namespaces: Set<string>, now:
   }
   const indent = /^\{\n/.test(text) ? (/\n( +|\t)"/.exec(text)?.[1] ?? 2) : undefined;
   const out = JSON.stringify(index, null, indent);
-  const temp = `${file}.${process.pid}.tmp`;
+  const temp = `${file}.${randomUUID()}.tmp`;
   writeFileSync(temp, text.endsWith('\n') ? `${out}\n` : out);
   renameSync(temp, file);
 }
@@ -223,8 +225,8 @@ export function syncSystems(root: string, type: TypeName, opts: { namespace?: st
     if (!opts.check && diff.source && !diff.missing) {
       for (const rel of diff.changed) {
         const target = join(project, 'ds', diff.namespace, ...rel.split('/'));
-        const temp = `${target}.${process.pid}.tmp`;
-        copyFileSync(join(diff.source, 'project', ...rel.split('/')), temp);
+        const temp = `${target}.${randomUUID()}.tmp`;
+        copyFileSync(join(diff.source, 'project', ...rel.split('/')), temp, constants.COPYFILE_EXCL);
         renameSync(temp, target);
         result.copied.push(rel);
       }

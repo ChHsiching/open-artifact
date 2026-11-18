@@ -84,13 +84,31 @@ export const NOTE_COLORS = ['gray', 'red', 'orange', 'green', 'teal', 'blue', 'p
 export type NoteColor = (typeof NOTE_COLORS)[number];
 
 /** Text sizes of notes. */
+export type ArrowHead = 'none' | 'open' | 'filled';
 export type NoteSize = number | 's' | 'm' | 'l' | 'xl' | 'xxl';
+
+/** Shared by the canvas renderer and the layout checker. */
+export function noteFontSize(size: unknown, kind?: NoteKind): number {
+  if (typeof size === 'number' && Number.isFinite(size)) return Math.max(8, Math.min(400, Math.round(size)));
+  const sizes = { s: 14, m: 24, l: 40, xl: 72, xxl: 120 };
+  return typeof size === 'string' && Object.hasOwn(sizes, size) ? sizes[size as keyof typeof sizes] : kind === 'title1' ? 72 : 14;
+}
 
 /** A canvas note: a title over several artboards, a sticky, or a drawn shape. */
 export interface CanvasNote {
   x: number;
   y: number;
-  text: string;
+  text?: string;
+  title?: string;
+  linkKind?: 'slides' | 'motion' | 'doc' | 'design';
+  alt?: string;
+  css?: Record<string, string>;
+  rotate?: number;
+  flipX?: boolean;
+  flipY?: boolean;
+  headStart?: ArrowHead;
+  headEnd?: ArrowHead;
+  d?: string;
   kind?: NoteKind;
   w?: number;
   h?: number;
@@ -184,7 +202,9 @@ export function normalizeCanvas(input: unknown): Canvas {
         w: clampSize(entry.w, 880),
         h: clampSize(entry.h, 560),
       } as BoardEntry;
-      if (Array.isArray(entry.guides)) boards[path]!.guides = (entry.guides as BoardGuide[]).slice(0, MAX_GUIDES);
+      if (Array.isArray(entry.guides)) {
+        boards[path]!.guides = entry.guides.filter(g => isRecord(g) && ['grid', 'rows', 'columns'].includes(String(g.kind))).slice(0, MAX_GUIDES);
+      } else delete boards[path]!.guides;
     }
   }
   const seen = new Set<string>();
@@ -208,7 +228,26 @@ export function normalizeCanvas(input: unknown): Canvas {
       if (!isRecord(note) || Object.keys(notes).length >= MAX_NOTES) continue;
       const { groups: rawGroups, ...rest } = note;
       const groups = normalizeNoteGroups(rawGroups);
-      notes[id] = { ...rest, x: finite(note.x, 0), y: finite(note.y, 0), text: typeof note.text === 'string' ? note.text : '', ...(groups ? { groups } : {}) } as CanvasNote;
+      const x = finite(note.x, 0);
+      const y = finite(note.y, 0);
+      const item = { ...rest, x, y, ...(groups ? { groups } : {}) } as CanvasNote;
+      if (isRecord(item.css)) item.css = Object.fromEntries(Object.entries(item.css).filter(([, value]) => typeof value === 'string'));
+      else delete item.css;
+      if (!Number.isFinite(item.rotate)) delete item.rotate;
+      if (item.points !== undefined) {
+        if (Array.isArray(item.points)) item.points = item.points.filter(p => Array.isArray(p) && p.length === 2 && p.every(Number.isFinite));
+        else delete item.points;
+      }
+      for (const key of ['title', 'href', 'alt', 'd'] as const) if (typeof item[key] !== 'string') delete item[key];
+      if (typeof item.text !== 'string') delete item.text;
+      if ((item.kind === 'line' || item.kind === 'arrow') && Number.isFinite(note.x2) && Number.isFinite(note.y2) && !item.points?.length) {
+        item.points = [[0, 0], [Number(note.x2) - x, Number(note.y2) - y]];
+      }
+      if (item.kind === 'line' || item.kind === 'arrow') {
+        delete item.x2;
+        delete item.y2;
+      }
+      notes[id] = item;
     }
   }
 
@@ -248,7 +287,30 @@ export function parseCanvas(text: string): { canvas: Canvas; error: string | nul
 
 /** Serializes the index the way it is stored: two-space JSON with a trailing newline. */
 export function serializeCanvas(canvas: Canvas): string {
-  return `${JSON.stringify(canvas, null, 2)}\n`;
+  const notes = Object.fromEntries(Object.entries(canvas.notes).map(([id, note]) => {
+    if (note.kind === 'pen' && note.points?.length) {
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const [x, y] of note.points) {
+        minX = Math.min(minX, x); minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x); maxY = Math.max(maxY, y);
+      }
+      const points = note.points.map(([x, y]) => [x - minX, y - minY] as const);
+      const w = Math.max(1, maxX - minX), h = Math.max(1, maxY - minY);
+      const nodes = Array.isArray(note.nodes) ? note.nodes.map(n => isRecord(n) ? { ...n, x: Number(n.x) - minX, y: Number(n.y) - minY } : n) : undefined;
+      const d = points.map(([x, y], i) => `${i ? 'L' : 'M'}${x} ${y}`).join(' ') + (note.closed ? ' Z' : '');
+      const width = typeof note.stroke === 'number' ? note.stroke : 3;
+      const css = { ...note.css, ...(note.stroke ? { 'stroke-width': width + 'px' } : {}),
+        ...(note.dash === 'dashed' ? { 'stroke-dasharray': `${3 * width} ${2.5 * width}` } : note.dash === 'dotted' ? { 'stroke-dasharray': `0.01 ${2 * width}` } : {}) };
+      return [id, { ...note, x: note.x + minX, y: note.y + minY, w, h, d, points, ...(nodes ? { nodes } : {}), ...(Object.keys(css).length ? { css } : {}) }];
+    }
+    if ((note.kind === 'line' || note.kind === 'arrow') && note.points?.length === 2) {
+      const [first, last] = note.points as [[number, number], [number, number]];
+      const { points, ...line } = note;
+      return [id, { ...line, x: note.x + first[0], y: note.y + first[1], x2: note.x + last[0], y2: note.y + last[1] }];
+    }
+    return [id, note];
+  }));
+  return `${JSON.stringify({ ...canvas, notes }, null, 2)}\n`;
 }
 
 /* -------------------------------------------------------------------------- */

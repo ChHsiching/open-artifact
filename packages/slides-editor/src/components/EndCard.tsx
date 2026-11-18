@@ -1,93 +1,24 @@
 /**
- * The card at the stage's top-right corner: Download and Present, then the
+ * The card at the stage's top-right corner: Present, then the
  * properties-panel toggle, the zoom readout with its menu (which also holds
  * undo and redo) and the sync dot.
  */
 
 import { type ReactNode } from 'react';
-import { BookText, ChevronDown, Download, FileText, Image, Loader2, Play, Presentation, SlidersHorizontal } from 'lucide-react';
+import { BookText, ChevronDown, History, Play, SlidersHorizontal } from 'lucide-react';
 import { ZOOM_PRESETS } from '@open-artifact/canvas-engine/camera';
 import { cn } from '@open-artifact/ui';
 import { present, zoomStep } from '../keyboard.ts';
 import { useDeck } from '../state/deck.ts';
 import { stageScale, useView } from '../state/view.ts';
 import { redo, undo } from '../services/commands.ts';
-import { exportBusy } from '../services/exports.ts';
-import { playableSlides } from '../services/present.ts';
-import { pptxRequest, startExport, useExportUi } from '../services/shell.ts';
+import { slideHistory } from '../services/history.ts';
 import { retryNow } from '../services/sync.ts';
-import { Card, ChromeButton, ChromeDivider, ChromeMenu, ChromeMenuItem, ChromeMenuLabel, ChromeMenuSeparator, CommentsButton, MOD, SHIFT, Tip, useShellDraw } from '@open-artifact/editor-kit/react';
-import { slidesComments } from '../services/comments.ts';
+import { Card, ChromeButton, ChromeDivider, ChromeMenu, ChromeMenuItem, ChromeMenuLabel, ChromeMenuSeparator, MOD, SHIFT, Tip, useShellDraw } from '@open-artifact/editor-kit/react';
 import { session } from '../services/session.ts';
 
 const ICON = { className: 'size-5', strokeWidth: 1.5 } as const;
 const SMALL = { className: 'size-4', strokeWidth: 1.5 } as const;
-
-/** Zoom presets of the zoom menu. */
-
-/** The Download menu (the Shell has its own export menu too). */
-export function DownloadMenu(): ReactNode {
-  const running = useExportUi((s) => s.running);
-  const current = useView((s) => s.current);
-  const ready = useDeck((s) => s.status === 'ready');
-  const empty = !ready || playableSlides().length === 0;
-  const disabled = empty || running || exportBusy();
-  return (
-    <ChromeMenu
-      align="end"
-      tip={{ label: 'Download' }}
-      trigger={
-        <ChromeButton size="lg" square aria-label="Download">
-          {running ? <Loader2 {...ICON} className="size-5 animate-spin" /> : <Download {...ICON} />}
-        </ChromeButton>
-      }
-    >
-      {empty ? <ChromeMenuLabel>Add a slide that is not skipped to download.</ChromeMenuLabel> : null}
-      <ChromeMenuItem disabled={disabled} icon={<FileText {...SMALL} />} onSelect={() => useExportUi.getState().openPdf(null)}>
-        PDF (.pdf)
-      </ChromeMenuItem>
-      <ChromeMenuItem disabled={disabled} icon={<FileText {...SMALL} />} onSelect={() => useExportUi.getState().openHtml(null)}>
-        Web page (.html)
-      </ChromeMenuItem>
-      <ChromeMenuItem disabled={disabled || !current} icon={<Image {...SMALL} />} onSelect={() => current && void startExport({ format: 'png', slideId: current })}>
-        Current slide as an image (.png)
-      </ChromeMenuItem>
-      <ChromeMenuSeparator />
-      <ChromeMenuItem
-        disabled={disabled}
-        icon={<Presentation {...SMALL} />}
-        description="Editable; uses the fonts installed where it opens"
-        onSelect={() => void startExport(pptxRequest('current'))}
-      >
-        PowerPoint, current fonts (.pptx)
-      </ChromeMenuItem>
-      <ChromeMenuItem
-        disabled={disabled}
-        icon={<Presentation {...SMALL} />}
-        description="Editable; Google Fonts that allow it go inside the file"
-        onSelect={() => void startExport(pptxRequest('embed'))}
-      >
-        PowerPoint, embedded fonts (.pptx)
-      </ChromeMenuItem>
-      <ChromeMenuItem
-        disabled={disabled}
-        icon={<Presentation {...SMALL} />}
-        description="Editable; fonts every computer has"
-        onSelect={() => void startExport(pptxRequest('basic'))}
-      >
-        PowerPoint, basic fonts (.pptx)
-      </ChromeMenuItem>
-      <ChromeMenuItem
-        disabled={disabled}
-        icon={<Image {...SMALL} />}
-        description="Looks exactly right anywhere; not editable"
-        onSelect={() => void startExport(pptxRequest('pictures'))}
-      >
-        PowerPoint, slides as pictures (.pptx)
-      </ChromeMenuItem>
-    </ChromeMenu>
-  );
-}
 
 /** ▷ Present: from this slide, from the start, or with the speaker window. */
 function PresentMenu(): ReactNode {
@@ -206,15 +137,16 @@ export interface EndCardProps {
 export function EndCard({ onStage }: EndCardProps): ReactNode {
   const showProperties = useView((s) => s.showProperties);
   const readOnly = useDeck((s) => s.readOnly);
+  const historyAvailable = slideHistory.store(s => s.available);
   const label = showProperties ? 'Hide the properties panel' : 'Show the properties panel';
   // In a Shell its Share panel's Export tab lists the formats and its bar shows the save state.
-  const shellFormats = useShellDraw(session().shell, 'formats');
   const shellSaved = useShellDraw(session().shell, 'saved');
   return (
     <Card className="h-10 gap-1 px-1 py-px">
-      {shellFormats ? null : <DownloadMenu />}
+      {!session().shell && historyAvailable ? <Tip label="Version history">
+        <ChromeButton size="lg" square aria-label="Version history" onClick={() => slideHistory.toggle(true)}><History {...ICON} /></ChromeButton>
+      </Tip> : null}
       <PresentMenu />
-      {session().shell ? null : <CommentsButton comments={slidesComments} />}
       {!readOnly ? (
         <>
           <ChromeDivider />

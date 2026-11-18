@@ -4,16 +4,17 @@
  * right.
  */
 
-import { ChevronDown, CloudAlert, History, LoaderCircle, Lock, MessageCircle, MessageSquare, RotateCw, X } from 'lucide-react';
-import { Button, IconButton, Menu, MenuItem, Tooltip, cn } from '@open-artifact/ui';
+import { PanelLeft, CloudAlert, History, LoaderCircle, Lock, MessageSquare, RotateCw, X } from 'lucide-react';
+import { Button, IconButton, cn } from '@open-artifact/ui';
 import { StatusDot } from '../../components/OwnerBadge.tsx';
 import { t } from '../../lib/i18n.ts';
 import { command, runAction } from '../bridge.ts';
 import { closeShell, openSession } from '../actions.ts';
 import { useAgentName, useCanOpenSession, useOwner, useOwnerState, useWorking } from '../hooks.ts';
-import { countText, saveIndicator, showsComments } from '../model.ts';
+import { saveIndicator } from '../model.ts';
 import { useShell } from '../store.ts';
 import { SharePanel } from './SharePanel.tsx';
+import { CommentsButton } from './CommentsButton.tsx';
 import { TitleMenu } from './TitleMenu.tsx';
 
 /** "<Agent> is working…" while the owner session runs. */
@@ -30,7 +31,7 @@ function Working() {
 
 /** The page's save state (the header indicator): Saving…, a retry after a failed save, Read-only. */
 function SaveState() {
-  const state = useShell((s) => saveIndicator(s.report));
+  const state = useShell(s => s.boot?.type === 'docs' && s.report.saved === 'reconnecting' ? 'reconnecting' : saveIndicator(s.report));
   const quiet = 'inline-flex min-w-0 items-center gap-1.5 whitespace-nowrap text-xs text-fg-muted';
   switch (state) {
     case 'saving':
@@ -73,66 +74,6 @@ function HistoryButton() {
   return <IconButton label={t('versionHistory')} icon={<History className="size-4" />} size="lg" onClick={() => command({ cmd: 'history' })} />;
 }
 
-/**
- * The comments button: comment mode on and off, a filled bubble
- * while on ("Done commenting"), an outlined one with a dot while open
- * comments wait ("N open comments"); and a caret whose menu shows the
- * comments list ("Show all comments N") or hides it ("Hide comments").
- */
-function CommentsButton() {
-  const comments = useShell((state) => state.report.comments);
-  if (!comments || !showsComments({ comments })) return null;
-  const on = comments.on;
-  const count = Math.max(0, comments.count || 0);
-  const waiting = !on && count > 0;
-  const tip = on ? t('doneCommenting') : count === 1 ? t('openComment') : count > 0 ? t('openComments', { count: countText(count) }) : t('comments');
-  return (
-    <span data-comments-button="" className="inline-flex items-center">
-      <Tooltip label={tip}>
-        <button
-          type="button"
-          aria-label={t('comments')}
-          aria-pressed={on}
-          className={cn(
-            'inline-flex size-8 shrink-0 items-center justify-center rounded-control text-fg-muted transition-colors hover:bg-hover hover:text-fg',
-            'focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent',
-            on && 'text-fg',
-          )}
-          onClick={() => command({ cmd: 'comments_mode', on: !on })}
-        >
-          <span className="relative inline-flex">
-            <MessageCircle className="size-4" fill={on ? 'currentColor' : 'none'} />
-            {waiting ? <span aria-hidden data-comments-dot="" className="absolute -right-0.5 -top-px size-1.5 rounded-full bg-accent ring-[1.5px] ring-surface" /> : null}
-          </span>
-        </button>
-      </Tooltip>
-      <Menu
-        align="end"
-        trigger={
-          <button
-            type="button"
-            aria-label={t('commentOptions')}
-            title={t('commentOptions')}
-            className="-ml-0.5 inline-flex h-8 w-5 shrink-0 items-center justify-center rounded-control text-fg-muted hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent data-[popup-open]:bg-hover"
-          >
-            <ChevronDown className="size-3" />
-          </button>
-        }
-      >
-        {comments.open ? (
-          <MenuItem onSelect={() => command({ cmd: 'comments_list', open: false })}>{t('hideComments')}</MenuItem>
-        ) : (
-          <MenuItem onSelect={() => command({ cmd: 'comments_list', open: true })}>
-            <span className="flex items-center gap-6">
-              <span className="flex-1">{t('showAllComments')}</span>
-              {count ? <span className="text-xs text-fg-subtle">{countText(count)}</span> : null}
-            </span>
-          </MenuItem>
-        )}
-      </Menu>
-    </span>
-  );
-}
 
 /** Ask agent: shows the owner session in the host when it can, else toggles the ask pane. */
 function AskButton() {
@@ -164,20 +105,27 @@ function AskButton() {
 
 /** The bar. */
 export function TopBar() {
+  const comments = useShell(s => s.report.comments);
+  const standalone = useShell(state => state.boot?.typeServer);
+  const docs = useShell(state => state.boot?.type === 'docs');
+  const title = useShell(state => state.boot?.type === 'docs' ? state.report.title || state.boot.title : state.boot?.title);
   const hostToolbar = useShell((state) => !!state.host?.caps.toolbar);
   return (
-    <header aria-label={t('artifactOptions')} className="flex h-12 shrink-0 items-center gap-2 border-b border-line bg-surface pl-2.5 pr-2 max-sm:gap-1 max-sm:px-1.5">
+    <header aria-label={t('artifactOptions')} className={cn("flex shrink-0 items-center gap-2 border-b border-line bg-surface pl-2.5 pr-2 max-sm:gap-1 max-sm:px-1.5", docs ? 'h-10' : 'h-12')}>
       <div className="flex min-w-0 flex-1 items-center gap-1.5">
-        <TitleMenu />
+        {docs && <button aria-label={t('documentTabs')} className="hidden size-7 shrink-0 items-center justify-center [@media(max-width:480px)_and_(pointer:coarse)]:inline-flex"
+          onClick={() => runAction('open_page_list')}><PanelLeft className="size-4" /></button>}
+        {standalone && !docs ? <span className="truncate font-medium">{title}</span> : <TitleMenu />}
         <Working />
         <SaveState />
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
-        <HistoryButton />
+        {!docs && <HistoryButton />}
         <SharePanel />
-        <CommentsButton />
-        <AskButton />
-        {hostToolbar ? null : <IconButton label={t('close')} icon={<X className="size-4" />} size="lg" onClick={closeShell} />}
+        {docs && <HistoryButton />}
+        <CommentsButton comments={comments} command={command} readOnly={standalone?.role === 'viewer'} />
+        {standalone ? null : <AskButton />}
+        {hostToolbar || standalone ? null : <IconButton label={t('close')} icon={<X className="size-4" />} size="lg" onClick={closeShell} />}
       </div>
     </header>
   );

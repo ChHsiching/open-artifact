@@ -312,6 +312,21 @@ pub fn of_move(workbook: &Workbook, sheet: &Sheet, lines: Lines, moved: &[LineId
         after_ops.push(lines.set_groups(&sheet.id, groups));
     }
     after_ops.extend(formulas_after_move(workbook, sheet, lines, &moving));
+    if matches!(lines, Lines::Columns) {
+        let tables: Vec<_> = sheet.cell_tables.values().filter_map(|(id, table)| {
+            if !is_table_shown(bases, sheet, table) {
+                return None;
+            }
+            let (first, last) = ends(&table.first_column, &table.last_column)?;
+            let mut table = table.clone();
+            table.first_column = bases.text(first);
+            table.last_column = bases.text(last);
+            Some(CellTableToSet { cell_table_id: id.clone(), cell_table: Some(table) })
+        }).collect();
+        if !tables.is_empty() {
+            after_ops.push(Op::SetCellTables { sheet_id: sheet.id.clone(), cell_tables: tables });
+        }
+    }
     let mut formats = Vec::new();
     for (format_id, f) in sheet.conditional_formats.values() {
         let mut changed = false;

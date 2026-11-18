@@ -1,11 +1,14 @@
-/** A Markdown, Word or PDF file as a new tab: the file picker, the upload, and the toast that follows it. */
+/** A Markdown, text, Word or PDF file as a new tab: the file picker (or a drop), the upload, and the toast that follows it. */
 import type { DocImportNote } from '@open-artifact/runtime/doc-api';
 import { toast } from '@open-artifact/ui';
 import { session } from '../app/session.ts';
 import { showTab } from '../app/start.ts';
 
-const ACCEPT = '.md,.markdown,.docx,.pdf';
-const IMPORTABLE = /\.(md|markdown|docx|pdf)$/i;
+const ACCEPT = '.md,.markdown,.txt,.docx,.pdf';
+const IMPORTABLE = /\.(md|markdown|txt|docx|pdf)$/i;
+
+/** Whether a file is one a doc imports as a tab (by its name, as the server reads it). */
+export const isImportable = (file: File): boolean => IMPORTABLE.test(file.name);
 
 /** What stayed behind, in a line the person can act on. */
 const notesLine = (notes: readonly DocImportNote[]) => notes.map(note => (note.count > 1 ? `${note.count} × ${note.what}` : note.what)).join('; ');
@@ -37,7 +40,7 @@ async function importOne(file: File): Promise<string | null> {
 /** One at a time, in the order given, then to the first new tab. */
 export async function importFiles(files: readonly File[]): Promise<void> {
   let first: string | null = null;
-  for (const file of files.filter(item => IMPORTABLE.test(item.name))) {
+  for (const file of files.filter(isImportable)) {
     const tab = await importOne(file);
     first ??= tab;
   }

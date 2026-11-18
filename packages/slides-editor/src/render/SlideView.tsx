@@ -48,6 +48,7 @@ import {
 } from '@open-artifact/slides-core';
 import { ImageIcon, Play, Video } from 'lucide-react';
 import { SECTION_LAYOUT, SLIDE_CLASS, toReactStyle, installSlideStyles } from './css.ts';
+import { embedDocument, mountEmbedStill } from './embed-still.ts';
 import { useTextFit } from './fit.ts';
 import { guardSmil } from '../services/motion.ts';
 import { ICON_GLYPHS } from './icons.tsx';
@@ -78,6 +79,8 @@ export type BuildPhases = ReadonlyMap<number, BuildPhase>;
 /** How a slide is drawn. */
 export interface RenderOptions {
   mode: RenderMode;
+  /** Capture embeds when an export needs a static picture. */
+  captureEmbeds?: boolean;
   /** Turns an asset reference (`/_blob/…`, `project/ds/…`) into a URL. */
   resolveSrc: (src: string) => string;
   /**
@@ -666,21 +669,17 @@ function ConnectorView({ node, path }: NodeProps<ConnectorNode>): ReactNode {
   );
 }
 
-/** The CSP every embed page runs under: no network, inline code only. */
-export const EMBED_CSP =
-  "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:";
-
-/** The document an embed's iframe loads. */
-export function embedDocument(html: string): string {
-  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${EMBED_CSP}"><style>html,body{margin:0;background:transparent}</style></head><body>${html}</body></html>`;
-}
-
 function EmbedView({ node, path }: NodeProps<EmbedNode>): ReactNode {
   const options = useRenderOptions();
   const frame = frameOf(node, path, 'open-artifact-embed', options.builds?.get(path[0]!));
   const style = toReactStyle(node.style);
+  const holder = useRef<HTMLDivElement>(null);
+  const capture = options.mode === 'thumb' || options.captureEmbeds === true;
+  useLayoutEffect(() => {
+    if (capture && holder.current) return mountEmbedStill(holder.current, node);
+  }, [capture, node]);
   if (options.mode === 'thumb' || options.mode === 'export') {
-    return <div {...frame} style={style} className={`${frame.className ?? ''} open-artifact-embed-still`} />;
+    return <div ref={holder} {...frame} style={style} className={`${frame.className ?? ''} open-artifact-embed-still`} />;
   }
   return (
     <iframe

@@ -55,7 +55,7 @@ The key is the artboard path under `project/`. Fields:
 | `page` | Page id. |
 | `is_interactive` | It has working controls: the frame gets a Play button that hands clicks to the artboard. |
 | `expand: "fill"` | The artboard fills the window in the focused view instead of keeping its size. |
-| `print: "flow"`, `paper: "letter" \| "a4"` | Marks a document-like artboard for paginated printing. Kept, but this editor has no PDF export yet. |
+| `print: "flow"`, `paper: "letter" \| "a4"` | Marks a document-like artboard for paginated printing. Share → Export → PDF in the frame shell paginates the artboard at the chosen paper width. |
 | `frameless` | Drawn without a frame. Set by the page; leave it. |
 | `radius` | Corner radius of the frame, px: a phone or tablet screen (about 40 for a phone). Leave it off a PAGE, print or poster. |
 | `guides` | Up to 6 layout guides: `{ "kind": "columns" \| "rows" \| "grid", "count": 12, "gutter": 24, "margin": 32 }`. |
@@ -65,7 +65,7 @@ gaps; leave at least 223 px above a row that has a title note.
 
 ## Notes
 
-Keyed by id (`[A-Za-z0-9_-]{1,40}`), fewer than 1000. Every note has `x`, `y` and `text`.
+Keyed by id (`[A-Za-z0-9_-]{1,40}`), fewer than 1000. Every note has `x` and `y`. Stickies and titles also have `text`.
 
 - `kind: "title1"` is a title over SEVERAL artboards, never over one (a frame's name strip already
   shows its `title` or file name): one bold 72 px line. Set `maxW` to its row's width (`maxH` if it is
@@ -80,8 +80,8 @@ Keyed by id (`[A-Za-z0-9_-]{1,40}`), fewer than 1000. Every note has `x`, `y` an
   group notes with ⌘G and selecting one then selects its whole group. Keep the list when you move or
   restyle a note; drop an id from it only to take the note out of that group. Two or more notes make a
   group; a lone id means nothing.
-- `kind: "link"` is a card that opens another artifact: `{"kind":"link","x":0,"y":680,"href":"<its link>","text":"Spring menu deck"}`,
-  280 px wide; `text` is its name (left out, the card shows the bare link). When you make something else (a deck, a document) from
+- `kind: "link"` is a card that opens another artifact: `{"kind":"link","x":0,"y":680,"href":"<its link>","title":"Spring menu deck"}`,
+  640 × 112 px; `title` is its name (left out, the card shows the bare link). When you make something else (a deck, a document) from
   artboards, add one under what it was made from: 120 px below that artboard, left edges level, on bare
   canvas, never right of the rightmost artboard; one per artifact. No link to give: no card; say in
   your reply where it is.

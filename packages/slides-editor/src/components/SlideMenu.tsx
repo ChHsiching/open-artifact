@@ -6,6 +6,7 @@
 import type { ReactNode } from 'react';
 import { ArrowDown, ArrowUp, ClipboardPaste, Copy, CopyPlus, Eye, EyeOff, Image, Link, ListPlus, Plus, Scissors, Sparkles, Trash2 } from 'lucide-react';
 import { MenuItem, MenuSeparator } from '@open-artifact/ui';
+import { maybeSession } from '../services/session.ts';
 import { useDeck } from '../state/deck.ts';
 import { askAgentToFix, useAgent } from '../services/agent.ts';
 import { copySlidesToMemory, hasMemory, pasteFromMemory } from '../services/clipboard.ts';
@@ -88,7 +89,7 @@ export function SlideMenuItems({ ids }: { ids: readonly string[] }): ReactNode {
           </MenuItem>
         </>
       ) : null}
-      {single ? (
+      {single && maybeSession()?.shell ? (
         <>
           <MenuSeparator />
           <MenuItem icon={<Link className="size-4" />} shortcut={`⌥${MOD}L`} onSelect={() => void copySlideLink(single)}>

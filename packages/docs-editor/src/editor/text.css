@@ -1,9 +1,11 @@
 /* The doc's text as the editor draws it. */
 
 .doc-page {
+  --doc-serif: ui-serif, Georgia, serif;
+  --doc-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --doc-text-font: var(--doc-sans);
   --doc-heading-font: var(--doc-sans);
-  --doc-width: 720px;
+  --doc-width: 672px;
 }
 
 .doc-page[data-text-font="serif"] {
@@ -15,7 +17,7 @@
 }
 
 .doc-page[data-width="wide"] {
-  --doc-width: 960px;
+  --doc-width: 900px;
 }
 
 .doc-editor {
@@ -27,7 +29,7 @@
   color: var(--doc-text);
   font-family: var(--doc-text-font);
   font-size: 16px;
-  line-height: 1.65;
+  line-height: 1.5;
   word-wrap: break-word;
   white-space: pre-wrap;
   white-space: break-spaces;
@@ -37,12 +39,8 @@
   caret-color: var(--doc-text);
 }
 
-.doc-text > * + * {
-  margin-top: 0.75em;
-}
-
 .doc-text p {
-  margin: 0;
+  margin: 0.6em 0;
 }
 
 .doc-text h1,
@@ -52,64 +50,98 @@
 .doc-text h5,
 .doc-text h6 {
   font-family: var(--doc-heading-font);
-  color: var(--doc-fg);
-  line-height: 1.25;
-  margin: 0;
+  color: var(--doc-text);
   position: relative;
 }
 
 .doc-text h1 {
-  font-size: 2em;
-  font-weight: 650;
-  letter-spacing: -0.015em;
-  margin-top: 1.1em;
+  font-size: 32px;
+  font-weight: 400;
+  line-height: 1.2;
+  margin: 1.25em 0 0.25em;
 }
 
 .doc-text h2 {
-  font-size: 1.5em;
-  font-weight: 620;
-  letter-spacing: -0.01em;
-  margin-top: 1.1em;
+  font-size: 22px;
+  font-weight: 400;
+  line-height: 1.3;
+  margin: 1.6em 0 0.5em;
 }
 
 .doc-text h3 {
-  font-size: 1.25em;
-  font-weight: 600;
-  margin-top: 1em;
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 1.35;
+  margin: 1.4em 0 0.4em;
 }
 
-.doc-text h4,
+.doc-text h4 {
+  font-family: var(--doc-text-font);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 1.3em 0 0.3em;
+}
+
 .doc-text h5,
 .doc-text h6 {
-  font-size: 1.05em;
+  font-family: var(--doc-text-font);
+  font-size: 14px;
   font-weight: 600;
-  margin-top: 1em;
+  line-height: 1.45;
+  margin: 1.2em 0 0.25em;
+}
+
+.doc-text h6 {
+  font-weight: 500;
+  color: var(--doc-secondary);
+}
+
+.doc-page[data-heading-font="sans"] .doc-text h1 {
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.doc-page[data-heading-font="sans"] .doc-text h2 {
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+.doc-page[data-heading-font="sans"] .doc-text h3 {
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 .doc-text > :first-child {
   margin-top: 0;
 }
 
+.doc-text > h1:first-child + * {
+  margin-top: 0;
+}
+
 .doc-text a {
   color: var(--doc-link);
-  text-decoration: underline;
-  text-decoration-color: color-mix(in srgb, var(--doc-link) 40%, transparent);
-  text-underline-offset: 2px;
+  text-decoration: none;
   cursor: text;
+}
+
+.doc-text a:hover {
+  text-decoration: underline;
 }
 
 .doc-text code {
   font-family: var(--doc-mono);
-  font-size: 0.88em;
-  background: var(--doc-code-bg);
-  border-radius: 4px;
+  font-size: 0.9em;
+  background: var(--doc-code-inline-bg);
+  border-radius: 3px;
   padding: 0.1em 0.3em;
 }
 
 .doc-text mark {
   background: var(--doc-mark);
   color: inherit;
-  border-radius: 2px;
+  border-radius: 1px;
 }
 
 .doc-text [data-text-color="red"] {
@@ -130,8 +162,15 @@
 
 .doc-text ul,
 .doc-text ol {
-  margin: 0;
-  padding-left: 1.6em;
+  margin: 0.6em 0;
+  padding-inline-start: 1.855em;
+}
+
+.doc-text li ul,
+.doc-text li ol,
+.doc-text :is(ul, ol) + :is(ul, ol) {
+  margin-top: 0;
+  margin-bottom: 0;
 }
 
 .doc-text ul {
@@ -162,12 +201,12 @@
   color: var(--doc-muted);
 }
 
-.doc-text li > * + * {
-  margin-top: 0.3em;
+.doc-text li {
+  margin: 0.25em 0;
 }
 
-.doc-text li + li {
-  margin-top: 0.2em;
+.doc-text li > p {
+  margin: 0;
 }
 
 .doc-text ul[data-kind="check"] {
@@ -221,16 +260,15 @@
 }
 
 .doc-text blockquote {
-  margin: 0;
-  padding-left: 1em;
-  border-left: 3px solid var(--doc-rule);
-  color: color-mix(in srgb, var(--doc-text) 85%, transparent);
+  margin: 0.8em 0;
+  padding: 0.1em 1em;
+  border-inline-start: 3px solid var(--doc-quote-rule);
 }
 
 .doc-text hr {
   border: none;
   border-top: 1px solid var(--doc-rule);
-  margin: 1.5em 0;
+  margin: 8px 0;
 }
 
 .doc-text hr.ProseMirror-selectednode {
@@ -240,12 +278,13 @@
 
 .doc-text pre {
   font-family: var(--doc-mono);
-  font-size: 0.86em;
-  line-height: 1.55;
-  background: var(--doc-code-bg);
-  border-radius: 8px;
-  padding: 0.9em 1em;
-  margin: 0;
+  font-size: 0.875em;
+  line-height: 1.5;
+  color: var(--doc-code-fg);
+  background: var(--doc-code-block-bg);
+  border-radius: 6px;
+  padding: 0.75rem 0.9rem;
+  margin: 0.6em 0;
   white-space: pre;
   overflow-x: auto;
   tab-size: 2;
@@ -260,21 +299,22 @@
 /* Tables */
 .doc-text .tableWrapper {
   overflow-x: auto;
-  margin: 0;
+  margin: 2px -10px -8px -48px;
+  padding: 16px 10px 18px 48px;
 }
 
 .doc-text table {
   border-collapse: collapse;
-  table-layout: fixed;
-  width: 100%;
+  width: max-content;
+  font-size: 0.94em;
+  line-height: 1.45;
   margin: 0;
-  overflow: hidden;
 }
 
 .doc-text td,
 .doc-text th {
-  border: 1px solid var(--doc-rule);
-  padding: 0.4em 0.6em;
+  border: 1px solid var(--doc-table-rule);
+  padding: 6px 10px;
   vertical-align: top;
   box-sizing: border-box;
   position: relative;
@@ -283,8 +323,21 @@
 }
 
 .doc-text th {
-  font-weight: 600;
-  background: var(--doc-code-bg);
+  font-weight: 400;
+  color: var(--doc-secondary);
+  background: var(--doc-table-head);
+}
+
+.doc-text td > p,
+.doc-text th > p {
+  padding-inline: 4px;
+  margin: 0 -4px;
+  overflow-wrap: anywhere;
+}
+
+.doc-text td:not([data-colwidth]),
+.doc-text th:not([data-colwidth]) {
+  max-width: 42ch;
 }
 
 .doc-text td[data-align="center"],
@@ -497,6 +550,30 @@
   display: none;
 }
 
+.doc-fold-button {
+  position: absolute;
+  inset-inline-start: -1.45rem;
+  top: 0;
+  width: 1.45rem;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  color: var(--doc-muted);
+}
+.doc-fold-button::before {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+}
+.doc-fold-button[aria-expanded="false"]::before { transform: rotate(-45deg); }
+.doc-heading:hover > .doc-fold-button,
+.doc-fold-button:focus-visible,
+.doc-fold-button[aria-expanded="false"] { opacity: 1; }
+
 .doc-text .doc-heading-folded::after {
   content: "…";
   color: var(--doc-muted);
@@ -588,4 +665,258 @@ img.ProseMirror-separator {
   display: inline !important;
   border: none !important;
   margin: 0 !important;
+}
+
+/* Layouts: the hints under a layout's headings, the row an empty doc offers, and the grey preview of one */
+.doc-text .doc-layout-hint.doc-layout-hint::before {
+  content: attr(data-layout-hint);
+  max-width: 100%;
+  overflow-x: clip;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.doc-start-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 0;
+  background: var(--doc-page);
+  box-shadow: inset 0 0 0 1px var(--doc-line), 0 1px 2px rgb(0 0 0 / 0.04);
+  color: var(--doc-fg);
+  font: 500 13px/1 var(--doc-sans);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.doc-start-button:hover,
+.doc-start-button[data-popup-open] {
+  background: var(--doc-hover);
+}
+
+.doc-start-button:focus-visible {
+  outline: 2px solid var(--doc-accent);
+  outline-offset: 1px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .doc-start-button {
+    animation: doc-start-in 160ms ease-out;
+  }
+}
+
+@keyframes doc-start-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+}
+
+.doc-start-preview,
+.doc-start-ghost-title {
+  position: absolute;
+  pointer-events: none;
+  user-select: none;
+  color: var(--doc-muted);
+  white-space: normal;
+  overflow: hidden;
+}
+
+.doc-start-preview :is(h1, h2, p, li, th, td),
+.doc-start-preview li::marker {
+  color: inherit;
+}
+
+.doc-start-preview .doc-empty-hint::before {
+  color: var(--doc-faint);
+}
+
+.doc-start-ghost-title {
+  white-space: nowrap;
+  font-family: var(--doc-heading-font);
+}
+
+@media print {
+  .doc-start-preview,
+  .doc-start-ghost-title {
+    display: none;
+  }
+}
+
+/* Callouts: a quote that starts with ℹ️, ✅ or ⚠️ */
+.doc-text blockquote.doc-callout[data-callout] {
+  position: relative;
+  box-sizing: border-box;
+  margin: 0.9em 0;
+  padding-block: 10px;
+  padding-inline: 42px 40px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--doc-callout-info);
+  color: var(--doc-fg);
+}
+
+.doc-text blockquote.doc-callout[data-callout="success"] {
+  background: var(--doc-callout-success);
+}
+
+.doc-text blockquote.doc-callout[data-callout="warning"] {
+  background: var(--doc-callout-warning);
+}
+
+.doc-text blockquote.doc-callout[data-callout] > * {
+  margin-inline-start: 0;
+}
+
+.doc-text blockquote.doc-callout[data-callout] > p {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+.doc-text blockquote.doc-callout[data-callout] > p + p {
+  margin-top: 0.4em;
+}
+
+.doc-text blockquote.doc-callout[data-callout] > :first-child {
+  text-indent: -28px;
+}
+
+.doc-text blockquote.doc-callout[data-callout] > :first-child > * {
+  text-indent: 0;
+}
+
+.doc-text blockquote.doc-callout .doc-callout-lead {
+  display: inline-block;
+  width: 28px;
+  text-indent: 0;
+  vertical-align: top;
+  white-space: pre;
+  color: transparent;
+  overflow: hidden;
+  caret-color: var(--doc-fg);
+}
+
+.doc-text blockquote.doc-callout .doc-callout-gap {
+  display: inline-block;
+  width: 0;
+  text-indent: 0;
+  vertical-align: top;
+  white-space: pre;
+  color: transparent;
+  caret-color: var(--doc-fg);
+}
+
+.doc-text blockquote.doc-callout > .doc-callout-kind,
+.doc-text blockquote.doc-callout > .doc-callout-x {
+  position: absolute;
+  top: 10px;
+  width: 26px;
+  height: 26px;
+  margin: 0;
+  padding: 0;
+  text-indent: 0;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  font: inherit;
+  user-select: none;
+}
+
+.doc-text blockquote.doc-callout > .doc-callout-kind {
+  display: inline-flex;
+  inset-inline-start: 10px;
+  color: var(--doc-callout-info-fg);
+}
+
+.doc-text blockquote.doc-callout[data-callout="success"] > .doc-callout-kind {
+  color: var(--doc-callout-success-fg);
+}
+
+.doc-text blockquote.doc-callout[data-callout="warning"] > .doc-callout-kind {
+  color: var(--doc-callout-warning-fg);
+}
+
+.doc-text blockquote.doc-callout > button.doc-callout-kind {
+  cursor: pointer;
+}
+
+.doc-text blockquote.doc-callout > button.doc-callout-kind:hover,
+.doc-text blockquote.doc-callout > button.doc-callout-kind[aria-expanded="true"],
+.doc-text blockquote.doc-callout > .doc-callout-x:hover {
+  background: rgb(0 0 0 / 0.075);
+}
+
+.doc-text blockquote.doc-callout > :is(.doc-callout-kind, .doc-callout-x):focus-visible {
+  outline: 2px solid var(--doc-accent);
+  outline-offset: 1px;
+}
+
+.doc-text blockquote.doc-callout > .doc-callout-x {
+  display: none;
+  inset-inline-end: 8px;
+  color: var(--doc-secondary);
+  cursor: pointer;
+}
+
+.doc-text blockquote.doc-callout > .doc-callout-x:hover {
+  color: var(--doc-fg);
+}
+
+.doc-text[contenteditable="true"] blockquote.doc-callout:hover > .doc-callout-x,
+.doc-text[contenteditable="true"] blockquote.doc-callout.has-caret > .doc-callout-x,
+.doc-text blockquote.doc-callout > .doc-callout-x:focus-visible {
+  display: inline-flex;
+}
+
+.doc-callout-menu {
+  position: fixed;
+  z-index: 60;
+  min-width: 160px;
+  padding: 4px;
+  background: var(--doc-card);
+  border-radius: 10px;
+  box-shadow: var(--doc-popup-shadow);
+  font: 14px/20px var(--doc-sans);
+  color: var(--doc-fg);
+}
+
+.doc-callout-menu .row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  outline: 0;
+}
+
+@media (pointer: coarse) {
+  .doc-callout-menu .row {
+    height: 40px;
+  }
+}
+
+.doc-callout-menu .row:hover,
+.doc-callout-menu .row:focus {
+  background: var(--doc-hover);
+}
+
+.doc-callout-menu .row svg {
+  flex: none;
+  color: var(--doc-secondary);
+}
+
+.doc-callout-menu .row .tick {
+  margin-left: auto;
+  display: inline-flex;
+}
+
+.doc-text[data-start-previewing] .doc-empty-hint:not(.doc-layout-hint)::before {
+  content: none;
 }

@@ -1,46 +1,68 @@
-/**
- * The address follows the slide on stage (`#slide-N`, 1-based), and the
- * browser's back and forward buttons step between the slides visited.
- */
-
+import { storedJson } from '@open-artifact/editor-kit';
+import { SLIDE_FRAGMENT } from '@open-artifact/protocol';
 import { deckOrder, useDeck } from '../state/deck.ts';
 import { useView } from '../state/view.ts';
+import { session } from './session.ts';
 
-const HASH = /^#slide-(\d{1,4})$/;
-
-/** The slide a `#slide-N` hash names, or null. */
-export function slideFromHash(hash: string = location.hash): string | null {
-  const match = HASH.exec(hash);
-  if (!match) return null;
-  const order = deckOrder(useDeck.getState());
-  return order[Number(match[1]) - 1] ?? null;
+/** The marker distinguishes numeric slide ids from older positional links. */
+export function slideHash(id: string): string {
+  return `#slide-~${id}`;
 }
 
-/** Keeps the address and the slide on stage in step. */
+export function slideFromHash(hash: string = location.hash): string | null {
+  if (!SLIDE_FRAGMENT.test(hash)) return null;
+  const value = hash.slice('#slide-'.length);
+  const order = deckOrder(useDeck.getState());
+  if (value.startsWith('~')) return order.includes(value.slice(1)) ? value.slice(1) : null;
+  return order[Number(value) - 1] ?? null;
+}
+
+function positionStore(storage: () => Storage) {
+  return storedJson<string>(`open-artifact-slides:position:${session().artifact.id}`, value => typeof value === 'string' ? value : null, storage);
+}
+
+/** Explicit links win over the last slide seen in this tab or artifact. */
+export function initialSlide(): string | null {
+  const order = deckOrder(useDeck.getState());
+  const saved = positionStore(() => sessionStorage).read() ?? positionStore(() => localStorage).read();
+  return slideFromHash() ?? (saved && order.includes(saved) ? saved : order[0] ?? null);
+}
+
+/** A slide can be on screen in either the editor or the presenter. */
+export function reportSlide(id: string): void {
+  const hash = slideHash(id);
+  if (location.hash !== hash) history.replaceState(history.state, '', hash);
+  positionStore(() => sessionStorage).write(id);
+  positionStore(() => localStorage).write(id);
+  session().shell?.currentSlide(hash);
+}
+
 export function startLocationSync(): void {
-  let applying = false;
-  useView.subscribe((state, previous) => {
-    if (applying || state.current === previous.current || !state.current) return;
-    const n = deckOrder(useDeck.getState()).indexOf(state.current) + 1;
-    if (n <= 0) return;
-    const hash = `#slide-${n}`;
-    if (location.hash === hash) return;
-    // The first slide shown replaces the entry; later ones add history steps.
-    if (previous.current) history.pushState(null, '', hash);
-    else history.replaceState(null, '', hash);
-  });
-  const follow = (): void => {
-    const id = slideFromHash();
+  const shell = session().shell;
+  function report(): void {
+    const current = useView.getState().current;
+    if (current) reportSlide(current);
+  }
+
+  function follow(hash: string): void {
+    const id = slideFromHash(hash);
     const view = useView.getState();
-    if (!id || id === view.current) return;
-    applying = true;
-    try {
-      if (view.mode !== 'edit' && !view.presenting) view.setMode('edit');
-      view.showSlide(id);
-    } finally {
-      applying = false;
+    if (!id) return;
+    if (view.presenting) {
+      if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
+      view.present(null);
     }
-  };
-  window.addEventListener('popstate', follow);
-  window.addEventListener('hashchange', follow);
+    if (view.mode !== 'edit') view.setMode('edit');
+    if (id === view.current) { report(); return; }
+    view.showSlide(id);
+  }
+
+  report();
+  useView.subscribe((state, previous) => {
+    if (state.current !== previous.current) report();
+  });
+  shell?.onCommand(command => {
+    if (command.cmd === 'goto_slide') follow(command.hash);
+  });
+  window.addEventListener('hashchange', () => follow(location.hash));
 }

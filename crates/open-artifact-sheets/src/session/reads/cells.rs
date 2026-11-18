@@ -62,7 +62,8 @@ fn answered(workbook: &Workbook, request: Request) -> Result<Json, Refusal> {
     Ok(match request {
         Request::ReadCells { sheet_id, cells } => {
             let s = sheet_of(&sheet_id)?;
-            let at = cells.iter().map(|cell| cell_at(workbook, s, cell)).collect::<Result<Vec<_>, _>>()?;
+            // A viewport may still name a row or column deleted by another edit.
+            let at: Vec<_> = cells.iter().filter_map(|cell| cell_at(workbook, s, cell).ok()).collect();
             read_cells(workbook, s, &at, locale)
         }
         Request::ReadCauseOfError { sheet_id, cell } => {

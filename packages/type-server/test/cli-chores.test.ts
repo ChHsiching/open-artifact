@@ -105,9 +105,13 @@ describe('CLI chores', () => {
     const saved = new CommentStore(deck).threads({ all: true })[0]!;
     assert.equal(saved.messages.at(-1)!.author.kind, AGENT_AUTHOR.kind);
     assert.equal(saved.messages.at(-1)!.text, 'Done: 72 px now.');
+    assert.equal(saved.resolvedBy?.kind, 'agent');
     assert.ok((await run('comments', deck)).out[0]!.startsWith('No open comment threads (1 resolved'));
 
     assert.equal(JSON.parse((await run('comment-resolve', deck, thread.id, '--reopen')).out[0]!).status, 'open');
+    assert.equal(new CommentStore(deck).threads({ all: true })[0]!.resolvedBy, undefined);
+    assert.deepEqual(new CommentStore(deck).setResolved(thread.id, true, { kind: 'person', name: 'Ana' } as never).resolvedBy, { kind: 'person', name: 'Ana' });
+    new CommentStore(deck).setResolved(thread.id, false);
     assert.equal(JSON.parse((await run('comment-resolve', deck, thread.id)).out[0]!).status, 'resolved');
     assert.equal((await run('comment-reply', deck, 'c_nope', 'x')).code, 1);
     // Designs and design systems keep threads too.

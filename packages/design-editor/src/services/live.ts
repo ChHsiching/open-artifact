@@ -133,6 +133,7 @@ export function startLive(motion?: MotionSource): () => void {
     if (selection.kind === 'elements' && exists(selection.board)) out.add(selection.board);
     if (view.textEdit && exists(view.textEdit.board)) out.add(view.textEdit.board);
     if (view.hover && exists(view.hover.board)) out.add(view.hover.board);
+    if (view.playing && exists(view.playing)) out.add(view.playing);
     if (view.peek && exists(view.peek)) out.add(view.peek);
     for (const path of warming.keys()) if (exists(path)) out.add(path);
     const camera = view.camera;
@@ -170,7 +171,7 @@ export function startLive(motion?: MotionSource): () => void {
   const isPinned = (path: string): boolean => {
     const view = useView.getState();
     const s = view.selection;
-    return (s.kind === 'objects' && s.boards.includes(path)) || (s.kind === 'elements' && s.board === path) || view.textEdit?.board === path;
+    return (s.kind === 'objects' && s.boards.includes(path)) || (s.kind === 'elements' && s.board === path) || view.textEdit?.board === path || view.playing === path;
   };
 
   const schedule = (ms: number): void => {
@@ -291,7 +292,7 @@ export function startLive(motion?: MotionSource): () => void {
         schedule(0);
       }, IDLE_MS);
     }
-    if (state.page !== prev.page || state.selection !== prev.selection || state.textEdit !== prev.textEdit || state.hover !== prev.hover || state.peek !== prev.peek) recompute();
+    if (state.page !== prev.page || state.selection !== prev.selection || state.textEdit !== prev.textEdit || state.hover !== prev.hover || state.peek !== prev.peek || state.playing !== prev.playing) recompute();
     if (state.frames !== prev.frames) {
       const now = performance.now();
       for (const [path, info] of Object.entries(state.frames)) if (info !== prev.frames[path]) changedAt.set(path, now);

@@ -6,7 +6,7 @@ import { session } from '../app/session.ts';
 import { showTab } from '../app/start.ts';
 import { getDocs, useDocs } from '../app/store.ts';
 import { copyMembers, copyName, mintedTab } from './copy.ts';
-import { PAGE_VERSIONS, type Preview, getHistory, setHistory, versionKey } from './store.ts';
+import { type CompareWith, PAGE_VERSIONS, type Preview, getHistory, setHistory, versionKey } from './store.ts';
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -53,7 +53,7 @@ export function toggleExpanded(key: string): void {
 export function selectPreview(preview: Preview): void {
   const now = getHistory().preview;
   if (now && now.row === preview.row && now.rev === preview.rev) return;
-  setHistory({ preview, confirmRestore: false });
+  setHistory({ preview, confirmRestore: false, restoreBase: 'previous' });
 }
 
 export function clearPreview(): void {
@@ -62,6 +62,12 @@ export function clearPreview(): void {
 
 export function setCompare(compare: boolean): void {
   setHistory({ compare });
+}
+
+/** Compare with the version before, the tab as it is now, or (a restore) the version it brought back. */
+export function setCompareBase(base: CompareWith | 'restored'): void {
+  if (base === 'restored') setHistory({ compare: true, restoreBase: 'restored' });
+  else setHistory({ compare: true, compareWith: base, restoreBase: 'previous' });
 }
 
 const reading = new Map<string, Promise<void>>();

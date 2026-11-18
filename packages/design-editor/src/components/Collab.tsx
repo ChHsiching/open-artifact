@@ -1,18 +1,10 @@
-/**
- * Collaboration chrome of the canvas: the top card (who is here, the
- * viewer's role, and, outside a Shell, the Comments and History buttons),
- * the Comment tool of the foot toolbar, and the right-hand panel (comments
- * or version history). Styled with the Design chrome (`chrome.tsx`); the
- * shared pieces come from `@open-artifact/editor-kit`.
- */
-
 import type { ReactNode } from 'react';
-import { Eye, History, MessageCircle } from 'lucide-react';
-import { useComments, canComment, designComments } from '../services/comments.ts';
+import { Eye, History } from 'lucide-react';
+import { useComments } from '../services/comments.ts';
 import { toggleHistoryPanel, useCollabAsideKind } from '../services/collab.ts';
 import { useHistory } from '../services/history.ts';
 import { session } from '../services/session.ts';
-import { Card, ChromeButton, ChromeDivider, CommentsButton, Tip } from '@open-artifact/editor-kit/react';
+import { Card, ChromeButton, ChromeDivider, Tip } from '@open-artifact/editor-kit/react';
 import { PresenceAvatars } from './Presence.tsx';
 import { HistoryAside } from './HistoryPreview.tsx';
 
@@ -34,46 +26,28 @@ function RoleBadge() {
   );
 }
 
-/** The top card: avatars, role, and the Comments / History buttons a Shell would otherwise draw. */
+/** The top card: avatars, role, and the standalone History button. */
 export function CollabCard(): ReactNode {
-  const commentsAvailable = useComments((s) => s.available);
   const historyAvailable = useHistory((s) => s.available);
   const historyOpen = useHistory((s) => s.open);
   const shell = Boolean(session().shell);
-  const ownButtons = !shell && (commentsAvailable || historyAvailable);
+  const showHistory = !shell && historyAvailable;
   const role = session().viewer.role;
   return (
     <Card className="h-9 px-1 py-px empty:hidden" data-collab-card="">
       <PresenceAvatars />
       {role !== 'owner' && role !== 'editor' ? <RoleBadge /> : null}
-      {ownButtons ? (
+      {showHistory ? (
         <>
           <ChromeDivider />
-          {commentsAvailable ? <CommentsButton comments={designComments} /> : null}
-          {historyAvailable ? (
-            <Tip label={historyOpen ? 'Hide version history' : 'Version history'}>
-              <ChromeButton square pressed={historyOpen} aria-label="Version history" onClick={() => toggleHistoryPanel()}>
-                <History {...ICON} />
-              </ChromeButton>
-            </Tip>
-          ) : null}
+          <Tip label={historyOpen ? 'Hide version history' : 'Version history'}>
+            <ChromeButton square pressed={historyOpen} aria-label="Version history" onClick={() => toggleHistoryPanel()}>
+              <History {...ICON} />
+            </ChromeButton>
+          </Tip>
         </>
       ) : null}
     </Card>
-  );
-}
-
-/** The Comment tool (C) in the foot toolbar; shown to commenters too. */
-export function CommentToolButton(): ReactNode {
-  const available = useComments((s) => s.available);
-  const on = useComments((s) => s.on);
-  if (!available || !canComment()) return null;
-  return (
-    <Tip label={on ? 'Leave comment mode' : 'Comment'} shortcut="C" side="top">
-      <ChromeButton size="lg" square pressed={on} aria-label="Comment" onClick={() => useComments.getState().setOn(!on)}>
-        <MessageCircle {...ICON} />
-      </ChromeButton>
-    </Tip>
   );
 }
 

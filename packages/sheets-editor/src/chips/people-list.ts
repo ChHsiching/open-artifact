@@ -799,9 +799,10 @@ export const PEOPLE_LIST_GROUP_ORDER = ['agent', 'people', 'dates', 'dropdowns',
 export const insertOfferKey = (offer?: Dynamic) =>
   offer.kind === 'day' ? offer.day : offer.kind === 'dropdownOfSet' ? offer.set.key : offer.kind;
 export const foldForPeopleSearch = (text?: Dynamic) => text.toLowerCase().replaceAll('’', "'");
-export const ASK_AGENT_OFFER_LABEL = AGENT_NAME;
+/** The agent's name as the host gives it (read when asked: it may change after this module loads). */
+export const askAgentOfferLabel = () => AGENT_NAME;
 export const insertOfferLabelMatches = (offer?: Dynamic, searchedFor?: Dynamic) =>
-  isFoundByPeopleSearch(offer.kind === 'askAgent' ? ASK_AGENT_OFFER_LABEL : offer.label, searchedFor);
+  isFoundByPeopleSearch(offer.kind === 'askAgent' ? askAgentOfferLabel() : offer.label, searchedFor);
 export const insertOfferMatches = (offer?: Dynamic, searchedFor?: Dynamic) =>
   insertOfferLabelMatches(offer, searchedFor) || (offer.kind === 'dropdownOfSet' && isFoundByPeopleSearch(offer.alsoFoundBy, searchedFor));
 export const insertOffersMatching = (offers?: Dynamic, searchedFor?: Dynamic) =>

@@ -1,7 +1,10 @@
 /** The arithmetic of pictures: which files are taken, size names, alt text, crops and widths. */
 
-/** Uploads larger than this are refused by the host. */
-export const MAX_IMAGE_BYTES = 25 * 1024 * 1024;
+/** Pictures larger than this are not taken. */
+export const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+
+/** The most pictures one paste, drop or pick adds. */
+export const MAX_IMAGE_FILES = 20;
 
 /** Picture types the doc can read the size of, and so keeps. */
 export const IMAGE_TYPES: ReadonlySet<string> = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
@@ -16,16 +19,16 @@ export function judgeImageFile(file: { type: string; size: number }): FileVerdic
 }
 
 /** Why some of the files given were left out, or null when every one was taken. */
-export function refusalMessage(verdicts: readonly FileVerdict[]): string | null {
+export function refusalMessage(verdicts: readonly FileVerdict[], overCount = 0): string | null {
   const count = (kind: FileVerdict) => verdicts.filter(verdict => verdict === kind).length;
   const tooLarge = count('tooLarge');
   const notImage = count('notImage');
   const empty = count('empty');
-  if (tooLarge + notImage + empty === 0) return null;
-  if (tooLarge && !notImage && !empty) return tooLarge === 1 ? 'That image is over 25 MB.' : `${tooLarge} images are over 25 MB.`;
+  if (tooLarge + notImage + empty === 0) return overCount ? `Only ${MAX_IMAGE_FILES} images can be added at once. The first ${MAX_IMAGE_FILES} were added.` : null;
+  if (tooLarge && !notImage && !empty) return tooLarge === 1 ? 'That image is over 20 MB.' : `${tooLarge} images are over 20 MB.`;
   if (notImage && !tooLarge && !empty) return notImage === 1 ? 'Only PNG, JPEG, GIF and WebP images can be added.' : `${notImage} files aren’t PNG, JPEG, GIF or WebP images.`;
   if (empty && !tooLarge && !notImage) return 'That file is empty.';
-  return `${tooLarge + notImage + empty} files couldn’t be added. Images can be up to 25 MB.`;
+  return `${tooLarge + notImage + empty} files couldn’t be added. Images can be up to 20 MB.`;
 }
 
 /** The size names of the size menu, and what the doc stores for each. */

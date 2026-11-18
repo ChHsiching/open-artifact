@@ -1,7 +1,7 @@
 /**
  * The controls floating over the stage (or the grid and canvas views): the
  * Add slide / View card at the top-left when the rail does not show it, the
- * Download / Present / properties / zoom card at the top-right, and, while
+ * Present / properties / zoom card at the top-right, and, while
  * a slide is on stage, the insert toolbar at the bottom and the text format
  * strip next to the selected text.
  *

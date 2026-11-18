@@ -82,6 +82,17 @@ test('the agent writes a header, rows and a formula, and reads the result back',
   assert.equal(csvOf(sheetsOf(workbook)[0]!), 'Item,Cost\r\nRent,1200\r\nZip,02139\r\nTotal,1200\r\n');
 });
 
+test('nested totals distinguish aggregate options and ignore the rank argument when checking for nested totals', () => {
+  const sheet = 'Sheet1';
+  const formulas = ['=SUBTOTAL(9,B1:B1)', '=AGGREGATE(9,0,B1:B1)', '=AGGREGATE(9,4,B1:B1)', '=AGGREGATE(14,0,A1:A1,B1)'];
+  const steps = record(record([], [{ kind: 'addSheet', name: sheet }]), [
+    { kind: 'writeCells', sheet, topLeft: 'A1', rows: [[1, '=AGGREGATE(9,4,A1:A1)', ...formulas]] },
+  ]);
+  const cells = read(steps, { kind: 'readCells', sheet, range: 'C1:F1' });
+  const error = { error: '#VALUE!' };
+  assert.deepEqual(cells.rows, { 1: formulas.map((formula, index) => ({ formula, value: [error, error, 1, 1][index] })) });
+});
+
 test('a refusal names the edit and its word', () => {
   const steps = record([], [{ kind: 'addSheet', name: 'Sheet1' }]);
   assert.throws(

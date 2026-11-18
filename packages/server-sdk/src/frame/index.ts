@@ -600,7 +600,7 @@ export class FrameSite implements Site {
         return { threadId: thread.id, commentId: message.id, thread: pageThread(thread) };
       }
       case 'comments.resolve': {
-        const thread = this.comments.setResolved(a.threadId, a.resolved !== false);
+        const thread = this.comments.setResolved(a.threadId, a.resolved !== false, this.author());
         this.commentsChanged();
         return { thread: pageThread(thread) };
       }
@@ -1056,7 +1056,7 @@ export const frameActions: Record<string, ServerAction> = {
     hidden: true,
     run: (artifact, a) => {
       const site = frameOf(artifact);
-      const thread = site.comments.setResolved(a.thread_id, !a.reopen);
+      const thread = site.comments.setResolved(a.thread_id, !a.reopen, { ...AGENT_AUTHOR });
       site.commentsChanged();
       return { thread: agentView(thread) };
     },

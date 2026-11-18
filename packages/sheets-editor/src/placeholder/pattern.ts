@@ -109,7 +109,7 @@ export function drawPlaceholderPattern(element?: Dynamic, previous?: Dynamic) {
           subtree: true,
         })
       : []
-  ).filter((input?: Dynamic) => 'animationName' in input && input.animationName === 'ui-shimmer' && input.playState === 'running');
+  ).filter((input?: Dynamic) => 'animationName' in input && input.animationName === 'ui-skeleton-sheen' && input.playState === 'running');
   if (isFirstDraw) for (let value of shimmers as Dynamic) value.startTime = Number(ownerDocument.timeline.currentTime) - 450;
   let [shimmer] = shimmers;
   shimmer?.ready.then(() => {

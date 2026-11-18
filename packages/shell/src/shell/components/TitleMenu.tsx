@@ -49,8 +49,10 @@ import {
 } from '../actions.ts';
 import { useAgentName, useCanOpenSession, useOwner, useTitle } from '../hooks.ts';
 import { actionLabel, whyText } from '../labels.ts';
-import { hasExportTab, menuActions, switchPool } from '../model.ts';
+import { actionOf, hasExportTab, menuActions, switchPool } from '../model.ts';
 import { useBoot, useShell } from '../store.ts';
+
+import { DocCopyDialog } from './DocCopyDialog.tsx';
 
 /** Icons of the built-in page actions. */
 const ACTION_ICON: Record<string, ReactNode> = {
@@ -155,6 +157,7 @@ export function TitleMenu() {
   const title = useTitle();
   const open = useShell((state) => state.menuOpen);
   const renaming = useShell((state) => state.renaming);
+  const [copying, setCopying] = useState(false);
   const confirming = useShell((state) => state.confirmingDelete);
   const artifact = useShell((state) => state.artifact);
   const report = useShell((state) => state.report);
@@ -162,7 +165,7 @@ export function TitleMenu() {
   const owner = useOwner();
   const canOpen = useCanOpenSession();
   const agent = useAgentName();
-  const pageActions = menuActions(report);
+  const pageActions = menuActions(report).filter(action => boot.type !== 'docs' || (action.id !== 'rename_doc' && action.id !== 'open_page_list'));
   const hasPage = !!boot.page && !boot.empty && !boot.problem;
   const store = useShell.getState();
 
@@ -190,6 +193,21 @@ export function TitleMenu() {
       onConfirm={() => void deleteArtifact()}
     />
   );
+
+  if (boot.typeServer && boot.type === 'docs') return <>
+    <Menu trigger={<button type="button" aria-label={t('artifactOptions')} className="flex min-w-0 items-center gap-1 px-2">
+      <span className="truncate">{title}</span><ChevronDown className="size-3.5" />
+    </button>}>
+      {report.actions?.some(action => action.id === 'rename_doc') &&
+        <MenuItem onSelect={() => runAction('rename_doc')}>{t('rename')}</MenuItem>}
+      {boot.typeServer.role === 'owner' &&
+        <MenuItem disabled={report.leaveLosesWork} onSelect={() => setCopying(true)}>{t('duplicate')}</MenuItem>}
+      <MenuItem onSelect={() => store.openShare('share')}>{t('share')}</MenuItem>
+      {boot.typeServer.role === 'owner' && <MenuItem onSelect={() => store.openShare('export')}>{t('export')}</MenuItem>}
+      <MenuItem onSelect={() => command({ cmd: 'history' })}>{t('versionHistory')}</MenuItem>
+    </Menu>
+    {copying && <DocCopyDialog title={title} close={() => setCopying(false)} />}
+  </>;
 
   if (renaming) return (
     <>
@@ -258,10 +276,10 @@ export function TitleMenu() {
         <MenuItem icon={artifact?.pinned ? <PinOff className="size-3.5" /> : <Pin className="size-3.5" />} onSelect={() => void togglePin()}>
           {artifact?.pinned ? t('unpin') : t('pin')}
         </MenuItem>
-        <MenuItem icon={<Pencil className="size-3.5" />} onSelect={() => store.setRenaming(true)}>
+        <MenuItem icon={<Pencil className="size-3.5" />} disabled={boot.type === 'docs' && !actionOf(report, 'rename_doc')} onSelect={() => boot.type === 'docs' ? runAction('rename_doc') : store.setRenaming(true)}>
           {t('rename')}
         </MenuItem>
-        <MenuItem icon={<Copy className="size-3.5" />} onSelect={() => void duplicate()}>
+        <MenuItem icon={<Copy className="size-3.5" />} disabled={boot.type === 'docs' && report.leaveLosesWork} onSelect={() => boot.type === 'docs' ? setCopying(true) : void duplicate()}>
           {t('duplicate')}
         </MenuItem>
         {report.history ? (
@@ -314,6 +332,7 @@ export function TitleMenu() {
           {t('delete')}
         </MenuItem>
       </Menu>
+      {copying && <DocCopyDialog title={title} close={() => setCopying(false)} />}
       {confirm}
     </>
   );

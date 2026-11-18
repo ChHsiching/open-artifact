@@ -9,6 +9,7 @@
  * Moves write the board on every frame under one coalesced undo step.
  */
 
+import { boardLinkTarget, openBoardLink } from '../elements/links.ts';
 import {
   applyMoveDrag,
   carriedArrowEnds,
@@ -130,7 +131,8 @@ export function openElement(element: BoardElement, node: Element | null): boolea
     }
   }
   if (element.type === 'link') {
-    if (typeof window !== 'undefined') if (/^https?:/i.test(element.href)) window.open(element.href, '_blank', 'noopener,noreferrer');
+    const target = boardLinkTarget(element.href);
+    if (target && typeof window !== 'undefined') openBoardLink(target);
     return true;
   }
   if (!canEditBoard() || isElementLocked(element)) return false;

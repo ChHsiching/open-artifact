@@ -12,7 +12,7 @@
 
 import { Box, ChevronRight, Eye, EyeOff, GitBranch, Hash, Image, LayoutGrid, Repeat, Shapes, StretchHorizontal, StretchVertical, Type } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
-import { boardsOnPage } from '@open-artifact/design-core';
+import { boardsOnPage, groupSelectionUnits, noteGroupIndex, notesOnPage } from '@open-artifact/design-core';
 import { cn } from '@open-artifact/ui';
 import { useDocument } from '../state/document.ts';
 import { useView, type ElementSelection } from '../state/view.ts';
@@ -379,6 +379,11 @@ export function Outline() {
   const page = useView((s) => s.page);
   const selection = useView((s) => s.selection);
   const boards = useMemo(() => boardsOnPage(canvas, page), [canvas, page]);
+  const units = useMemo(() => {
+    const ids = notesOnPage(canvas, page);
+    const items = ids.map(id => ({ id, groups: canvas.notes[id]!.groups }));
+    return groupSelectionUnits(noteGroupIndex(items), items, new Set(ids));
+  }, [canvas, page]);
   const [flipped, setFlipped] = useState<Set<string>>(() => new Set());
   const scroller = useRef<HTMLDivElement>(null);
 
@@ -418,13 +423,35 @@ export function Outline() {
       return next;
     });
 
+  const selectedNotes = selection.kind === 'objects' ? selection.notes : [];
+  const selectNotes = (ids: string[], additive: boolean) => {
+    const notes = new Set(additive ? selectedNotes : []);
+    const remove = additive && ids.every(id => notes.has(id));
+    for (const id of ids) { if (remove) notes.delete(id); else notes.add(id); }
+    useView.getState().select({ kind: 'objects', boards: additive && selection.kind === 'objects' ? selection.boards : [], notes: [...notes] });
+  };
+  const noteRow = (id: string, level: number) => {
+    const note = canvas.notes[id]!;
+    const name = note.title || note.text?.split('\n')[0] || note.alt || note.href || note.kind || 'Sticky';
+    const glyph = note.kind === 'image' ? 'image' : !note.kind || ['link', 'title1', 'sticky'].includes(note.kind) ? 'text' : 'shape';
+    return <TreeRow key={id} level={level} name={name} glyph={glyph} selected={selectedNotes.includes(id)}
+      hovered={false} open={false} hasChildren={false} onHover={() => {}} onToggle={() => {}} onSelect={add => selectNotes([id], add)} />;
+  };
+
   return (
     <div ref={scroller} role="tree" aria-label="Layers" className="h-full overflow-y-auto px-1.5 py-1.5" onMouseLeave={() => useView.getState().setHover(null)}>
-      {boards.length ? (
-        boards.map((path) => <BoardTree key={path} path={path} flipped={flipped} flip={flip} unflip={unflip} autoOpen={boards.length === 1 || path === activeBoard} />)
-      ) : (
-        <div className="px-2 py-1 text-[12px] text-chrome-muted">No elements yet</div>
-      )}
+      {boards.map(path => <BoardTree key={path} path={path} flipped={flipped} flip={flip} unflip={unflip} autoOpen={boards.length === 1 || path === activeBoard} />)}
+      {units.map(({ group, ids }) => {
+        if (!group) return noteRow(ids[0]!, 0);
+        const key = 'g:' + group;
+        const open = flipped.has(key);
+        return <div key={key} role="group">
+          <TreeRow level={0} name="Group" detail={String(ids.length)} glyph="frame" selected={ids.every(id => selectedNotes.includes(id))}
+            hovered={false} open={open} hasChildren onHover={() => {}} onToggle={() => flip(key)} onSelect={add => selectNotes(ids, add)} />
+          {open && ids.map(id => noteRow(id, 1))}
+        </div>;
+      })}
+      {!boards.length && !units.length ? <div className="px-2 py-1 text-[12px] text-chrome-muted">No elements yet</div> : null}
     </div>
   );
 }

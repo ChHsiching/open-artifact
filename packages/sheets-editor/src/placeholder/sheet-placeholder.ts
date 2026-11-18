@@ -15,7 +15,7 @@ import { zoomPercent } from '../grid/zoom.ts';
 import { versionHistoryMessages } from '../history/version-text.ts';
 import { PlaceholderPattern } from './pattern.ts';
 import { preventMouseDownDefault } from '../ui/dom-events.ts';
-import { renderInCompactRoot } from '../shell/ui-root.ts';
+import { renderInPlaceholderRoot } from '../shell/ui-root.ts';
 import { readStoredDensity } from '../app/density-preference.ts';
 import { afterNextFrameOrTimeout } from '../utils/next-frame.ts';
 import { COLUMN_HEADER_HEIGHT } from '../grid/cell-metrics.ts';
@@ -214,7 +214,7 @@ export function createSheetPlaceholder(mount?: Dynamic, onError?: Dynamic, atEnd
       let shownRoot = root;
       let render = () =>
         shownRoot.render(
-          renderInCompactRoot(
+          renderInPlaceholderRoot(
             jsx(SheetPlaceholder, {
               density: readStoredDensity(),
               zoom: getZoom(),

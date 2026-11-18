@@ -1,14 +1,11 @@
 /**
  * Downloads of the whole board: a PNG picture and the board file (JSON).
  *
- * The board pill's download button and the Shell's Export tab both end
- * here. Files are saved through the host's `downloads` capability when it
- * has one, else with a plain browser download. In a Shell, the export
- * formats are reported (disabled while the board is empty) and
- * `export_format` requests are answered with their progress.
+ * The Shell's Share panel lists these formats in its Export tab. The board
+ * reports availability and progress, and saves the requested file through
+ * the host's downloads capability or a browser download.
  */
 
-import { toast } from '@open-artifact/ui';
 import { saveFile as saveKit } from '@open-artifact/editor-kit';
 import type { ColorScheme } from '@open-artifact/whiteboard-core';
 import { boardPngFilename } from '../export/frame.ts';
@@ -94,14 +91,6 @@ export async function renderBoardPng(options: RenderBoardPngOptions = {}): Promi
   }
 }
 
-/** Where a saved file went: the host's downloads, or a browser download. */
-type SavedTo = 'host' | 'browser';
-
-/** Saves a file through the host, else as a browser download. */
-async function saveFile(name: string, data: Blob): Promise<SavedTo> {
-  return (await saveKit(maybeSession()?.downloads, name, data, OBJECT_URL_LIFETIME_MS)).to;
-}
-
 /** Builds a format's file: its name and bytes; `undefined` for an empty board. */
 async function produce(format: ExportFormat): Promise<{ name: string; data: Blob } | undefined> {
   const { board } = useBoard.getState();
@@ -112,39 +101,6 @@ async function produce(format: ExportFormat): Promise<{ name: string; data: Blob
   }
   const { name, data } = await exportBoardFile({ board, measures: currentMeasures() });
   return { name, data };
-}
-
-/** Exports and saves a format, toasting the outcome. */
-async function download(format: ExportFormat, browserMessage: string): Promise<void> {
-  if (boardIsEmpty()) {
-    toast.add({ title: 'Download needs something on the board first' });
-    return;
-  }
-  if (busy) return;
-  busy = true;
-  try {
-    const file = await produce(format);
-    if (!file) {
-      toast.add({ title: 'Download needs something on the board first' });
-      return;
-    }
-    const savedTo = await saveFile(file.name, file.data);
-    toast.add({ title: savedTo === 'host' ? `Saved ${file.name}` : browserMessage });
-  } catch {
-    toast.add({ title: 'Download failed. Try again.', type: 'error' });
-  } finally {
-    busy = false;
-  }
-}
-
-/** Downloads the whole board as a PNG picture. */
-export function downloadBoardPng(): Promise<void> {
-  return download('png', 'Downloaded the whole board as a PNG.');
-}
-
-/** Downloads the board file (JSON with a preview and embedded pictures). */
-export function downloadBoardFile(): Promise<void> {
-  return download('json', 'Downloaded the board file.');
 }
 
 /** Runs a Shell `export_format` request, reporting each step back to the Shell. */
@@ -168,7 +124,7 @@ async function runShellExport(request: string, format: string, variant: string |
       shell.exportState(request, 'declined', 'The board is empty.');
       return;
     }
-    await saveFile(file.name, file.data);
+    await saveKit(maybeSession()?.downloads, file.name, file.data, OBJECT_URL_LIFETIME_MS);
     shell.exportState(request, 'done');
   } catch (error) {
     shell.exportState(request, 'failed', error instanceof Error ? error.message : String(error));

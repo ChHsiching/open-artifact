@@ -103,13 +103,13 @@ let cachedSheet: { width: number; css: string } | undefined;
 /** The stylesheet at 16:9 (see {@link slideStylesheet}). */
 const SLIDE_STYLESHEET_BASE = `
 .${SLIDE_CLASS}{position:relative;width:1920px;height:${SLIDE_HEIGHT}px;overflow:hidden;box-sizing:border-box;
-  font-family:${DEFAULT_FONT_STACK};font-size:calc(32px * var(--open-artifact-fit, 1));line-height:1.4;font-weight:400;color:#000;background:#fff;
+  font-family:${DEFAULT_FONT_STACK};font-size:calc(32px * var(--open-artifact-fit, 1));line-height:1.2;font-weight:400;color:#000;background:#fff;
   -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;contain:layout paint;isolation:isolate;text-align:left;flex:none}
 .${SLIDE_CLASS} *,.${SLIDE_CLASS} *::before,.${SLIDE_CLASS} *::after{box-sizing:border-box}
 .${SLIDE_CLASS} .open-artifact-flow{position:absolute;inset:0;display:flex;flex-direction:column;min-width:0;min-height:0}
 .${SLIDE_CLASS} h1,.${SLIDE_CLASS} h2,.${SLIDE_CLASS} h3,.${SLIDE_CLASS} p,.${SLIDE_CLASS} ul,.${SLIDE_CLASS} ol{margin:0;min-width:0;min-height:0;overflow-wrap:break-word}
 .${SLIDE_CLASS} h1{font-size:calc(96px * var(--open-artifact-fit, 1));font-weight:600;line-height:1.1}
-.${SLIDE_CLASS} h2{font-size:calc(64px * var(--open-artifact-fit, 1));font-weight:600;line-height:1.15}
+.${SLIDE_CLASS} h2{font-size:calc(64px * var(--open-artifact-fit, 1));font-weight:600;line-height:1.2}
 .${SLIDE_CLASS} h3{font-size:calc(44px * var(--open-artifact-fit, 1));font-weight:600;line-height:1.2}
 .${SLIDE_CLASS} ul,.${SLIDE_CLASS} ol{padding-left:1.25em}
 .${SLIDE_CLASS} ul{list-style:disc}

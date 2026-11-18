@@ -12,6 +12,8 @@
  *   entered (Enter, or a double click), like a single element.
  */
 
+import { maybeSession } from './session.ts';
+import { slideHash } from './location.ts';
 import {
   addSectionAtGap,
   addSectionAtSlide,
@@ -377,23 +379,9 @@ export function stepSlide(delta: number): void {
   if (next && next !== view.current) view.showSlide(next);
 }
 
-/** The shareable link of a slide (`#slide-N`, 1-based). */
-export function slideLink(id: string): string {
-  const n = order().indexOf(id) + 1;
-  const url = new URL(location.href);
-  url.hash = `slide-${n}`;
-  return url.href;
-}
-
 /** Copies a slide's link. */
-export async function copySlideLink(id: string = useView.getState().current ?? ''): Promise<void> {
-  if (!id) return;
-  try {
-    await navigator.clipboard.writeText(slideLink(id));
-    toast.add({ title: 'Link copied' });
-  } catch {
-    toast.add({ title: 'Could not copy the link', description: slideLink(id) });
-  }
+export function copySlideLink(id: string = useView.getState().current ?? ''): void {
+  if (id) maybeSession()?.shell?.copySlideLink(slideHash(id));
 }
 
 /* -------------------------------------------------------------------------- */

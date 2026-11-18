@@ -5,7 +5,7 @@ import { shortcutKeysFor } from '../../keys/shortcut-list.ts';
 import { sheetMessages } from '../../i18n/sheet-messages.ts';
 import { versionHistoryMessages } from '../../history/version-text.ts';
 import { functionListLabel } from '../../messages/formula-autocomplete.ts';
-import { FILE_UPLOAD_ICON } from '../../import/file-sources.ts';
+import { FILE_UPLOAD_ICON, IMPORT_FILE_SOURCES, type ImportFileSource } from '../../import/file-sources.ts';
 import { importFileChoices } from '../../import/csv-file.ts';
 import { shortcutFor } from '../../keys/key-press.ts';
 import { copiedSheetNameAffixes } from '../../i18n/sheet-names.ts';
@@ -82,6 +82,16 @@ export function sheetSearchCommands(state?: Dynamic, actions?: Dynamic) {
       run: actions.onAllFunctionsAsked,
     },
     ...allSheetsCommands,
+    ...((state.filesForAgent ?? []) as readonly ImportFileSource[]).map((source) => ({
+      id: `sheet.add.${source}`,
+      label: addSheetCommandLabel(IMPORT_FILE_SOURCES[source].name()),
+      otherWords: sheetCommandSynonyms('addFromFile'),
+      icon: IMPORT_FILE_SOURCES[source].mark,
+      actsOn: 'handsOver',
+      isWeighty: true,
+      whyNot: null,
+      run: () => actions.onFileForAgentChosen(source),
+    })),
     ...importFileChoices.map(
       (input?: Dynamic, options?: Dynamic) => ({
         id: options === 0 ? 'sheet.add.importCsv' : `sheet.add.import${options}`,

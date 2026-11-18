@@ -4,6 +4,7 @@
  * fold into one "{n} edits by <who>" row. Rows are then sectioned by day.
  */
 import type { DocVersion } from '@open-artifact/runtime/doc-api';
+import { nameOfPerson } from '../app/people.ts';
 
 export type RowKind = 'current' | 'single' | 'restore' | 'group';
 
@@ -80,7 +81,9 @@ export function whoOf(version: DocVersion, me: Person | null): string {
   if (version.by === 'agent') return 'Agent';
   if (version.by === 'system') return 'auto-save';
   if (!version.user) return 'Someone';
-  return me && me.id === version.user ? me.name : version.user;
+  if (me && me.id === version.user) return me.name;
+  // An id that is an address still says who; an opaque one (a guest's) doesn't.
+  return version.name || nameOfPerson(version.user) || (version.user.includes('@') ? version.user : 'Someone');
 }
 
 export const editsLabel = (count: number, who: string) => `${count} ${count === 1 ? 'edit' : 'edits'} by ${who}`;

@@ -18,7 +18,7 @@
 import { useEffect, useRef, type CSSProperties, type ReactNode } from 'react';
 import { COMMENT_CURSOR } from '@open-artifact/editor-kit/react';
 import { startEngineBoard } from '../engine/board.ts';
-import { engineOwnsPress, engineRequested, useEngineView } from '../engine/mode.ts';
+import { engineOwnsPress, useEngineView } from '../engine/mode.ts';
 import { cameraLayerTransform } from '../lib/camera.ts';
 import { useCamera } from '../state/camera.ts';
 import { effectiveTool, useTool } from '../state/tool.ts';
@@ -57,7 +57,7 @@ export function BoardSurface({ elements, live, children, overlay }: BoardSurface
   // The canvas engine (unless `?open_artifact_engine=off`; the DOM draws the board when it cannot start).
   useEffect(() => {
     const element = surface.current;
-    if (!engineRequested() || !element || !canvas.current || !liveLayer.current) return;
+    if (!engine || !element || !canvas.current || !liveLayer.current) return;
     const abort = new AbortController();
     let stop: (() => void) | undefined;
     void startEngineBoard({ surface: element, canvas: canvas.current, live: liveLayer.current }, abort.signal).then((board) => {
@@ -67,7 +67,7 @@ export function BoardSurface({ elements, live, children, overlay }: BoardSurface
       abort.abort();
       stop?.();
     };
-  }, []);
+  }, [engine]);
 
   // Size and pointer coarseness.
   useEffect(() => {

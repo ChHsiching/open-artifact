@@ -3,6 +3,7 @@
  * store, so it runs under `node --test`.
  */
 
+import { SLIDE_FRAGMENT } from '@open-artifact/protocol';
 import {
   SHELL_PARAMS,
   type ArtifactView,
@@ -92,12 +93,27 @@ export function switchPool(library: ArtifactView[], owner: Owner | null | undefi
   return { inSession, list: [...pool].sort((a, b) => changedAt(b) - changedAt(a)) };
 }
 
+/** The shareable page of a Design canvas. Keep only its page id from the fragment. */
+export function designPageFragment(fragment: string): string {
+  const page = new URLSearchParams(fragment.replace(/^#/, '')).get('page');
+  return page ? '#' + new URLSearchParams({ page }).toString() : '';
+}
+
+/** The page parameter is shared with Design. Old Sheet links used #sheet- followed by the sheet ID. */
+export function sheetPageFragment(fragment: string): string {
+  if (fragment.startsWith('#sheet-') && !fragment.includes('=')) {
+    const id = fragment.slice(6);
+    return id ? '#' + new URLSearchParams({ page: id }).toString() : '';
+  }
+  return designPageFragment(fragment);
+}
+
 /**
  * The page's address in the frame: the boot's page with `open_artifact_shell`, `open_artifact_id`
  * and the `comment` thread taken from the Shell's own address. `null` when
  * there is no page.
  */
-export function pageAddress(boot: Pick<ShellBoot, 'page' | 'id'>, shellHref: string): string | null {
+export function pageAddress(boot: Pick<ShellBoot, 'page' | 'id'> & Partial<Pick<ShellBoot, 'type' | 'typeServer'>>, shellHref: string): string | null {
   if (!boot.page) return null;
   const shell = new URL(shellHref);
   const thread = shell.searchParams.get(SHELL_PARAMS.comment);
@@ -105,6 +121,22 @@ export function pageAddress(boot: Pick<ShellBoot, 'page' | 'id'>, shellHref: str
     const at = new URL(boot.page, shell.href);
     at.searchParams.set(SHELL_PARAMS.shell, shell.origin);
     at.searchParams.set(SHELL_PARAMS.id, boot.id);
+    if (boot.type === 'slides' && SLIDE_FRAGMENT.test(shell.hash)) at.hash = shell.hash;
+    if (boot.type === 'docs') {
+      at.searchParams.set('doc_link_base', boot.typeServer?.invite || shell.origin + shell.pathname);
+      const tab = shell.searchParams.get('tab');
+      if (tab) at.searchParams.set('tab', tab);
+      at.hash = shell.hash;
+    }
+    if (boot.type === 'sheets') at.hash = sheetPageFragment(shell.hash);
+    if (boot.type === 'design') {
+      const hash = designPageFragment(shell.hash);
+      if (hash) at.hash = hash;
+    }
+    if (boot.type === 'design' || boot.type === 'slides') {
+      if (shell.searchParams.get('open_artifact_engine') === 'off') at.searchParams.set('open_artifact_engine', 'off');
+      if (shell.searchParams.get('open_artifact_live') === 'all') at.searchParams.set('open_artifact_live', 'all');
+    }
     if (thread) at.searchParams.set(SHELL_PARAMS.comment, thread);
     return at.href;
   } catch {
@@ -262,6 +294,7 @@ function whyOf(value: unknown): ChromeWhy | undefined {
 export function normalizeReport(raw: unknown): ChromeReport {
   if (!isRecord(raw)) return {};
   const out: ChromeReport = {};
+  if (typeof raw.title === 'string') out.title = raw.title.trim().slice(0, 256);
   for (const key of ['comments', 'agent'] as const) if (isRecord(raw[key])) (out as Record<string, unknown>)[key] = raw[key];
   for (const key of ['history', 'share', 'shareOn', 'exports', 'leaveLosesWork', 'hasContent'] as const) {
     if (typeof raw[key] === 'boolean') out[key] = raw[key];

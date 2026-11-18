@@ -39,7 +39,9 @@ function naturalHeight(el: HTMLElement, scale: number): number {
     maxHeight: el.style.maxHeight,
   };
   Object.assign(el.style, { flexGrow: '0', flexShrink: '0', flexBasis: 'auto', height: 'auto', minHeight: '0', maxHeight: 'none' });
-  const height = el.scrollHeight;
+  // Measure the unconstrained line boxes. scrollHeight includes glyph ink
+  // outside a tight line-height and would shrink a heading that already fits.
+  const height = el.clientHeight;
   Object.assign(el.style, saved);
   return height;
 }

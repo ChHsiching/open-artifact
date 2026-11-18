@@ -81,7 +81,7 @@ export interface LibraryApi {
   /** `POST artifacts.update`: rename or pin. */
   update(request: UpdateArtifactRequest): Promise<ArtifactView>;
   /** `POST artifacts.duplicate`: the copy. */
-  duplicate(id: string): Promise<ArtifactView>;
+  duplicate(id: string, name?: string): Promise<ArtifactView>;
   /** `POST artifacts.delete`: drops the record, keeps the folder. */
   remove(id: string): Promise<DeleteResult>;
   /** `POST artifacts.restore`: brings back a record just deleted. */
@@ -157,7 +157,7 @@ export function createLibraryApi(options: LibraryApiOptions = {}): LibraryApi {
     setShare: (request) => call<ShareView>(LIBRARY_ROUTES.share, { body: request }),
     create: (request) => call<ArtifactView>(LIBRARY_ROUTES.create, { body: request }),
     update: (request) => call<ArtifactView>(LIBRARY_ROUTES.update, { body: request }),
-    duplicate: (id) => call<ArtifactView>(LIBRARY_ROUTES.duplicate, { body: { id } }),
+    duplicate: (id, name) => call<ArtifactView>(LIBRARY_ROUTES.duplicate, { body: { id, ...(name && { name }) } }),
     remove: (id) => call<DeleteResult>(LIBRARY_ROUTES.delete, { body: { id } }),
     restore: (id) => call<ArtifactView>(LIBRARY_ROUTES.restore, { body: { id } }),
     ask: (request) => call<AskResult>(LIBRARY_ROUTES.ask, { body: request }),

@@ -36,6 +36,8 @@ const urls = () => ({ runtime: new URL('support.js', location.href).toString(), 
 export function BoardFrame({ path, mode, width, height, interactive, onNavigate, hideUntilBooted = false }: BoardFrameProps) {
   const ref = useRef<HTMLIFrameElement>(null);
   const sent = useRef<string | null>(null);
+  const liveMode = useRef(mode);
+  liveMode.current = mode;
   const navigate = useRef(onNavigate);
   navigate.current = onNavigate;
   const source = useDocument((s) => s.boards[path]?.source ?? null);
@@ -54,6 +56,8 @@ export function BoardFrame({ path, mode, width, height, interactive, onNavigate,
       if (textEditEvent(path, event)) return;
       switch (event.type) {
         case 'booted': {
+          boardApi(path)?.setMode(liveMode.current);
+          iframe.contentDocument?.documentElement.toggleAttribute('data-dc-canvas', liveMode.current === 'edit');
           v.frame(path, { booted: true, size: event.size, errors: boardApi(path)?.errors() ?? [] });
           // Catch up with edits made while the frame was loading.
           const latest = useDocument.getState().boards[path]?.source;

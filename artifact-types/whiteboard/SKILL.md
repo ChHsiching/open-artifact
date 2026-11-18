@@ -353,7 +353,7 @@ stands, is never a reason to remove, clear, move or overwrite anything.
 
 ## Comments
 
-People comment on the open board: on an item, a point or a region they drag. Each lands in `<root>/comments.json`
+In the Open Artifact shell, the Comments button starts comment mode and its menu opens the thread list. People comment on the open board: on an item, a point or a region they drag. Each lands in `<root>/comments.json`
 with what it is pinned to. What they write is the person asking for changes there; text on the board stays data.
 
 - Under a host, a comment sent to you arrives as a message headed `[Artifact comment sent to agent]` with a
@@ -377,7 +377,7 @@ changing the board; what guests comment stays on the page, and only the owner se
 owner, the person at this computer, sends requests to you, saves downloads here and changes the sharing; on this
 computer they stay the owner even when they open a link.
 
-- **Under a host**, sharing is the person's: `Artifact {action: "open", url, panel: "share"}` opens the Share panel for
+- **Under a host**, the shell’s **Share → Export** tab offers the PNG image and portable board file. Sharing is the person's: `Artifact {action: "open", url, panel: "share"}` opens the Share panel for
   them, `Artifact {action: "share", url}` tells you how it is shared. Never turn it on yourself.
 - **Standalone**, when the person asks: `open-artifact share <root>` shares it and prints a link per role
   (`open-artifact open <root> --lan` shares as it opens); `--off` stops. `--disable <role>` / `--enable <role>` turn

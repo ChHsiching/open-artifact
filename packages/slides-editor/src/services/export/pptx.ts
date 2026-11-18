@@ -35,7 +35,7 @@ import {
   type FontChoice,
   type Rect,
 } from './css.ts';
-import { collectFontUses, embedDeckFonts, fontNoticeText, networkFetchers, noteFontEmbedding, type EmbeddedFont } from './font-embedding.ts';
+import { setEastAsianFonts, collectFontUses, embedDeckFonts, fontNoticeText, networkFetchers, noteFontEmbedding, type EmbeddedFont } from './font-embedding.ts';
 import { breathe, hasBuilds, type ExportJob, type ExportSlide } from './job.ts';
 import {
   writePptx,
@@ -66,10 +66,8 @@ const NUMBER_SCHEMES: Record<string, string> = {
 };
 
 /**
- * Fonts of a PPTX export. `current`: the deck's typefaces by name; `basic`:
- * Arial, Georgia or Courier New; `embed`: the deck's typefaces by name, with
- * the Google Fonts (and uploaded TrueType fonts) whose licenses allow it
- * embedded in the file.
+ * Current fonts include embeddable faces. The older embed request is an alias.
+ * Basic fonts use Arial, Georgia or Courier New.
  */
 export type PptxFonts = FontChoice | 'embed';
 
@@ -912,7 +910,6 @@ export async function exportPptx(job: ExportJob, options: PptxOptions): Promise<
   const media = new MediaStore();
   const slides: PptxSlide[] = [];
   let transition: PptxSlide['transition'];
-  if (options.fonts === 'current') job.notes.add('fontsNotEmbedded');
   const choice: FontChoice = options.fonts === 'basic' ? 'basic' : 'current';
   for (const [index, entry] of job.slides.entries()) {
     job.begin(entry.number);
@@ -936,7 +933,7 @@ export async function exportPptx(job: ExportJob, options: PptxOptions): Promise<
   if (slides.length === 0) throw new Error('There are no slides to export.');
   let fonts: EmbeddedFont[] | undefined;
   let description: string | undefined;
-  if (options.fonts === 'embed') {
+  if (options.fonts !== 'basic') {
     const embedding = await embedDeckFonts(collectFontUses(slides), Object.values(job.capture.faces), {
       ...networkFetchers,
       readFile: async (src) => {
@@ -948,6 +945,7 @@ export async function exportPptx(job: ExportJob, options: PptxOptions): Promise<
     fonts = embedding.fonts;
     description = fontNoticeText(embedding);
   }
+  setEastAsianFonts(slides, fonts ?? []);
   const bytes = await writePptx({ title: job.title, slides, media: media.items, created: new Date(), width: SLIDE_WIDTH, height: SLIDE_HEIGHT, fonts, description });
   return new Blob([bytes as BlobPart], { type: PPTX_TYPE });
 }

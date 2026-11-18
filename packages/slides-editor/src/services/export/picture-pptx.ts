@@ -32,7 +32,7 @@ export async function exportPicturePptx(job: ExportJob): Promise<Blob> {
   let transition: PptxSlide['transition'];
   for (const [index, entry] of job.slides.entries()) {
     job.begin(entry.number);
-    noteStills(job, entry, 'embedPdf');
+    noteStills(job, entry);
     if (hasBuilds(entry.slide)) job.notes.add('builds', entry.number);
     const mounted = await mountSlide(entry.slide, job.capture);
     try {

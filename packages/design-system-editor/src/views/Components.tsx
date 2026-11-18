@@ -15,7 +15,7 @@ import { anchorId, useView } from '../state/view.ts';
 import { EditableMarkdown } from '../components/Markdown.tsx';
 import { LivePropsFrame, PreviewFrame } from '../components/PreviewFrame.tsx';
 import { editText } from '../services/edit.ts';
-import { PageHeader, useAnchor, useFocusProps } from './common.tsx';
+import { PageHeader, useFocusProps } from './common.tsx';
 import { maybeSession } from '../services/session.ts';
 
 /** The component's declared props (from its .d.ts or index.d.ts). */
@@ -217,7 +217,7 @@ function ComponentCard({ component, readOnly }: { component: ComponentInfo; read
             from={readmePath}
             readOnly={readOnly}
             placeholder="No README. Double-click to write when and how to use it."
-            onCommit={(text) => editText(readmePath, text)}
+            onCommit={(text) => editText(readmePath, text, readmePath)}
           />
         ) : (
           <PropsTable name={component.name} />
@@ -228,9 +228,9 @@ function ComponentCard({ component, readOnly }: { component: ComponentInfo; read
 }
 
 export function Components() {
-  const { components, index, files } = useModel();
+  const { components, index, files, tokens } = useModel();
+  const theme = useView((s) => s.theme);
   const readOnly = useFiles((s) => s.readOnly);
-  useAnchor();
   const groups = useMemo(() => {
     const out = new Map<string, ComponentInfo[]>();
     for (const component of components) {
@@ -244,6 +244,14 @@ export function Components() {
     <div>
       <PageHeader
         title="Components"
+        actions={tokens.themes.length > 1 && components.length ? (
+          <label className="flex items-center gap-2 text-sm">Preview theme
+            <select aria-label="Component preview theme" value={tokens.themes.find((t) => t.id === theme)?.id ?? tokens.themes[0]!.id}
+              onChange={(event) => useView.getState().setTheme(event.target.value)} className="rounded border border-line bg-surface px-2 py-1">
+              {tokens.themes.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+          </label>
+        ) : null}
         description={
           files.has('components/bundle.js') ? (
             <>

@@ -12,7 +12,7 @@
 export type Inline =
   | { kind: 'text'; text: string }
   | { kind: 'strong'; children: Inline[] }
-  | { kind: 'em'; children: Inline[] }
+  | { kind: 'em' | 'strike'; children: Inline[] }
   | { kind: 'code'; text: string }
   | { kind: 'link'; href: string; children: Inline[] }
   | { kind: 'image'; src: string; alt: string };
@@ -21,7 +21,7 @@ export type Inline =
 export type Block =
   | { kind: 'heading'; level: number; children: Inline[] }
   | { kind: 'paragraph'; children: Inline[] }
-  | { kind: 'list'; ordered: boolean; items: { children: Inline[]; sub?: Block }[] }
+  | { kind: 'list'; ordered: boolean; items: { children: Inline[]; checked?: boolean; sub?: Block }[] }
   | { kind: 'quote'; blocks: Block[] }
   | { kind: 'code'; lang: string; text: string }
   | { kind: 'table'; head: Inline[][]; rows: Inline[][][]; align: ('left' | 'center' | 'right' | null)[] }
@@ -62,10 +62,10 @@ export function parseInline(text: string): Inline[] {
       continue;
     }
     // Bold, then italic.
-    const strong = /^(\*\*|__)(?=\S)([\s\S]*?\S)\1/.exec(rest);
+    const strong = /^(\*\*|__|~~)(?=\S)([\s\S]*?\S)\1/.exec(rest);
     if (strong) {
       flush();
-      out.push({ kind: 'strong', children: parseInline(strong[2]!) });
+      out.push({ kind: strong[1] === '~~' ? 'strike' : 'strong', children: parseInline(strong[2]!) });
       i += strong[0].length;
       continue;
     }
@@ -115,8 +115,8 @@ const LIST_ITEM = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/;
 const itemIndent = (line: string): number => LIST_ITEM.exec(line)?.[1]!.length ?? -1;
 
 /** Parses block Markdown. */
-export function parseMarkdown(source: string): Block[] {
-  const lines = source.replace(/\r\n?/g, '\n').replace(/<!--[\s\S]*?-->/g, '').split('\n');
+export function parseMarkdown(source: string, starts?: number[]): Block[] {
+  const lines = source.replace(/\r\n?/g, '\n').replace(/<!--[\s\S]*?-->/g, (comment) => comment.replace(/[^\n]/g, '')).split('\n');
   const blocks: Block[] = [];
   let i = 0;
   while (i < lines.length) {
@@ -125,6 +125,7 @@ export function parseMarkdown(source: string): Block[] {
       i++;
       continue;
     }
+    starts?.push(i);
     // Fenced code.
     const fence = /^\s*(```+|~~~+)\s*([\w+-]*)/.exec(line);
     if (fence) {
@@ -168,7 +169,7 @@ export function parseMarkdown(source: string): Block[] {
     if (item) {
       const ordered = /\d/.test(item[2]!);
       const indent = item[1]!.length;
-      const items: { children: Inline[]; sub?: Block }[] = [];
+      const items: { children: Inline[]; checked?: boolean; sub?: Block }[] = [];
       while (i < lines.length) {
         const current = LIST_ITEM.exec(lines[i]!);
         if (current && current[1]!.length <= indent) {
@@ -182,7 +183,9 @@ export function parseMarkdown(source: string): Block[] {
             i++;
           }
           const sub = nested.length ? parseMarkdown(nested.map((l) => l.slice(Math.min(l.search(/\S/), indent + 2))).join('\n'))[0] : undefined;
-          items.push({ children: parseInline(text.join(' ')), ...(sub ? { sub } : {}) });
+          const value = text.join(' ');
+          const task = /^\[([ xX])\]\s+/.exec(value);
+          items.push({ children: parseInline(task ? value.slice(task[0].length) : value), ...(task ? { checked: task[1] !== ' ' } : {}), ...(sub ? { sub } : {}) });
           continue;
         }
         if (!lines[i]!.trim() && i + 1 < lines.length && itemIndent(lines[i + 1]!) === indent) {

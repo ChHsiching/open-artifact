@@ -13,11 +13,11 @@ import { Button, CommitInput, Dialog, FontPicker, IconButton, TextInput, type De
 import { useModel } from '../state/model.ts';
 import { anchorId, useView } from '../state/view.ts';
 import { projectUrl } from '../lib/color.ts';
-import { addTypeGroup, addTypeStyle, ensureFamily, firstFamily, removeFontFile, removeTypeGroup, removeTypeStyle, setFamilyStack, updateTypeGroup } from '../lib/type-edit.ts';
+import { addTypeGroup, addTypeStyle, addFontFiles, ensureFamily, guessFontFace, firstFamily, removeFontFile, removeTypeGroup, removeTypeStyle, setFamilyStack, updateTypeGroup } from '../lib/type-edit.ts';
 import { editTokens, uploadFonts } from '../services/edit.ts';
 import { linkStylesheet } from '../services/fonts.ts';
 import { CommentBadge } from '../components/Comments.tsx';
-import { InlineText, PageHeader, TokenNotes, useAnchor, useEditable, useFocusProps } from './common.tsx';
+import { InlineText, PageHeader, TokenNotes, useEditable, useFocusProps } from './common.tsx';
 
 /** The `@font-face` rules of the system, with URLs into the project, for this page's samples. */
 function FontFaces({ tokens }: { tokens: NormalizedTokens }) {
@@ -38,9 +38,9 @@ function sampleStyle(style: NormalizedStyle, families: Record<string, string>): 
   return {
     fontFamily: family ?? undefined,
     fontSize: style.fontSize,
-    lineHeight: style.lineHeight,
-    fontWeight: style.fontWeight as CSSProperties['fontWeight'],
-    letterSpacing: style.letterSpacing,
+    lineHeight: style.lineHeight ?? '1.4',
+    fontWeight: (style.fontWeight ?? '400') as CSSProperties['fontWeight'],
+    letterSpacing: style.letterSpacing ?? '0',
     fontStyle: style.fontStyle,
     textTransform: style.textTransform as CSSProperties['textTransform'],
     fontVariationSettings: style.opticalSize !== undefined ? `'opsz' ${style.opticalSize}` : undefined,
@@ -231,7 +231,7 @@ function UploadFont() {
         ref={input}
         type="file"
         multiple
-        accept=".woff2,.woff,.ttf,.otf,font/woff2,font/woff,font/ttf,font/otf"
+        accept=".woff2,.woff,.ttf,.otf,.ttc,font/woff2,font/woff,font/ttf,font/otf"
         className="hidden"
         onChange={(event) => {
           const files = [...(event.target.files ?? [])];
@@ -294,10 +294,12 @@ function GroupHeader({ group, editable }: { group: NormalizedTokens['groups'][nu
 }
 
 export function Typography() {
-  const { tokens } = useModel();
+  const { tokens, files, index } = useModel();
+  const paths = new Set([...files.keys(), ...Object.values(index.blobs).flatMap((record) =>
+    typeof (record as { name?: unknown } | null)?.name === 'string' ? [(record as { name: string }).name] : [])]);
+  const stray = [...paths].filter((path) => /^fonts\/.+\.(?:woff2?|otf|ttf|ttc)$/i.test(path) && !tokens.fonts.some((font) => font.file === path));
   const editable = useEditable();
   const systemFonts = useSystemFonts();
-  useAnchor();
   const count = tokens.groups.reduce((n, group) => n + group.styles.length, 0);
   return (
     <div>
@@ -364,7 +366,7 @@ export function Typography() {
         </section>
       ) : null}
 
-      {tokens.fonts.length ? (
+      {tokens.fonts.length || stray.length ? (
         <section className="mt-10">
           <h2 className="mb-3 text-[16px] font-semibold text-fg">Font files</h2>
           <table className="w-full text-[12px]">
@@ -385,7 +387,7 @@ export function Typography() {
                   </td>
                   <td className="py-1.5 font-mono text-fg-muted">{font.weight}</td>
                   <td className="py-1.5 text-fg-muted">{font.style}</td>
-                  <td className="py-1.5 font-mono text-fg-muted">{font.file}</td>
+                  <td className="py-1.5 font-mono text-fg-muted">{font.file}{paths.has(font.file) ? '' : ' · Missing'}</td>
                   <td>
                     {editable ? (
                       <IconButton
@@ -396,6 +398,13 @@ export function Typography() {
                         onClick={() => editTokens((raw) => removeFontFile(raw, font.file))}
                       />
                     ) : null}
+                  </td>
+                </tr>
+              ))}
+              {stray.map((path) => (
+                <tr key={path} className="border-t border-line">
+                  <td colSpan={3}>Unlisted font</td><td className="font-mono">{path}</td><td>
+                    {editable ? <Button size="sm" onClick={() => editTokens((raw) => addFontFiles(raw, [{ ...guessFontFace(path.split('/').pop()!), file: path }]))}>Use font</Button> : null}
                   </td>
                 </tr>
               ))}

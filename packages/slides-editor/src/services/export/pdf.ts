@@ -6,7 +6,7 @@
  */
 
 import { SLIDE_HEIGHT, SLIDE_WIDTH, slideTitle } from '@open-artifact/slides-core';
-import { buildPdf, PT_PER_PX, type PdfPage, type PdfTextRun } from '@open-artifact/wasm-export';
+import { buildPdf, type PdfPage, type PdfTextRun } from '@open-artifact/wasm-export';
 import { linkAreas, mountSlide, slidePicture, textLines } from '../capture.ts';
 import { canvasBlob } from '@open-artifact/export-kit';
 import { BROWSER_LIMIT } from './files.ts';
@@ -27,9 +27,10 @@ const MAX_PAGES = 2000;
 const MAX_BYTES = Math.floor(BROWSER_LIMIT * 0.9);
 
 /* Notes page layout, in slide px. */
+// The deck format uses two canvas pixels per typographic point, as does the PPTX writer.
+const PT_PER_PX = 0.5;
 const MARGIN = 96;
 const THUMB_W = 640;
-const THUMB_H = 360;
 const GUTTER = 64;
 const NOTE_SIZE = 30;
 const NOTE_LINE = 48;
@@ -37,8 +38,6 @@ const HEAD_SIZE = 36;
 const NOTES_FONT = '"Helvetica Neue", Helvetica, Arial, "Noto Sans", sans-serif';
 /** Most notes pages per slide. */
 const MAX_NOTE_PAGES = 4;
-/** Top of the notes text on the first notes page (under the thumbnail). */
-const FIRST_TOP = MARGIN + THUMB_H + 56;
 const BOTTOM = SLIDE_HEIGHT - MARGIN;
 
 /** The page size of every page, pt: 960×540 for 16:9, 720×540 for 4:3 (read at export time). */
@@ -72,7 +71,9 @@ async function notesPages(entry: ExportSlide, thumb: Blob, scale: number, jpeg: 
   ctx.font = font(NOTE_SIZE);
   const width = SLIDE_WIDTH - 2 * MARGIN;
   const lines = wrapLines(entry.slide.notes.trim(), width, (text) => ctx.measureText(text).width);
-  const firstLines = Math.floor((BOTTOM - FIRST_TOP) / NOTE_LINE);
+  const thumbHeight = THUMB_W * SLIDE_HEIGHT / SLIDE_WIDTH;
+  const firstTop = MARGIN + thumbHeight + 56;
+  const firstLines = Math.floor((BOTTOM - firstTop) / NOTE_LINE);
   const perPage = Math.floor((BOTTOM - MARGIN) / NOTE_LINE);
   const { pages, cut } = paginate(lines, firstLines, perPage, MAX_NOTE_PAGES);
   if (cut) job.notes.add('notesCut', entry.number);
@@ -98,10 +99,10 @@ async function notesPages(entry: ExportSlide, thumb: Blob, scale: number, jpeg: 
     ctx.textBaseline = 'alphabetic';
     let top = MARGIN;
     if (index === 0) {
-      if (picture) ctx.drawImage(picture, MARGIN, MARGIN, THUMB_W, THUMB_H);
+      if (picture) ctx.drawImage(picture, MARGIN, MARGIN, THUMB_W, thumbHeight);
       ctx.strokeStyle = '#d4d4d4';
       ctx.lineWidth = 2;
-      ctx.strokeRect(MARGIN - 1, MARGIN - 1, THUMB_W + 2, THUMB_H + 2);
+      ctx.strokeRect(MARGIN - 1, MARGIN - 1, THUMB_W + 2, thumbHeight + 2);
       const column = MARGIN + THUMB_W + GUTTER;
       ctx.fillStyle = '#111111';
       write(`Slide ${entry.number}`, column, MARGIN + HEAD_SIZE, HEAD_SIZE, 600);
@@ -112,7 +113,7 @@ async function notesPages(entry: ExportSlide, thumb: Blob, scale: number, jpeg: 
         const titleLines = wrapLines(title, SLIDE_WIDTH - MARGIN - column, (t) => ctx.measureText(t).width).slice(0, 5);
         titleLines.forEach((line, i) => write(line, column, MARGIN + HEAD_SIZE + 24 + (i + 1) * NOTE_LINE, NOTE_SIZE));
       }
-      top = FIRST_TOP;
+      top = firstTop;
     }
     ctx.fillStyle = '#222222';
     pageLines.forEach((line, i) => write(line, MARGIN, top + i * NOTE_LINE + NOTE_SIZE * 1.2, NOTE_SIZE));
@@ -140,7 +141,7 @@ export async function exportPdf(job: ExportJob, options: PdfOptions): Promise<Bl
       break;
     }
     job.begin(entry.number);
-    noteStills(job, entry, 'embedPdf');
+    noteStills(job, entry);
     const mounted = await mountSlide(entry.slide, job.capture);
     try {
       const picture = await slidePicture(mounted, job.capture, { scale, type: 'image/jpeg', quality: jpeg, background: '#ffffff' });

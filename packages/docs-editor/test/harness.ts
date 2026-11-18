@@ -7,6 +7,7 @@ import type { DiskDoc, DocState } from '@open-artifact/docs-core';
 import type { DocCallAnswer, DocFrame, DocSessionResponse, DocTabFrame, DocTabResponse } from '@open-artifact/runtime/doc-api';
 import { createTypeServer, type TypeServer } from '@open-artifact/type-server';
 import { type DocTransport, type ShadowCause, TabSync } from '../src/sync/tab-sync.ts';
+import type { TabWal } from '../src/sync/wal.ts';
 
 type Json = Record<string, unknown>;
 
@@ -27,6 +28,10 @@ export interface PageOptions {
   frames?: boolean;
   transport?: (base: DocTransport) => DocTransport;
   onShadow?: (doc: DocState, cause: ShadowCause) => void;
+  /** The page's write-ahead log (none by default); made with the page's writing session. */
+  wal?: (sess: string) => TabWal;
+  /** Words of edits the page dropped. */
+  onUnsaved?: (words: string, reason?: string) => void;
 }
 
 export interface DocServer {
@@ -129,7 +134,9 @@ export async function startDocServer(markdown: string): Promise<DocServer> {
         session: shared,
         transport,
         retryMs: 20,
+        wal: options.wal ? options.wal(shared.sess) : null,
         events: {
+          ...(options.onUnsaved ? { unsaved: options.onUnsaved } : {}),
           shadow: (doc, cause) => {
             page.causes.push(cause);
             options.onShadow?.(doc, cause);

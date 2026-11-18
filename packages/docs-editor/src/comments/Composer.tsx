@@ -1,6 +1,6 @@
 /** A comment's text box: grows with its text, Enter sends, Shift-Enter or Alt-Enter breaks the line, Escape cancels, `@` offers people and the agent. */
 import { ChromeButton, Tip } from '@open-artifact/editor-kit/react';
-import { MOD } from '@open-artifact/editor-kit';
+import { COMMENT_TEXT_MAX, MOD } from '@open-artifact/editor-kit';
 import { cn } from '@open-artifact/ui';
 import { ArrowUp, Bot } from 'lucide-react';
 import { type KeyboardEvent, type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -30,6 +30,8 @@ export interface ComposerProps {
 }
 
 const MAX_HEIGHT = 240;
+/** From here on the composer counts what is left. */
+const COUNT_FROM = COMMENT_TEXT_MAX - 500;
 
 export function Composer({ value, onChange, onSubmit, onCancel, label, placeholder, submitLabel, busy = false, autoFocus = false, compact = false }: ComposerProps): ReactNode {
   const field = useRef<HTMLTextAreaElement>(null);
@@ -82,8 +84,9 @@ export function Composer({ value, onChange, onSubmit, onCancel, label, placehold
     });
   };
 
+  const over = value.length > COMMENT_TEXT_MAX;
   const submit = () => {
-    if (busy || !value.trim()) return;
+    if (busy || !value.trim() || over) return;
     onSubmit(value);
   };
 
@@ -171,6 +174,11 @@ export function Composer({ value, onChange, onSubmit, onCancel, label, placehold
       ) : null}
       {showButtons ? (
         <div className="mt-1.5 flex items-center justify-end gap-1">
+          {value.length >= COUNT_FROM ? (
+            <span className={cn('mr-auto text-[12px] tabular-nums', over ? 'text-red-600 dark:text-red-400' : 'text-chrome-muted')} aria-live="polite" data-testid="comment-count">
+              {over ? `${(value.length - COMMENT_TEXT_MAX).toLocaleString()} characters too long` : `${(COMMENT_TEXT_MAX - value.length).toLocaleString()} characters left`}
+            </span>
+          ) : null}
           <ChromeButton className="h-6 px-2 text-[13px] text-chrome-muted" onMouseDown={event => event.preventDefault()} onClick={onCancel}>
             Cancel
           </ChromeButton>
@@ -178,7 +186,7 @@ export function Composer({ value, onChange, onSubmit, onCancel, label, placehold
             <ChromeButton
               square
               aria-label={submitLabel}
-              disabled={busy || !value.trim()}
+              disabled={busy || !value.trim() || over}
               onMouseDown={event => event.preventDefault()}
               onClick={submit}
               className="h-6 w-6 rounded-full bg-chrome-accent text-white hover:bg-chrome-accent hover:brightness-110"

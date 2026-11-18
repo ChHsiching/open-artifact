@@ -8,12 +8,17 @@ import { AlertTriangle, Bot, Check, FolderPlus, Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import {
   CONTRAST,
+  clearThemeOverride,
   addEntry,
   aliasTarget,
   familyEntries,
   freeTokenName,
   moveEntry,
   colorStem,
+  colorGroups,
+  cleanName,
+  removeEntry,
+  renameEntry,
   contrastGrade,
   contrastPairs,
   contrastRatio,
@@ -22,14 +27,14 @@ import {
   type RawTokens,
   type ThemedToken,
 } from '@open-artifact/design-system-core';
-import { Button, ColorPicker, CommitInput, Dialog, TextInput, cn, type ColorSwatch } from '@open-artifact/ui';
+import { Button, ColorPicker, CommitInput, ConfirmDialog, Dialog, TextInput, cn, toast, type ColorSwatch } from '@open-artifact/ui';
 import { useModel } from '../state/model.ts';
 import { anchorId, useView } from '../state/view.ts';
 import { parseCssColor } from '../lib/color.ts';
 import { CommentBadge } from '../components/Comments.tsx';
 import { askToFixContrast, type ContrastIssue } from '../services/agent.ts';
 import { editTokens } from '../services/edit.ts';
-import { AddTokenButton, InlineText, PageHeader, TokenMenu, TokenNotes, useAnchor, useEditable, useFocusProps } from './common.tsx';
+import { AddTokenButton, InlineText, PageHeader, TokenMenu, TokenNotes, useEditable, useFocusProps } from './common.tsx';
 
 /** A checkerboard behind swatches, so translucent colors read as such. */
 const CHECKER = 'repeating-conic-gradient(#d9d9d9 0% 25%, #ffffff 0% 50%) 50% / 10px 10px';
@@ -87,6 +92,7 @@ function Swatch({ token, theme, first, editable, against }: SwatchProps) {
   );
   const write = (value: string, key?: string): void => {
     const text = value.trim();
+    if (!text && theme !== first) editTokens((raw) => clearThemeOverride(raw, 'color', token.name, theme));
     if (text) editTokens((raw) => setThemedValue(raw, 'color', token.name, text, theme), key);
   };
   return (
@@ -228,9 +234,18 @@ function AddColorGroup() {
 }
 
 /** "Add color" within a group: the next name of the stem, placed after the group's last color. */
-function addToGroup(stem: string, list: readonly ThemedToken[], raw: RawTokens): void {
+function addToGroup(prefix: string, stem: string, list: readonly ThemedToken[], raw: RawTokens): void {
   const last = list[list.length - 1];
-  const name = freeTokenName(raw, 'color', `${stem}-${list.length + 1}`);
+  let name: string;
+  if (stem) {
+    name = freeTokenName(raw, 'color', `${prefix}${stem}-${list.length + 1}`);
+  } else {
+    let n = 1;
+    do {
+      name = prefix + 'color' + (n === 1 ? '' : n);
+      n++;
+    } while (freeTokenName(raw, 'color', name) !== name);
+  }
   const value = last ? (last.declared[Object.keys(last.declared)[0]!] ?? '#888888') : '#888888';
   editTokens((current) => {
     const next = addEntry(current, 'color', { name, value: aliasTarget(value) ? '#888888' : value });
@@ -321,15 +336,21 @@ function ContrastTable() {
 export function Colors() {
   const { tokens, raw } = useModel();
   const editable = useEditable();
-  useAnchor();
-  const groups = useMemo(() => {
-    const out = new Map<string, ThemedToken[]>();
-    for (const color of tokens.colors) {
-      const stem = colorStem(color.name);
-      out.set(stem, [...(out.get(stem) ?? []), color]);
+  const { prefix, groups } = useMemo(() => colorGroups(tokens.colors), [tokens.colors]);
+  const [removing, setRemoving] = useState<string | null>(null);
+  const renameGroup = (stem: string, list: ThemedToken[], label: string) => {
+    const next = groupStem(label);
+    if (!next || next === stem || (!stem && label === 'Palette')) return;
+    const changes = list.map(({ name }) => {
+      const suffix = name.slice(prefix.length + stem.length);
+      return [name, prefix + next + (stem ? '' : '-') + suffix] as const;
+    });
+    if (changes.some(([, name]) => !cleanName(name) || Object.keys(raw).some((key) => familyEntries(raw, key).some((entry) => cleanName(entry.name) === name)))) {
+      toast.add({ title: 'Choose a group name that leaves each token name unique and valid.' });
+      return;
     }
-    return [...out];
-  }, [tokens.colors]);
+    editTokens((current) => changes.reduce((doc, [from, to]) => renameEntry(doc, 'color', from, to), current));
+  };
 
   return (
     <div>
@@ -356,16 +377,18 @@ export function Colors() {
             ))}
             <span />
           </div>
-          {groups.map(([stem, list]) => (
+          {[...groups].map(([stem, list]) => (
             <section key={stem} className="group/stem mt-3">
-              {groups.length > 1 || editable ? (
+              {groups.size > 1 || editable ? (
                 <h2 className="flex items-center gap-2 px-2 pb-1 text-[12px] font-semibold text-fg-muted">
-                  <span className="flex-1">{stem}</span>
+                  <span className="flex-1">{editable ? <CommitInput aria-label={`Rename ${stem || 'Palette'} group`} value={stem || 'Palette'}
+                    onCommit={(label) => renameGroup(stem, list, label)} /> : stem || 'Palette'}</span>
+                  {editable ? <button className="text-xs font-normal text-fg-muted" onClick={() => setRemoving(stem)}>Delete group</button> : null}
                   {editable ? (
                     <button
                       type="button"
                       className="flex items-center gap-1 rounded px-1 font-normal text-fg-subtle opacity-0 hover:bg-hover hover:text-fg focus-visible:opacity-100 group-hover/stem:opacity-100"
-                      onClick={() => addToGroup(stem, list, raw)}
+                      onClick={() => addToGroup(prefix, stem, list, raw)}
                     >
                       <Plus className="size-3" /> Add color
                     </button>
@@ -377,6 +400,13 @@ export function Colors() {
               ))}
             </section>
           ))}
+          <ConfirmDialog open={removing !== null} onOpenChange={(open) => { if (!open) setRemoving(null); }}
+            title={`Delete ${removing || 'Palette'}?`} description="Remove this group’s color tokens from the system." confirmLabel="Delete" danger
+            onConfirm={() => {
+              const list = groups.get(removing ?? '') ?? [];
+              editTokens((current) => list.reduce((doc, color) => removeEntry(doc, 'color', color.name), current));
+              setRemoving(null);
+            }} />
           <ContrastTable />
         </>
       ) : (

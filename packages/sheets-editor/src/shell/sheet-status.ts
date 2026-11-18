@@ -71,7 +71,7 @@ export function contentProblemText(content?: Dynamic) {
     case 'notAWorkbook':
       return translateMessage({
         defaultMessage:
-          'This Sheet holds another kind of content, such as a Agent Doc’s text, instead of a workbook, so this page can’t open it. Delete it and make a new one.',
+          'This Sheet holds another kind of content, such as a Doc’s text, instead of a workbook, so this page can’t open it. Delete it and make a new one.',
         id: 'CSSPOkT9vb',
       });
     case 'notUnderstood':

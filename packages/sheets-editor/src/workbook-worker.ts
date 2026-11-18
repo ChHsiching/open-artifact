@@ -11,6 +11,16 @@ interface WorkerStart {
 
 const scope = self as unknown as DedicatedWorkerGlobalScope;
 
+// LAN guests load workers over HTTP. getRandomValues is available there in both Window and Worker.
+function newEditId(): string {
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6]! & 15) | 64;
+  bytes[8] = (bytes[8]! & 63) | 128;
+  const hex = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+  return [hex.slice(0, 8), hex.slice(8, 12), hex.slice(12, 16), hex.slice(16, 20), hex.slice(20)].join('-');
+}
+
 function start({ data }: MessageEvent<WorkerStart>): void {
   const line = workerLine(scope);
   scope.addEventListener('unhandledrejection', ({ reason }) => line.send({ happened: [{ kind: 'threw', inWords: inWords(reason) }] }));
@@ -18,7 +28,7 @@ function start({ data }: MessageEvent<WorkerStart>): void {
     line,
     newCore: () => createWorkbookSessionCore(data.module),
     loadUtilities: () => createSheetsUtilities(data.module),
-    newEditId: () => crypto.randomUUID(),
+    newEditId,
     newIdCode,
     wait: (ms) => new Promise((resolve) => void setTimeout(resolve, ms)),
     nowMs: () => performance.timeOrigin + performance.now() - data.timeOriginMs,

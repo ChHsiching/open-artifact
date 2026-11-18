@@ -15,7 +15,7 @@ import { EditableMarkdown } from '../components/Markdown.tsx';
 import { PreviewFrame } from '../components/PreviewFrame.tsx';
 import { REQUESTS } from '../services/agent.ts';
 import { editText } from '../services/edit.ts';
-import { useAnchor, useFocusProps } from './common.tsx';
+import { useFocusProps } from './common.tsx';
 import { CommentBadge } from '../components/Comments.tsx';
 
 /** Width the cover is designed at. */
@@ -99,7 +99,7 @@ function Section({ path, source, readOnly }: { path: string; source: string; rea
   return (
     <section id={anchorId('section', path)} className="group relative mb-10 rounded-lg border-t border-line pt-8" {...focus}>
       <CommentBadge focus={{ kind: 'section', name: path }} className="absolute -left-8 top-8" />
-      <EditableMarkdown source={source} from={path} readOnly={readOnly} onCommit={(text) => editText(path, text)} />
+      <EditableMarkdown source={source} from={path} readOnly={readOnly} onCommit={(text) => editText(path, text, path)} />
     </section>
   );
 }
@@ -107,7 +107,6 @@ function Section({ path, source, readOnly }: { path: string; source: string; rea
 export function Overview() {
   const model = useModel();
   const readOnly = useFiles((s) => s.readOnly);
-  useAnchor();
   const readmePath = model.readme?.path ?? 'README.md';
   const readmeFocus = useFocusProps({ kind: 'section', name: readmePath });
   return (
@@ -120,7 +119,7 @@ export function Overview() {
           from={readmePath}
           readOnly={readOnly}
           placeholder="No README yet. It holds the rules for using this system: which tokens to use where, and why."
-          onCommit={(text) => editText(readmePath, text)}
+          onCommit={(text) => editText(readmePath, text, readmePath)}
         />
       </section>
       {model.sections.map((section) => (

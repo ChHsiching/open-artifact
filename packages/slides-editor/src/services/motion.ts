@@ -316,34 +316,7 @@ export function countUpOf(
 }
 
 /** The first number of a text: its value, where it is, and how it is written. */
-export function findNumber(text: string): { value: number; start: number; end: number; decimals: number; grouped: boolean } | null {
-  const match = /-?\d{1,3}(?:,\d{3})+(?:\.\d+)?|-?\d+(?:\.\d+)?/.exec(text);
-  if (!match) return null;
-  const raw = match[0];
-  const grouped = raw.includes(',');
-  const value = Number(raw.replace(/,/g, ''));
-  if (!Number.isFinite(value)) return null;
-  const decimals = raw.includes('.') ? raw.length - raw.indexOf('.') - 1 : 0;
-  return { value, start: match.index, end: match.index + raw.length, decimals, grouped };
-}
-
-/** The text with its first number replaced by `value`, written the same way. */
-export function countText(text: string, value: number): string {
-  const found = findNumber(text);
-  if (!found) return text;
-  let written = value.toFixed(found.decimals);
-  if (found.grouped) {
-    const [whole, fraction] = written.split('.');
-    written = whole!.replace(/\B(?=(\d{3})+(?!\d))/g, ',') + (fraction ? `.${fraction}` : '');
-  }
-  return text.slice(0, found.start) + written + text.slice(found.end);
-}
-
-/** Ease-out (cubic), for count-ups. */
-export function easeOut(t: number): number {
-  const clamped = Math.min(1, Math.max(0, t));
-  return 1 - (1 - clamped) ** 3;
-}
+export { findNumber, countText, easeOut } from './count-player.ts';
 
 /* -------------------------------------------------------------------------- */
 /* @starting-style                                                             */
@@ -504,4 +477,20 @@ export function smilPlays(tag: string, attrs: string): boolean {
 export function guardSmil(markup: string, play: boolean): string {
   if (!/<(?:animate|set)\b/i.test(markup)) return markup;
   return markup.replace(SMIL, (whole, tag: string, attrs: string) => (play && smilPlays(tag, attrs) ? whole : ''));
+}
+
+/** Resolve one source element's motion for both the live presenter and HTML export. */
+export function elementMotion(
+  declarations: Readonly<Record<string, string>>,
+  starting: Readonly<Record<string, string>> | undefined,
+  rules: ReturnType<typeof readMotionRules>,
+  name: string,
+) {
+  const animations = guardAnimations(parseAnimations(declarations), rules.keyframes);
+  const entrance = starting ? startingEntrance(name, starting, declarations) : null;
+  return {
+    animation: [...animations, ...(entrance?.animations ?? [])].map(animationText).join(', '),
+    keyframes: entrance?.keyframes ?? '',
+    count: countUpOf(animations, rules.keyframes, rules.properties),
+  };
 }

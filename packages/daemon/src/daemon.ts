@@ -1028,7 +1028,14 @@ ${rows ? `<ul>\n${rows}\n</ul>` : '<p>No artifacts yet. Ask an agent to make one
   }
 
   /** A copy of the artifact beside it: its content, not its bookkeeping (dot files, history, exports). */
-  private duplicate(record: ArtifactRecord): ArtifactRecord {
+  private async duplicate(record: ArtifactRecord, name?: string): Promise<ArtifactRecord> {
+    if (record.type === 'docs') {
+      const type = this.typeOf(record);
+      if (!type) throw new OpenArtifactError('unsupported', 'The Docs type is unavailable.');
+      const copy = await this.servers.call<{ root: string; name: string }>(type, 'POST', TYPE_SERVER_ROUTES.actions + 'duplicate',
+        { root: record.root, id: record.id, args: { name: name ?? (record.title.slice(0, 249) + ' (copy)') } }, undefined, ACTION_CALL_MS);
+      return this.store.create({ root: copy.root, title: copy.name, type: record.type, typeSource: record.typeSource, typeRelease: record.typeRelease, owner: record.owner });
+    }
     const parent = dirname(record.root);
     const base = record.root.slice(parent.length + 1);
     let root = join(parent, `${base}-copy`);
@@ -1551,8 +1558,8 @@ ${rows ? `<ul>\n${rows}\n</ul>` : '<p>No artifacts yet. Ask an agent to make one
         return sendJson(res, 200, this.artifactView(this.store.update(record.id, patch)));
       }
       case R.duplicate: {
-        const body = await readJsonBody<{ id: string; url: string }>(req);
-        return sendJson(res, 201, this.artifactView(this.duplicate(this.store.require(body.id ?? body.url))));
+        const body = await readJsonBody<{ id: string; url: string; name?: string }>(req);
+        return sendJson(res, 201, this.artifactView(await this.duplicate(this.store.require(body.id ?? body.url), body.name)));
       }
       case R.delete: {
         const body = await readJsonBody<{ id: string; url: string }>(req);

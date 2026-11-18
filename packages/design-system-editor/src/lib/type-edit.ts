@@ -151,7 +151,7 @@ export function addFontFiles(raw: RawTokens, entries: readonly FontFileEntry[]):
 
 /** Removes the font file entries of a path. */
 export function removeFontFile(raw: RawTokens, file: string): RawTokens {
-  return withType(raw, { fonts: typeNode(raw).fonts.filter((font) => !(isObject(font) && font.file === file)) });
+  return withType(raw, { fonts: typeNode(raw).fonts.filter((font) => !(isObject(font) && typeof font.file === 'string' && (font.file.includes('/') ? font.file : `fonts/${font.file}`) === file)) });
 }
 
 const WEIGHTS: [RegExp, number][] = [
@@ -172,7 +172,7 @@ const WEIGHTS: [RegExp, number][] = [
  * (`Inter[wght].ttf`, `InterVariable.woff2`) gets the range `100 900`.
  */
 export function guessFontFace(fileName: string): { family: string; weight: string; style: 'normal' | 'italic' } {
-  const base = fileName.replace(/^.*[/\\]/, '').replace(/\.(woff2?|ttf|otf)$/i, '');
+  const base = fileName.replace(/^.*[/\\]/, '').replace(/\.(woff2?|ttf|otf|ttc)$/i, '');
   const variable = /\[[^\]]*wght[^\]]*\]|variable|-vf\b|_vf\b/i.test(base);
   const italic = /italic|oblique|\bit\b/i.test(base.replace(/[-_]/g, ' '));
   // The family is what comes before the first separator that starts the style part.

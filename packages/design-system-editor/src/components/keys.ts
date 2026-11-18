@@ -18,7 +18,7 @@ export function installKeyboard(): () => void {
       void flush();
       return;
     }
-    if (mod && key === 'k') {
+    if (mod && (key === 'k' || key === 'f') && !isTextField(event.target)) {
       event.preventDefault();
       document.querySelector<HTMLInputElement>('[data-search]')?.focus();
       return;

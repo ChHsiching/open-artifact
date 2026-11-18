@@ -9,7 +9,7 @@
  *   layer order, group, ungroup, tidy up; delete; ask the agent (when one
  *   is connected).
  * - On the empty board: paste, select all, fit the board, add a note here,
- *   comment and ask the agent.
+ *   ask the agent.
  *
  * A command that cannot run stays in the menu, disabled, with the reason
  * as its tooltip.
@@ -200,7 +200,7 @@ type ItemCommand =
   | 'ask';
 
 /** Commands of the board menu. */
-type BoardCommand = 'paste' | 'select-all' | 'fit' | 'add-note' | 'comment' | 'ask';
+type BoardCommand = 'paste' | 'select-all' | 'fit' | 'add-note' | 'ask';
 
 /** Why the agent cannot be asked now (absent when it can). */
 function askRefusal(editable: boolean, agentAvailable: boolean): string | undefined {
@@ -331,9 +331,6 @@ function runBoardCommand(command: BoardCommand, board: Point | null): void {
     case 'add-note':
       placeElement(createNoteAt(board ?? viewCenter()), { label: 'Add note' });
       return;
-    case 'comment':
-      useTool.getState().setCommentMode(true);
-      return;
     case 'ask':
       useAsk.getState().show();
       return;
@@ -463,13 +460,11 @@ function ItemMenuItems({ cell, board }: { cell: MenuCell | null; board: Point | 
 function BoardMenuItems({ board }: { board: Point | null }) {
   const empty = useBoard((state) => state.board.content.elements.length === 0);
   const agentAvailable = useAgent((state) => state.available);
-  const keysOn = usePreferences((state) => state.letterKeys);
   const editable = canEditBoard();
   const refusals: Partial<Record<BoardCommand, string>> = {};
   if (!editable) {
     refusals.paste = READ_ONLY_MESSAGE;
     refusals['add-note'] = READ_ONLY_MESSAGE;
-    refusals.comment = READ_ONLY_MESSAGE;
   } else if (!canPasteFromMenu()) {
     refusals.paste = INTERNAL_PASTE_ONLY_MESSAGE;
   }
@@ -487,7 +482,7 @@ function BoardMenuItems({ board }: { board: Point | null }) {
       groups={[
         [item('paste', 'Paste', keyLabel('V', { mod: true })), item('select-all', 'Select all', keyLabel('A', { mod: true }))],
         [item('fit', 'Fit the board', keyLabel('0', { mod: true })), item('add-note', 'Add a note here')],
-        [item('comment', 'Comment', keysOn ? 'C' : undefined), item('ask', 'Ask the agent', modKey() + 'K')],
+        [item('ask', 'Ask the agent', modKey() + 'K')],
       ]}
     />
   );

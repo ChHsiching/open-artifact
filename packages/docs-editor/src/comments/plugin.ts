@@ -210,6 +210,12 @@ class CommentsView {
       } else if (anchor.kind === 'cell' || anchor.kind === 'block') {
         const at = rangeOfBlock(doc, anchor.kind === 'cell' ? anchor.cell : anchor.block);
         if (at && (anchor.kind === 'cell') === (at.node.type.name === 'cell')) found.push({ id, place: null, kind: anchor.kind, from: at.from, to: at.to });
+      } else if (anchor.kind === 'cells') {
+        // Each cell still there is marked; the thread is loose only once all of them are gone.
+        for (const cell of anchor.cells) {
+          const at = rangeOfBlock(doc, cell);
+          if (at && at.node.type.name === 'cell') found.push({ id, place: null, kind: 'cell', from: at.from, to: at.to });
+        }
       }
       holds[id] = anchor.kind === 'doc' ? 'page' : found.length ? 'ok' : 'detached';
       if (visible) ranges.push(...found);
@@ -291,10 +297,10 @@ export function rangeAt(state: EditorState, pos: number): MarkedRange | null {
   return best;
 }
 
-/** The marked ranges of a thread in an editor state, its first range first. */
+/** The marked ranges of a thread in an editor state: its first range (or first cell) first, then the rest in order. */
 export function rangesOf(state: EditorState | null, id: string): MarkedRange[] {
   const ranges = (state && commentsKey.getState(state)?.ranges) || [];
-  return ranges.filter(range => range.id === id).sort((a, b) => (a.place === null ? -1 : b.place === null ? 1 : a.from - b.from));
+  return ranges.filter(range => range.id === id).sort((a, b) => ((a.place === null) !== (b.place === null) ? (a.place === null ? -1 : 1) : a.from - b.from));
 }
 
 /** How many ranges of words a thread is marked on now (more than one: a place can be taken off). */

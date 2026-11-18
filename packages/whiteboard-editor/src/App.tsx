@@ -24,6 +24,7 @@ import { ElementsLayer, LiveElements } from './elements/ElementsLayer.tsx';
 import { FindBar } from './find/FindBar.tsx';
 import { NextItemOffer } from './selection/NextItemOffer.tsx';
 import { SelectionOverlay } from './selection/SelectionOverlay.tsx';
+import { useBoardRecovery, showBoardMedia } from './services/load-recovery.ts';
 import { startBoard } from './services/boot.ts';
 import { BoardPill } from './ui/BoardPill.tsx';
 import { BoardContextMenu } from './ui/ContextMenu.tsx';
@@ -70,6 +71,7 @@ function releaseBoard(): void {
 
 /** The editor root. */
 export function App() {
+  const paused = useBoardRecovery((state) => state.paused);
   const [phase, setPhase] = useState<Phase>({ kind: 'starting' });
 
   useEffect(() => {
@@ -118,6 +120,10 @@ export function App() {
       </BoardContextMenu>
       {ready ? (
         <>
+          {paused && <div role="status" className="wb-recovery">
+            Pictures and embeds are paused because the last load was interrupted.
+            <button type="button" onClick={() => void showBoardMedia()}>Show pictures and embeds</button>
+          </div>}
           <TimerEndGlow />
           <BoardPill />
           <BoardFoot />

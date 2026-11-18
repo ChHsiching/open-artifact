@@ -113,3 +113,18 @@ body,
 [data-canvas-surface][data-tool-cursor] > canvas {
   cursor: inherit !important;
 }
+
+.dc-compact-tools button { height: 28px; }
+.dc-compact-tools button[aria-label] { min-width: 28px; }
+@media (max-width: 760px) {
+  .dc-compact-tools {
+    position: fixed;
+    top: 58px;
+    left: 12px;
+    max-width: calc(100vw - 24px);
+    padding: 4px;
+    border-radius: 12px;
+    background: var(--dc-card);
+    box-shadow: var(--dc-card-shadow);
+  }
+}

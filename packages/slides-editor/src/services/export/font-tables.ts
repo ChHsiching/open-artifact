@@ -41,6 +41,7 @@ export interface FontTables {
   /** Bytes the file really spans (its tables, 4-byte aligned); WOFF2: the decoded size. */
   extent?: number;
   names: FontNames;
+  cmap?: DataView;
   os2?: FontOs2;
   /** `head.checkSumAdjustment`. */
   checkSumAdjustment?: number;
@@ -88,6 +89,8 @@ export function readFontTables(bytes: Uint8Array): FontTables {
     extent: Math.min(bytes.byteLength, Math.ceil(end / 4) * 4),
     names: {},
   };
+  const cmap = tables.get('cmap');
+  if (cmap) out.cmap = new DataView(bytes.buffer, bytes.byteOffset + cmap.offset, cmap.length);
   const os2 = tables.get('OS/2');
   if (os2 && os2.length >= 78) {
     const o = os2.offset;
@@ -237,4 +240,50 @@ export function wrapEot(ttf: Uint8Array, info: FontTables = readFontTables(ttf))
   at += 4;
   out.set(ttf, at);
   return out;
+}
+
+/** Unicode cmap lookup for TrueType's segmented BMP and full-Unicode tables.
+ * Only inspect characters the slide actually uses. Invalid offsets mean no glyph. */
+export function containsGlyph(cmap: DataView | undefined, code: number): boolean {
+  if (!cmap || cmap.byteLength < 4) return false;
+  const count = cmap.getUint16(2);
+  for (let record = 4; record < 4 + count * 8 && record + 8 <= cmap.byteLength; record += 8) {
+    const platform = cmap.getUint16(record);
+    const encoding = cmap.getUint16(record + 2);
+    if (platform !== 0 && !(platform === 3 && (encoding === 1 || encoding === 10))) continue;
+    const table = cmap.getUint32(record + 4);
+    if (table + 16 > cmap.byteLength) continue;
+    const format = cmap.getUint16(table);
+    if (format !== 4 && format !== 12) continue;
+    const full = format === 12;
+    const length = full ? cmap.getUint32(table + 4) : cmap.getUint16(table + 2);
+    const segments = full ? cmap.getUint32(table + 12) : cmap.getUint16(table + 6) / 2;
+    if (!Number.isInteger(segments) || table + length > cmap.byteLength || length < 16 + segments * (full ? 12 : 8)) continue;
+    let low = 0;
+    let high = segments;
+    while (low < high) {
+      const mid = Math.floor((low + high) / 2);
+      const end = full ? cmap.getUint32(table + 20 + mid * 12) : cmap.getUint16(table + 14 + mid * 2);
+      if (end < code) low = mid + 1;
+      else high = mid;
+    }
+    if (low === segments) continue;
+    if (full) {
+      const group = table + 16 + low * 12;
+      const start = cmap.getUint32(group);
+      if (code >= start && cmap.getUint32(group + 8) + code - start !== 0) return true;
+    } else {
+      const startAt = table + 16 + 2 * (segments + low);
+      const start = cmap.getUint16(startAt);
+      if (code < start) continue;
+      const delta = cmap.getInt16(startAt + 2 * segments);
+      const rangeAt = startAt + 4 * segments;
+      const range = cmap.getUint16(rangeAt);
+      const glyphAt = rangeAt + range + 2 * (code - start);
+      if (range && glyphAt + 2 > table + length) continue;
+      const base = range ? cmap.getUint16(glyphAt) : code;
+      if ((!range || base) && ((base + delta) & 0xffff)) return true;
+    }
+  }
+  return false;
 }

@@ -141,6 +141,21 @@ describe('an editor view kept in step with its tab', () => {
     await Promise.all([a.stop(), b.stop()]);
   });
 
+  it('tells the sync which edits an undo made, so a lost one can be rescued', async () => {
+    const a = await openEditor('a');
+    const marks: boolean[] = [];
+    const edit = a.page.sync.edit.bind(a.page.sync);
+    a.page.sync.edit = (window, how = {}) => {
+      marks.push(!!how.undo);
+      return edit(window, how);
+    };
+    a.run(state => state.tr.insertText('!', a.at(0, 1)));
+    undo(a.view.state, a.view.dispatch);
+    await settle(a);
+    assert.deepEqual(marks, [false, true]);
+    await a.stop();
+  });
+
   it('writes a table typed into, and the other page shows it', async () => {
     const a = await openEditor('a');
     const b = await openEditor('b');

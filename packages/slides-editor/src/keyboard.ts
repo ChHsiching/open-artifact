@@ -61,6 +61,7 @@ import {
   ungroupSelection,
 } from './services/commands.ts';
 import { useAgent } from './services/agent.ts';
+import { maybeSession } from './services/session.ts';
 import { useComments } from './services/comments.ts';
 import { useFind } from './services/find.ts';
 import { playableSlides } from './services/present.ts';
@@ -120,7 +121,7 @@ export function present(from: 'current' | 'start', speaker = false): void {
 export function installKeyboard(): () => void {
   const onKey = (event: KeyboardEvent): void => {
     const view = useView.getState();
-    if (view.presenting || useDeck.getState().status !== 'ready') return;
+    if (document.querySelector('[aria-modal="true"]') || view.presenting || useDeck.getState().status !== 'ready') return;
     const mod = event.metaKey || event.ctrlKey;
     const key = event.key;
     const lower = key.toLowerCase();
@@ -260,7 +261,7 @@ export function installKeyboard(): () => void {
 
     switch (key) {
       case 'Escape':
-        if (useComments.getState().on) useComments.getState().setOn(false);
+        if (useComments.getState().on) maybeSession()?.shell?.requestCommentMode(false);
         else if (view.findOpen) useFind.getState().close();
         else if (view.textEdit) view.endTextEdit();
         else if (view.cropping) view.setCropping(null);
@@ -340,8 +341,7 @@ export function installKeyboard(): () => void {
     if (!onStage) return;
     // Single-letter tools and commands.
     if (lower === 'c' && !event.shiftKey && useComments.getState().available) {
-      const comments = useComments.getState();
-      comments.setOn(!comments.on);
+      maybeSession()?.shell?.requestCommentMode(!useComments.getState().on);
       return;
     }
     if (!editing) return;

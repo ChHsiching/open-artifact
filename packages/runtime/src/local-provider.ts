@@ -291,9 +291,13 @@ export function createLocalProvider(options: LocalProviderOptions = {}): Capabil
 
   const builders: { [K in CapabilityName]: () => Promise<CapabilityMap[K] | null> } = {
     async artifact() {
-      const { artifact } = await getSession();
+      const { artifact, stores } = await getSession();
       const capability: ArtifactCapability = {
         id: artifact.id,
+        ...(stores?.systemCopy ? {
+          systemCopy: (namespace: string, action: 'sync' | 'status') =>
+            json<import('./capabilities.ts').SystemCopyStatus>(API.systemCopy, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ namespace, action }) }),
+        } : {}),
         title: async () => (await json<SessionResponse>(API.session)).artifact.title,
         list: async () => (await json<FilesResponse>(API.files)).files,
         readText: async (path) => new TextDecoder().decode(await readBytes(path)),
@@ -400,7 +404,7 @@ export function createLocalProvider(options: LocalProviderOptions = {}): Capabil
         remove: async (threadId, messageId) => {
           await post<CommentsResponse>(API.commentsRemove, { threadId, ...(messageId ? { messageId } : {}) } satisfies CommentRemoveRequest);
         },
-        sendToAgent: (threadId) => thread(API.commentsSend, { threadId } satisfies CommentSendRequest),
+        sendToAgent: (threadId, options) => thread(API.commentsSend, { threadId, ...(options?.unasked ? { unasked: true } : {}) } satisfies CommentSendRequest),
         onChange: (listener: (threads: CommentThread[]) => void) => subscribe('comments', listener),
       };
       return capability;

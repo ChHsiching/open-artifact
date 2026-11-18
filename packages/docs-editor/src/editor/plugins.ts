@@ -90,6 +90,9 @@ function placeholderGuard(): Plugin {
   });
 }
 
+/** What the empty doc's hint offers; the ask feature says when the agent can be asked from the text. */
+export const emptyDocHint = { askAgent: (): boolean => false };
+
 function emptyLineHint(text: string): Plugin {
   return new Plugin({
     props: {
@@ -98,7 +101,7 @@ function emptyLineHint(text: string): Plugin {
         if (!empty || $from.parent.type !== nodes.paragraph || $from.parent.content.size || $from.parent.attrs.heading) return null;
         const doc = state.doc;
         const only = doc.childCount === 1;
-        const label = only ? 'Start writing, or type / for more' : text;
+        const label = only ? (emptyDocHint.askAgent() ? 'Start typing, or ask @agent to write or edit' : 'Start writing, or type / for more') : text;
         return DecorationSet.create(doc, [Decoration.node($from.before(), $from.after(), { class: 'doc-empty-hint', 'data-hint': label })]);
       },
     },
@@ -159,7 +162,7 @@ export function docPlugins(actions: EditorActions, options: { writable: boolean 
     placeholderGuard(),
   ];
   if (options.writable) {
-    plugins.unshift(columnResizing({ cellMinWidth: 48 }));
+    plugins.unshift(columnResizing({ cellMinWidth: 48, defaultCellMinWidth: 48 }));
     plugins.push(emptyLineHint('Type / for more'));
   }
   plugins.push(tableEditing({ allowTableNodeSelection: true }));

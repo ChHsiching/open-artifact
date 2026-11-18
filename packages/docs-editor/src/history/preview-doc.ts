@@ -1,6 +1,7 @@
 /**
  * A version as the preview draws it: a ProseMirror doc in the page's schema, and the highlighting of what changed as
  * decorations of its own (so the preview carries no suggestion marks or attrs for other parts of the page to find).
+ * Every highlighted part carries its change's id (`data-change-id`), so the change strip can step to it.
  */
 import type { DocState } from '@open-artifact/docs-core';
 import { Fragment, type Mark, type Node as PMNode } from 'prosemirror-model';
@@ -8,12 +9,15 @@ import { Plugin } from 'prosemirror-state';
 import { Decoration, DecorationSet } from 'prosemirror-view';
 import { pmDocOf } from '../editor/binding.ts';
 import { schema } from '../editor/schema.ts';
-import { CHANGE_ID, type ChangeOp } from './compare.ts';
+import type { ChangeLook, ChangePart, Comparison } from './compare.ts';
 
 export interface ChangeRange {
   from: number;
   to: number;
-  op: ChangeOp;
+  /** The change it is part of. */
+  change: string;
+  look: ChangeLook;
+  summary: string;
   /** A whole block (else words or an inline item). */
   block: boolean;
 }
@@ -23,51 +27,80 @@ export interface PreviewDoc {
   changes: ChangeRange[];
 }
 
-const isChangeMark = (mark: Mark) => (mark.type === schema.marks.suggestIns || mark.type === schema.marks.suggestDel) && mark.attrs.suggestId === CHANGE_ID;
+const partsOf = (state: DocState): Record<string, ChangePart> => (state as Partial<Comparison>).parts ?? {};
 
 /** The doc to draw, with the ranges of what changed (from {@link compareVersions}' marks). */
-export function previewDocOf(state: DocState): PreviewDoc {
+export function previewDocOf(state: DocState | Comparison): PreviewDoc {
+  const parts = partsOf(state);
   const marked = pmDocOf(state);
+  if (!Object.keys(parts).length) return { doc: marked, changes: [] };
+  const partOf = (id: unknown) => (typeof id === 'string' && Object.hasOwn(parts, id) ? parts[id]! : null);
+  const isChangeMark = (mark: Mark) => (mark.type === schema.marks.suggestIns || mark.type === schema.marks.suggestDel) && partOf(mark.attrs.suggestId) !== null;
   const changes: ChangeRange[] = [];
+  let lastKey: string | null = null;
   marked.descendants((node, pos) => {
-    if (!node.isInline && node.attrs.suggestId === CHANGE_ID) {
-      changes.push({ from: pos, to: pos + node.nodeSize, op: node.attrs.suggestOp === 'del' ? 'del' : 'ins', block: true });
+    const part = node.isInline ? null : partOf(node.attrs.suggestId);
+    if (part) {
+      changes.push({ from: pos, to: pos + node.nodeSize, change: part.change, look: part.look, summary: part.summary, block: true });
+      lastKey = null;
       return true;
     }
     if (node.isInline) {
       const mark = node.marks.find(isChangeMark);
-      if (mark) {
-        const op: ChangeOp = mark.type === schema.marks.suggestDel ? 'del' : 'ins';
-        const last = changes[changes.length - 1];
-        if (last && !last.block && last.op === op && last.to === pos) last.to = pos + node.nodeSize;
-        else changes.push({ from: pos, to: pos + node.nodeSize, op, block: false });
+      const key = mark ? (mark.attrs.suggestId as string) : null;
+      const last = changes[changes.length - 1];
+      if (key && last && !last.block && lastKey === key && last.to === pos) last.to = pos + node.nodeSize;
+      else if (key) {
+        const inline = partOf(key)!;
+        changes.push({ from: pos, to: pos + node.nodeSize, change: inline.change, look: inline.look, summary: inline.summary, block: false });
       }
+      lastKey = key;
     }
     return true;
   });
-  return { doc: withoutChanges(marked), changes };
+  return { doc: withoutChanges(marked, isChangeMark, id => partOf(id) !== null), changes };
 }
 
-function withoutChanges(node: PMNode): PMNode {
+function withoutChanges(node: PMNode, isChangeMark: (mark: Mark) => boolean, isChangeId: (id: unknown) => boolean): PMNode {
   if (node.isText) return node.mark(node.marks.filter(mark => !isChangeMark(mark)));
   const marks = node.marks.filter(mark => !isChangeMark(mark));
-  const attrs = node.attrs.suggestId === CHANGE_ID ? { ...node.attrs, suggestId: null, suggestOp: null } : node.attrs;
+  const attrs = isChangeId(node.attrs.suggestId) ? { ...node.attrs, suggestId: null, suggestOp: null } : node.attrs;
   if (node.isLeaf) return node.type.create(attrs, null, marks);
   const content: PMNode[] = [];
-  node.forEach(child => content.push(withoutChanges(child)));
+  node.forEach(child => content.push(withoutChanges(child, isChangeMark, isChangeId)));
   return node.type.create(attrs, Fragment.from(content), marks);
 }
 
-/** Draws the changes: added words underlined in the added colour, dropped ones struck through, whole blocks barred. */
-export function changesPlugin(changes: readonly ChangeRange[]): Plugin {
+const INLINE_TAG: Partial<Record<ChangeLook, string>> = { ins: 'ins', del: 'del' };
+
+/** The DOM attrs of one highlighted range. */
+export function changeAttrs(range: ChangeRange, active: boolean): Record<string, string> {
+  const attrs: Record<string, string> = {
+    class: range.block ? `vh-block vh-block-${range.look}${range.look === 'moved' ? ' vh-moved' : ''}` : `vh-${range.look}`,
+    'data-change-id': range.change,
+    'data-diff': range.look === 'moved' ? 'del' : range.look === 'fmt' ? 'chg' : range.look,
+  };
+  if (active) attrs.class += ' vh-active';
+  if (active) attrs['data-diff-active'] = '';
+  if (range.look === 'fmt' || range.look === 'chg' || range.look === 'move') {
+    attrs.title = range.summary;
+    attrs['data-diff-summary'] = range.summary;
+  }
+  return attrs;
+}
+
+/**
+ * Draws the changes: added words underlined, dropped ones struck through, reformatted ones dotted, whole blocks
+ * barred, changed and moved blocks outlined, and the one the strip is on (`active`) ringed.
+ */
+export function changesPlugin(changes: readonly ChangeRange[], active: string | null = null): Plugin {
   return new Plugin({
     props: {
       decorations(state) {
-        const decorations = changes.map(change =>
-          change.block
-            ? Decoration.node(change.from, change.to, { class: `doc-version-block doc-version-block-${change.op}` })
-            : Decoration.inline(change.from, change.to, { nodeName: change.op, class: `doc-version-${change.op}` }),
-        );
+        const decorations = changes.map(change => {
+          const attrs = changeAttrs(change, change.change === active);
+          return change.block ? Decoration.node(change.from, change.to, attrs) : Decoration.inline(change.from, change.to, { nodeName: INLINE_TAG[change.look] ?? 'span', ...attrs });
+        });
         return DecorationSet.create(state.doc, decorations);
       },
     },

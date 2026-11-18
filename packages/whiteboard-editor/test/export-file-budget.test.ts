@@ -57,8 +57,8 @@ describe('embedLongEdges', () => {
     assert.deepEqual(embedLongEdges({ w: 100, h: 80 }), [100]);
   });
 
-  it('has nothing to try for a tiny picture', () => {
-    assert.deepEqual(embedLongEdges({ w: 50, h: 40 }), []);
+  it('embeds a tiny original without upscaling it', () => {
+    assert.deepEqual(embedLongEdges({ w: 50, h: 40 }), [50]);
   });
 });
 

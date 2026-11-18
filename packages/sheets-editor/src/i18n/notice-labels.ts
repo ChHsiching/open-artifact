@@ -564,6 +564,11 @@ export function importRefusedText(why?: Dynamic) {
         defaultMessage: 'Nothing was imported, because that file isn’t a CSV file. Save it as a CSV file, then import it.',
         id: 'dzaUnlkG4b',
       });
+    case 'excelFileDropped':
+      return translateMessage({
+        defaultMessage: 'Excel files can’t be dropped here. Choose the file instead.',
+        id: 'raEm81yLRM',
+      });
     case 'empty':
       return translateMessage({
         defaultMessage: 'Nothing was imported, because that file is empty.',

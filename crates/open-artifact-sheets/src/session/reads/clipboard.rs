@@ -374,7 +374,21 @@ fn copied_rows(
         }
     }
 
-    let in_view = |i: usize| !is_hidden(area_rows[i]);
+    // Group the formats inside the copied rectangle before dropping rows omitted
+    // from a sorted or filtered selection. Only formatted gaps can affect a block.
+    let selected_rows = area_rows.len();
+    let mut area_rows = area_rows;
+    if !in_order {
+        let selected: HashSet<usize> = area_rows.iter().copied().collect();
+        let mut gaps: Vec<usize> = sheet.formats.iter()
+            .filter_map(|(_, (row, _), _)| sheet.rows.position(row))
+            .filter(|r| (top..=bottom).contains(r) && !selected.contains(r))
+            .collect();
+        gaps.sort_unstable();
+        gaps.dedup();
+        area_rows.extend(gaps);
+    }
+    let in_view = |i: usize| i < selected_rows && !is_hidden(area_rows[i]);
     let formats = copied_formats(sheet, &area_rows, in_view, &columns, |_| true, &copied_brought);
     let copy = |cells: Vec<CopiedCell>, formats: Vec<CopiedFormat>| CopiedCells {
         version: VERSION,

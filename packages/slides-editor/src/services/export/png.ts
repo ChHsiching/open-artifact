@@ -12,7 +12,7 @@ export async function exportPng(job: ExportJob): Promise<Blob> {
   const entry = job.slides[0];
   if (!entry) throw new Error('There is no slide to export.');
   job.begin(entry.number);
-  noteStills(job, entry, 'embedPdf');
+  noteStills(job, entry);
   const mounted = await mountSlide(entry.slide, job.capture);
   try {
     const picture = await slidePicture(mounted, job.capture, { scale: 1, type: 'image/png' });

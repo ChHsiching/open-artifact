@@ -41,7 +41,7 @@ Each face is one family, keyed by the family name lowercased with spaces as `-`:
 Linked Google Fonts load from the network on the page, when presenting and in exports; offline, the
 text falls back to the next face in its stack.
 
-"PowerPoint, embedded fonts" carries Google Fonts with an open license (OFL, Apache, UFL) as static
+"PowerPoint, current fonts" carries Google Fonts with an open license (OFL, Apache, UFL) as static
 TrueType (regular and bold, italics when used; one script subset), up to 8 MB, most-used families
 first. An uploaded font file is carried only when it is TrueType and its own embedding bits allow
 it. Faces left out are named in the export notes; the next face in the stack shows instead.

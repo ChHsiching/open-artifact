@@ -40,6 +40,12 @@ export const SHELL_PARAMS = {
   panel: 'panel',
 } as const;
 
+/** Slide links use stable ids. Earlier versions used a one-based page number. */
+export const SLIDE_FRAGMENT = /^#slide-(?:~[A-Za-z0-9_-]{1,64}|[0-9]{1,4})$/;
+
+/** A Docs tab, optionally followed by a block id or heading slug in that tab. */
+export const DOC_FRAGMENT = /^#[0-9a-f]{8}-[0-9a-f]{4}(?:\.[^\s#]{1,500})?$/;
+
 /** Version of the chrome protocol. */
 export const CHROME_PROTOCOL = 1;
 
@@ -107,6 +113,8 @@ export const CHROME_REQUEST = /^[A-Za-z0-9_-]{16,64}$/;
 
 /** What the page reports to the Shell. Every part is optional. */
 export interface ChromeReport {
+  /** Current document title in a type-server shell. */
+  title?: string;
   comments?: { available: boolean; on: boolean; open: boolean; count: number; pageButton: boolean };
   agent?: { available: boolean; listening: boolean; busy: boolean };
   /** The page has a version history panel. */
@@ -149,7 +157,10 @@ export interface ChromeExportItem {
 
 /** Commands the Shell sends to the page. */
 export type ChromeCommand =
-  | { cmd: 'comments_mode'; on?: boolean }
+  | { cmd: 'goto_doc'; hash: string }
+  | { cmd: 'goto_sheet'; page: string }
+  | { cmd: 'goto_slide'; hash: string }
+  | { cmd: 'comments_mode'; on?: boolean; anchor?: string }
   | { cmd: 'comments_list'; open?: boolean }
   | { cmd: 'history' }
   | { cmd: 'exports'; id: string }
@@ -235,6 +246,12 @@ export type ShellToPage =
 
 /** Page → Shell. */
 export type PageToShell =
+  | { openArtifact: 'sheet_page' | 'copy_sheet_link'; page: string | null }
+  | { openArtifact: 'design_page'; page: string | null }
+  | { openArtifact: 'doc_place'; hash: string }
+  | { openArtifact: 'current_slide'; hash: string }
+  | { openArtifact: 'copy_slide_link'; hash: string }
+  | { openArtifact: 'request_comment_mode'; on: boolean; anchor?: string }
   | { openArtifact: 'chrome_report'; protocol: number; report: ChromeReport }
   | { openArtifact: 'chrome_exports'; id: string; items: ChromeExportItem[] }
   /** What became of an `export_format` request (`started`, then `done` or `declined`; or at once `busy`/`unsupported`). */

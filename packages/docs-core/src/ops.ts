@@ -86,6 +86,12 @@ export interface ApplyOptions {
   suggest?: { id: string; info: SuggestionInfo };
   /** The page's writes: the decisions an `undecide` may take back (see decisions.ts), by suggestion id. */
   decisions?: (suggestId: string) => Decision | undefined;
+  /**
+   * The person a page's write is by (the server names them). A suggestion the page starts in Suggesting mode (`suggest`
+   * on an op) is recorded as theirs, and the page adds only to suggestions of their own. Left out (the page applying its
+   * own ops), a new one is recorded with no one's name until the tab is read again.
+   */
+  author?: string;
 }
 
 type Json = Record<string, unknown>;
@@ -234,11 +240,13 @@ export function applyOps(source: DocState, ops: unknown[], session: Session, opt
   // Containers dropped because a write left them empty; a later op in the same write may still delete them.
   const pruned = new Set<string>();
   const decisions: Decision[] = [];
+  // Suggestions the page started or added to in this write (`suggest` on an op).
+  const proposed = new Set<string>();
   try {
     ops.forEach((raw, index) => {
       if (!isRecord(raw)) throw new Refusal('bad_op', `op ${index} is not an object`);
       try {
-        results.push(new Writer(doc, normalizeOp(raw), session, used, options, notices, pruned, decisions).run());
+        results.push(new Writer(doc, normalizeOp(raw), session, used, options, notices, pruned, decisions, proposed).run());
       } catch (error) {
         const refusal = error instanceof MarkdownError ? new Refusal(error.code, error.message) : error;
         if (refusal instanceof Refusal && refusal.opIndex === undefined) refusal.opIndex = index;
@@ -246,7 +254,7 @@ export function applyOps(source: DocState, ops: unknown[], session: Session, opt
       }
     });
     if (doc.blocks.length === 0) throw new Refusal('last_block', 'a tab keeps at least one block; replace the last block instead of deleting it');
-    syncSuggestions(doc, options.suggest);
+    syncSuggestions(doc, options.suggest, proposed, options.author);
     // An agent's call is judged by what it leaves, not its steps. The page's own writes come from a document its schema
     // already holds to. A misfit that was there before this call doesn't stop the call (one may be mending it).
     if (options.guards && results.some(result => result.changed)) {
@@ -264,13 +272,16 @@ export function applyOps(source: DocState, ops: unknown[], session: Session, opt
   return { doc, results, notices, changed, decisions };
 }
 
-/** The tab's suggestion records after a write: one for each suggestion with parts left, none for any without. */
-function syncSuggestions(doc: DocState, suggest: ApplyOptions['suggest']): void {
+/**
+ * The tab's suggestion records after a write: one for each suggestion with parts left, none for any without. One the
+ * page started in this write is the author's.
+ */
+function syncSuggestions(doc: DocState, suggest: ApplyOptions['suggest'], proposed: ReadonlySet<string>, author: string | undefined): void {
   const open = proposalIds(doc.blocks);
   const records: Record<string, SuggestionInfo> = {};
   for (const id of open) {
     const known = doc.suggestions?.[id] ?? (suggest?.id === id ? suggest.info : undefined);
-    records[id] = known ?? { by: '', at: new Date().toISOString() };
+    records[id] = known ?? { by: proposed.has(id) ? (author ?? '') : '', at: new Date().toISOString() };
   }
   if (open.length) doc.suggestions = records;
   else delete doc.suggestions;
@@ -326,9 +337,23 @@ class Writer {
   private undecided: OpResult['undecided'];
   private pruned: Set<string>;
   private decisions: Decision[];
-  constructor(doc: DocState, op: Json, session: Session, used: Set<string>, options: ApplyOptions, notices: Json[], pruned: Set<string>, decisions: Decision[]) {
+  private proposed: Set<string>;
+  /** The suggestion this op proposes its change under: the agent's (on the payload) or the page's (on the op). */
+  private proposal: string | null = null;
+  constructor(
+    doc: DocState,
+    op: Json,
+    session: Session,
+    used: Set<string>,
+    options: ApplyOptions,
+    notices: Json[],
+    pruned: Set<string>,
+    decisions: Decision[],
+    proposed: Set<string>,
+  ) {
     this.pruned = pruned;
     this.decisions = decisions;
+    this.proposed = proposed;
     this.doc = doc;
     this.op = op;
     this.ids = new OpIds(op, session, used);
@@ -353,19 +378,50 @@ class Writer {
   private dispatch(): boolean {
     // Words typed inside words a suggestion adds take its mark on the page (the mark is inclusive): they join it.
     const joined = this.joinedSuggestion();
-    // Otherwise the page writes a suggestion as a `suggest` mark only in Suggesting mode, which the local doc does not
-    // offer (no `suggestIndoc` cap); were one sent, it is refused rather than the words going in as plain ones.
+    // In Suggesting mode the page names its suggestion on the op (`suggest: "<id>"`), never as a mark in what it writes.
+    const own = this.pageSuggestion();
     if (holdsSuggestMark(this.op))
-      throw new Refusal('suggest_not_here', this.options.guards ? 'a suggestion is "suggest": true on the update payload, not a mark' : 'this doc takes suggestions from an agent only; nothing was changed');
+      throw new Refusal(
+        'suggest_not_here',
+        this.options.guards ? 'a suggestion is "suggest": true on the update payload, not a mark' : 'a suggestion is "suggest": "<id>" on the op, not a mark; nothing was changed',
+      );
     if (this.op.op === 'decide') return this.decide();
     if (this.op.op === 'undecide') return this.undecide();
-    if (this.options.suggest) return this.propose();
+    if (this.options.suggest) {
+      this.proposal = this.options.suggest.id;
+      return this.propose();
+    }
+    if (own) {
+      this.proposal = own;
+      this.proposed.add(own);
+      return this.propose(true);
+    }
     if (joined) {
       const changed = this.plain();
       this.tagMinted(joined);
       return changed;
     }
     return this.plain();
+  }
+
+  /**
+   * The page's own suggestion (Suggesting mode): `suggest: "<id>"` on an insert, delete or replace proposes the change
+   * under that id, as the person's, instead of making it. A new id starts a suggestion; an open one is added to only
+   * when it is the writer's own (not someone else's, nor an agent's). Takes the field off the op and answers the id.
+   */
+  private pageSuggestion(): string | null {
+    const id = this.op.suggest;
+    if (id === undefined) return null;
+    if (this.options.guards) throw new Refusal('suggest_not_here', 'a suggestion is "suggest": true on the update payload, not on an op');
+    if (this.options.suggest || this.op.op === 'decide' || this.op.op === 'undecide') throw new Refusal('bad_op', 'this op takes no suggest');
+    if (!isId(id) || !SUGGEST_ID.test(id)) throw new Refusal('bad_op', 'suggest on an op names the suggestion it is part of');
+    const author = this.options.author;
+    const info = this.doc.suggestions?.[id];
+    if (author !== undefined && info && proposalIds(this.doc.blocks).includes(id) && (info.via === 'agent' || (info.by !== '' && info.by !== author)))
+      throw new Refusal('not_yours', `${id} is someone else's suggestion; a suggestion of your own takes a new id`, { suggestId: id });
+    const { suggest: _suggest, ...rest } = this.op;
+    this.op = rest;
+    return id;
   }
 
   /**
@@ -883,7 +939,7 @@ class Writer {
     const id = attrs?.suggestId;
     if (id === undefined || id === null) return undefined;
     if (!isId(id) || attrs?.suggestOp !== 'ins' || !proposalIds(this.doc.blocks).includes(id))
-      throw new Refusal('suggest_not_here', this.options.guards ? 'a suggestion is "suggest": true on the update payload, not an attribute' : 'this doc takes suggestions from an agent only; nothing was changed');
+      throw new Refusal('suggest_not_here', this.options.guards ? 'a suggestion is "suggest": true on the update payload, not an attribute' : 'a suggestion is "suggest": "<id>" on the op, not an attribute; nothing was changed');
     return { id, op: 'ins' };
   }
 
@@ -988,7 +1044,7 @@ class Writer {
     };
     for (const [key, value] of Object.entries(attrs)) {
       if (key === 'suggestId' || key === 'suggestOp')
-        throw new Refusal('suggest_not_here', this.options.guards ? 'a suggestion is "suggest": true on the update payload, not an attribute' : 'this doc takes suggestions from an agent only; nothing was changed');
+        throw new Refusal('suggest_not_here', this.options.guards ? 'a suggestion is "suggest": true on the update payload, not an attribute' : 'a suggestion is "suggest": "<id>" on the op, not an attribute; nothing was changed');
       if (key === 'type') {
         changed = this.retype(block, String(value), attrs) || changed;
         continue;
@@ -1166,7 +1222,7 @@ class Writer {
   // -- suggestions --
 
   private get mine(): string {
-    return this.options.suggest!.id;
+    return this.proposal!;
   }
 
   private pending(id: string, suggestId: string): Refusal {
@@ -1177,9 +1233,12 @@ class Writer {
     return new Refusal('in_suggestion', `${id} is inside suggestion ${suggestId}, still open; write before or after it`, { id, suggestId });
   }
 
-  /** An agent's suggestion: insert, delete and replace are proposed, not made; ifRev on the payload is the only guard. */
-  private propose(): boolean {
-    if (this.op.ifHash !== undefined || this.op.force !== undefined || this.op.id !== undefined || this.op.ids !== undefined)
+  /**
+   * A suggestion: insert, delete and replace are proposed, not made. An agent's has ifRev on the payload as its only
+   * guard; the page's (`page`) names the ids of what it adds, as every page write does.
+   */
+  private propose(page = false): boolean {
+    if (this.op.ifHash !== undefined || this.op.force !== undefined || (!page && (this.op.id !== undefined || this.op.ids !== undefined)))
       throw new Refusal('bad_op', 'a suggestion takes no ifHash, force or ids; ifRev on the payload is its only guard');
     const ifRev = this.options.ifRev;
     if (ifRev !== undefined && Number(ifRev) !== this.doc.rev) throw new Refusal('guard_mismatch', `the tab is at rev ${this.doc.rev}, not ${ifRev}; read it again`, { rev: this.doc.rev });

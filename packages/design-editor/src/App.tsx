@@ -5,16 +5,18 @@
 
 import { Loader2, TriangleAlert } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { EmptyState } from '@open-artifact/ui';
+import { useBoardPaste, finishBoardPaste } from './services/clipboard.ts';
+import { Button, Dialog, EmptyState } from '@open-artifact/ui';
 import { useDocument } from './state/document.ts';
 import { useView } from './state/view.ts';
-import { startSession } from './services/session.ts';
+import { session, startSession } from './services/session.ts';
 import { loadProject } from './services/sync.ts';
-import { startPresence } from './services/agent.ts';
+import { askAgentToFixIndex, startPresence } from './services/agent.ts';
 import { startFollow } from './services/follow.ts';
 import { startShellBridge } from './services/shell.ts';
 import { installKeyboard } from './keyboard.ts';
-import { Canvas, placeImages } from './components/Canvas.tsx';
+import { placeImages } from './services/images.ts';
+import { Canvas } from './components/Canvas.tsx';
 import { FocusedView } from './components/FocusedView.tsx';
 import { EndCard, FootToolbar, StartCard } from './components/Toolbar.tsx';
 import { TipGroup } from '@open-artifact/editor-kit/react';
@@ -89,6 +91,8 @@ function Loading() {
 export function App() {
   const status = useDocument((s) => s.status);
   const error = useDocument((s) => s.error);
+  const readOnly = useDocument(s => s.readOnly);
+  const pendingPaste = useBoardPaste(s => s.pending);
   const canvasError = useDocument((s) => s.canvasError);
   const title = useDocument((s) => s.title);
   const mode = useView((s) => s.mode);
@@ -132,7 +136,7 @@ export function App() {
           {mode === 'canvas' ? (
             <TipGroup>
               <div className="pointer-events-none absolute left-3 top-3 flex max-w-[calc(100%-24px)] gap-2">
-                <StartCard />
+                <StartCard compact={toolbarTop} />
               </div>
               <div className="pointer-events-none absolute right-3 top-3 flex gap-2">
                 <CollabCard />
@@ -140,7 +144,6 @@ export function App() {
               </div>
               {/* Below the corner cards: the toolbar when it sits at the top, find, the restore offer. */}
               <div className="pointer-events-none absolute inset-x-0 top-[56px] flex flex-col items-center gap-2 px-2">
-                {toolbarTop ? <FootToolbar /> : null}
                 <FindBar />
                 <RecoveryBanner />
               </div>
@@ -163,8 +166,13 @@ export function App() {
           {canvasError ? (
             <div className="absolute inset-x-0 top-16 mx-auto w-fit max-w-[90%] rounded-lg bg-danger px-3 py-2 text-[12px] text-white shadow">
               canvas.json could not be read ({canvasError}). The editor will not change it until it is fixed.
+              {!readOnly && session().agent && session().viewer.role === 'owner' ? <button className="ml-2 underline" onClick={() => void askAgentToFixIndex(canvasError)}>Ask agent to fix</button> : null}
             </div>
           ) : null}
+          {pendingPaste ? <Dialog open title="Paste artboards from another canvas?" description="Their component code will run in the pasted artboards." onOpenChange={open => { if (!open) finishBoardPaste(false); }}
+            footer={<><Button onClick={() => finishBoardPaste(false)}>Cancel</Button><Button onClick={() => finishBoardPaste(true)}>Paste with code</Button></>}>
+            {pendingPaste.boards.map(board => board.entry.title).join(', ')}
+          </Dialog> : null}
           <HistoryPreview />
           <CommentList />
           <Announcer />

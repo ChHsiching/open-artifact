@@ -24,8 +24,8 @@ import { basename, dirname, extname, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { deflateRaw as deflateRawCallback } from 'node:zlib';
 
-/** Dot files kept at the folder's top: the artifact's own, not this machine's. */
-const KEPT_DOT_FILES = new Set(['.artifact.json', '.gitignore']);
+/** Hidden paths carrying portable artifact data, relative to the archive root. */
+const KEPT_DOT_FILES = new Set(['.artifact.json', '.gitignore', 'doc/.sessions.json', 'doc/.people.json', 'doc/tabs/.deleted']);
 /** Never in the zip, at any depth. */
 const JUNK = new Set(['.DS_Store', 'Thumbs.db', 'desktop.ini', '.git', 'node_modules']);
 /** Never in the zip, at the folder's top. */
@@ -71,11 +71,11 @@ export async function archiveEntries(root: string, skip: string[] = []): Promise
     for (const dirent of names.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
       const name = dirent.name;
       if (JUNK.has(name) || isTemp(name)) continue;
-      if (name.startsWith('.') && !(rel === '' && KEPT_DOT_FILES.has(name))) continue;
+      const inner = rel ? `${rel}/${name}` : name;
+      if (name.startsWith('.') && !KEPT_DOT_FILES.has(inner)) continue;
       if (rel === '' && LOCAL_DIRS.has(name)) continue;
       const file = join(dir, name);
       if (skipped.has(file)) continue;
-      const inner = rel ? `${rel}/${name}` : name;
       if (dirent.isDirectory()) await walk(file, inner);
       else if (dirent.isFile()) {
         const info = await stat(file).catch(() => null);

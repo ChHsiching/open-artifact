@@ -24,6 +24,7 @@ export interface PeerOfRoom {
   by: string;
   name: string;
   isMe: boolean;
+  sameTab: boolean;
   kind: 'viewer' | 'agent';
   presence: Record<string, unknown>;
 }
@@ -35,6 +36,7 @@ export interface RoomPeersEvent {
 export type AgentSendState = 'available' | 'rejected';
 
 export interface PageRoom {
+  peers(): PeerOfRoom[];
   presence(patch: Record<string, unknown>): Promise<void>;
   onPeers(listener: (event: RoomPeersEvent) => void, onGone?: () => void): () => void;
   canSendToAgentSession(): Promise<AgentSendState>;
@@ -127,7 +129,7 @@ const personOfPeer = (peer: Peer): string => personSaidByPeer(peer) ?? peer.id;
 
 const colorOfPeer = (peer: Peer): string | null => {
   const who = peer.state.who;
-  return isNonNullObject(who) && typeof who.color === 'string' ? who.color : null;
+  return isNonNullObject(who) && typeof who.c === 'string' ? who.c : null;
 };
 
 /** The engine's id for the viewer: the one the server makes their edits under. */
@@ -142,6 +144,7 @@ function viewerPersonId(sheet: SheetCapability | null, viewer: Viewer): Promise<
 
 function createPageRoom(room: RoomCapability, agent: AgentCapability | null, meAsked: Promise<string>, peersHeard: (peers: Peer[]) => void): PageRoom {
   let self: string | null = null;
+  let current: Peer[] = [];
   const selfAsked = room.self().then((id) => (self = id));
   void meAsked.then((me) => room.presence({ [VIEWER_PRESENCE_KEY]: me })).catch(() => {});
   const peerOfRoom = (peer: Peer): PeerOfRoom => ({
@@ -149,15 +152,18 @@ function createPageRoom(room: RoomCapability, agent: AgentCapability | null, meA
     by: personOfPeer(peer),
     name: peer.name,
     isMe: peer.id === self,
+    sameTab: peer.id === self,
     kind: peer.kind === 'agent' ? 'agent' : 'viewer',
     presence: peer.state,
   });
   return {
-    presence: (patch) => room.presence(patch),
+    peers: () => current.map(peerOfRoom),
+    presence: (patch) => room.presence('context' in patch ? { ...patch, viewContext: patch.context } : patch),
     onPeers(listener) {
       let stopped = false;
       const hear = (peers: Peer[]): void => {
         if (stopped) return;
+        current = peers;
         peersHeard(peers);
         listener({ peers: peers.map(peerOfRoom) });
       };
@@ -168,14 +174,15 @@ function createPageRoom(room: RoomCapability, agent: AgentCapability | null, meA
         stop();
       };
     },
+    // As the reference page: the ways to ask the agent (the "Ask Agent" menu, "Ask Agent to fix", a chart's, a rule's,
+    // a blank sheet's) show whenever an agent can be reached at all. With none waiting, pressing one is refused
+    // (`agent_unavailable`) and the page's toast says the agent isn't listening and to ask it to wait for requests here.
     async canSendToAgentSession() {
-      if (agent === null) return 'rejected';
-      const status = await agent.status();
-      return status.available ? 'available' : 'rejected';
+      return agent === null ? 'rejected' : 'available';
     },
     async sendToAgentSession(payload) {
       const request = agentRequestOf(payload);
-      if (agent === null || request === null) throw Object.assign(new Error('No agent takes requests from this page.'), { code: 'agent_unavailable' });
+      if (agent === null || request === null || !(await agent.status()).available) throw Object.assign(new Error('No agent takes requests from this page.'), { code: 'agent_unavailable' });
       const result = await agent.send(request);
       if (result.status === 'failed')
         throw Object.assign(new Error('The agent could not take the request.'), { code: 'agent_unavailable' });

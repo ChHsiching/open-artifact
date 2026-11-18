@@ -7,6 +7,7 @@ import { create } from 'zustand';
 import { docClient } from '../app/doc-client.ts';
 import { getDocs } from '../app/store.ts';
 import { useEditor } from '../editor/format.ts';
+import { startedHere } from './mode.ts';
 import { describeSuggestion, type Sentence } from './summary.ts';
 
 export interface SuggestionCard {
@@ -24,12 +25,14 @@ export interface SuggestionCard {
 export function cardsOf(doc: DocState, me: string | null): SuggestionCard[] {
   return proposalIds(doc.blocks).map(id => {
     const info = doc.suggestions?.[id];
+    // One the person just suggested here is theirs, though the tab as the page holds it doesn't name them yet.
+    const by = info?.by || (me && startedHere(id) ? me : '');
     return {
       id,
-      by: info?.by ?? '',
+      by,
       at: info?.at ?? '',
       agent: info?.via === 'agent',
-      mine: !!me && info?.by === me,
+      mine: !!me && by === me,
       asOf: suggestionAsOf(doc.blocks, id),
       sentence: describeSuggestion(doc, id),
     };

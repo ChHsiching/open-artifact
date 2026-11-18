@@ -32,9 +32,19 @@ export interface BoardDoc {
 export type SaveState = 'saved' | 'dirty' | 'saving' | 'error' | 'offline' | 'readonly';
 
 /** One undo step. */
+interface BoardHistory {
+  scope: 'board';
+  path: string;
+  before: { source: string; pending: BoardOp[] };
+  after: { source: string; pending: BoardOp[] };
+  key?: string;
+}
+
 export type HistoryEntry =
   | { scope: 'canvas'; before: Canvas; after: Canvas }
-  | { scope: 'board'; path: string; before: { source: string; pending: BoardOp[] }; after: { source: string; pending: BoardOp[] }; key?: string };
+  | BoardHistory
+  | { scope: 'boards'; changes: BoardHistory[] };
+
 
 /** Longest undo history kept. */
 const HISTORY_LIMIT = 200;
@@ -83,6 +93,7 @@ export interface DocumentActions {
   createBoard(path: string, source: string, entry: Canvas['boards'][string]): void;
   /** Removes artboards from the canvas and deletes their files on save. */
   deleteBoards(paths: readonly string[]): void;
+  editBoards(paths: readonly string[], op: BoardOp): number;
   undoLast(): HistoryEntry | null;
   redoLast(): HistoryEntry | null;
   /** Someone else changed an artboard: take theirs, replay our pending operations. Returns dropped count. */
@@ -231,6 +242,24 @@ export const useDocument = create<DocumentState & DocumentActions>()((set, get) 
     });
   },
 
+  editBoards(paths, op) {
+    const state = get();
+    if (state.readOnly) return 0;
+    const boards = { ...state.boards };
+    const changes: BoardHistory[] = [];
+    for (const path of paths) {
+      const board = boards[path];
+      if (!board?.source) continue;
+      const result = applyOp(board.source, op);
+      if (!result || result.source === board.source) continue;
+      const after = { source: result.source, pending: [...board.pending, op] };
+      boards[path] = { ...board, ...after };
+      changes.push({ scope: 'board', path, before: { source: board.source, pending: board.pending }, after });
+    }
+    if (changes.length) set({ boards, undo: push(state.undo, { scope: 'boards', changes }), redo: [], edits: state.edits + 1, revision: state.revision + 1 });
+    return changes.length;
+  },
+
   undoLast() {
     const state = get();
     const entry = state.undo[state.undo.length - 1];
@@ -240,10 +269,13 @@ export const useDocument = create<DocumentState & DocumentActions>()((set, get) 
       const canvas = mergeCanvas(entry.after, entry.before, state.canvas);
       set({ canvas, undo: state.undo.slice(0, -1), redo: push(state.redo, entry), revision: state.revision + 1 });
     } else {
-      const board = state.boards[entry.path];
-      if (!board) return null;
+      const boards = { ...state.boards };
+      for (const step of entry.scope === 'board' ? [entry] : entry.changes) {
+        if (!boards[step.path]) return null;
+        boards[step.path] = { ...boards[step.path]!, ...step.before };
+      }
       set({
-        boards: { ...state.boards, [entry.path]: { ...board, ...entry.before } },
+        boards,
         undo: state.undo.slice(0, -1),
         redo: push(state.redo, entry),
         revision: state.revision + 1,
@@ -260,10 +292,13 @@ export const useDocument = create<DocumentState & DocumentActions>()((set, get) 
       const canvas = mergeCanvas(entry.before, entry.after, state.canvas);
       set({ canvas, redo: state.redo.slice(0, -1), undo: push(state.undo, entry), revision: state.revision + 1 });
     } else {
-      const board = state.boards[entry.path];
-      if (!board) return null;
+      const boards = { ...state.boards };
+      for (const step of entry.scope === 'board' ? [entry] : entry.changes) {
+        if (!boards[step.path]) return null;
+        boards[step.path] = { ...boards[step.path]!, ...step.after };
+      }
       set({
-        boards: { ...state.boards, [entry.path]: { ...board, ...entry.after } },
+        boards,
         redo: state.redo.slice(0, -1),
         undo: push(state.undo, entry),
         revision: state.revision + 1,
@@ -276,7 +311,7 @@ export const useDocument = create<DocumentState & DocumentActions>()((set, get) 
     const state = get();
     const board = state.boards[path];
     // Their change rewrites the history of this artboard: our undo steps would revert it.
-    const clear = (list: HistoryEntry[]) => list.filter((entry) => entry.scope !== 'board' || entry.path !== path);
+    const clear = (list: HistoryEntry[]) => list.filter((entry) => entry.scope === 'canvas' || (entry.scope === 'board' ? entry.path !== path : !entry.changes.some(step => step.path === path)));
     if (text === null) {
       if (!board) return 0;
       set({ boards: { ...state.boards, [path]: { ...board, saved: null, hash: null, ...(board.pending.length ? {} : { source: null }) } } });

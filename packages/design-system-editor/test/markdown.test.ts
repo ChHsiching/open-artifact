@@ -35,6 +35,13 @@ a { color: red }
     assert.equal(table.align[1], 'center');
   });
 
+  it('renders the same checklist and strike syntax the toolbar writes', () => {
+    const block = parseMarkdown('- [x] ~~Complete~~\n- [ ] Pending')[0];
+    assert.ok(block?.kind === 'list');
+    assert.deepEqual(block.items.map((item) => item.checked), [true, false]);
+    assert.equal(block.items[0]?.children[0]?.kind, 'strike');
+  });
+
   it('parses inline marks without HTML', () => {
     const runs = parseInline('a *b* __c__ [d](https://x.test) ![e](logo.svg) <b>f</b> snake_case_name');
     assert.deepEqual(runs.map((r) => r.kind), ['text', 'em', 'text', 'strong', 'text', 'link', 'text', 'image', 'text']);

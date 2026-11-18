@@ -1,5 +1,6 @@
 import type { Dynamic } from '../dynamic.ts';
 import type { SheetsHost } from '../host/sheets-host.ts';
+import { NO_FILES_FOR_AGENT, createFilesForAgent } from '../agent/files-for-agent.ts';
 import { watchTabVisibility } from './tab-visibility.ts';
 import {
   createKeysOffCellsGuard,
@@ -58,6 +59,8 @@ import { createRoomPresence } from '../presence/room.ts';
 import { createAgentActivityWatcher } from '../agent/activity.ts';
 import { NO_VIEW_SHOWN_BY_AGENT } from '../agent/view-shown-feed.ts';
 import { createElement } from 'react';
+import { createRoot } from 'react-dom/client';
+import { SheetPeers } from '../shell/SheetPeers.tsx';
 import { PageCommentsLayer } from '../comments/PageCommentsLayer.tsx';
 
 export interface BootOptions {
@@ -214,14 +217,23 @@ export async function bootSheetsPage({ host, app }: BootOptions): Promise<void> 
     return { inWords: inWords, wayOut: null };
   };
   let frameChrome = createFrameChrome({ bridge: host.bridge, shell: () => host.shell, window, exportLabels: EXPORT_LABELS });
+  const peersMount = app.ownerDocument.createElement('div');
+  stage.before(peersMount);
+  createRoot(peersMount).render(createElement(SheetPeers, { host, chrome: frameChrome }));
   host.bridge.startShell();
   offerOverlayClosing(stage, frameChrome);
   setTopLayerCloseOfferer((closeOffer?: Dynamic) => frameChrome.offerCloseOfTopLayer('ofPage', closeOffer));
-  let sheetLinks = createSheetAnchorLinks(window, () => sessionStorage);
+  let sheetLinks = createSheetAnchorLinks(window, () => sessionStorage, host.shell);
   let reportSoftly = reportErrorsSoftlyAt(null);
   let exportDeps: FileExportDeps = { shell: frameChrome, downloads: () => host.caps.downloads, report: reportErrorsSoftlyAt('exports') };
   let csvExport = createCsvExport(exportDeps);
   let xlsxDownload = createXlsxDownload(exportDeps, deflateRawCompressor());
+  // "Import from Excel": an .xlsx file the person picks goes to the server, which keeps it in imports/ and asks the agent.
+  let filesForAgent = createFilesForAgent({
+    sheet: host.caps.sheet,
+    canImport: host.abilities.canEdit && host.abilities.canAsk,
+    agent: host.caps.agent === null ? null : host,
+  });
   let agentForImport = createAgentSampler(getPage, reportSoftly);
   let agentForConditionalFormats = createAgentSampler(getPage, reportSoftly, { mendsReplies: true });
   let agentForRowsAskedFor = createAgentSampler(getPage, reportSoftly, { mendsReplies: true });
@@ -312,6 +324,11 @@ export async function bootSheetsPage({ host, app }: BootOptions): Promise<void> 
             viewerAllowsAgent: askSamplingPermission(getPage),
             codeOfChart: (chart?: Dynamic) =>
               waitForChartCode(chartCode, chart, (ms?: Dynamic, callback?: Dynamic) => void setTimeout(callback, ms)),
+            // The server describes the charts its stock programs draw, as the Excel file's own charts.
+            chartsForXlsx: async (viewIds: readonly string[]) => {
+              const answer = await host.caps.sheet?.read({ kind: 'xlsxCharts', charts: viewIds.map((viewId) => ({ viewId })) });
+              return answer !== undefined && answer.kind === 'xlsxCharts' ? (answer.descriptions as Dynamic[]) : [];
+            },
           },
           versionHistory: withTurnTakeBackGuard(versionHistoryReader, turnChanges.changedInTurn),
           versionLooks: earlierVersionLooks,
@@ -321,6 +338,7 @@ export async function bootSheetsPage({ host, app }: BootOptions): Promise<void> 
           commentsLayer: workbook === ownWorkbook() ? createElement(PageCommentsLayer) : null,
           chartsRunOn: chartsRunOn,
           ...(workbook === ownWorkbook() && { changesOfCharts: chartSends.changes, chartsWrittenByAgent: chartSends.written }),
+          filesForAgent: workbook === ownWorkbook() ? filesForAgent : NO_FILES_FOR_AGENT,
           chartNodes: createChartNodeCopier(chartWidgetNodes, reportErrorsSoftlyAt('charts')),
           viewShownByAgent: NO_VIEW_SHOWN_BY_AGENT,
           keepKeysOffCells: makeKeepKeysOffCells(() => keepKeysOffCells(true, true)),

@@ -29,6 +29,9 @@ import {
   applyMoveDrag,
   applyResizeDrag,
   carriedArrowEnds,
+  arrowBoundsBox,
+  elementBoundsWithTitle,
+  placementRectsOverlap,
   elementLayoutBox,
   expandSelectionToGroups,
   hitSlop,
@@ -216,14 +219,14 @@ export async function startEngineBoard(parts: EngineBoardParts, signal: AbortSig
   /* ------------------------------------------------------------ mirroring */
 
   let settled = { zoom: engine.camera.zoom, view: engine.viewport(), bucket: spriteBucket(engine.camera.zoom, window.devicePixelRatio || 1) };
-  /** Elements whose DOM view shows through a hole now. */
+  /** Elements whose text shows through a canvas hole now. */
   let holes: ReadonlySet<ElementId> = new Set();
   let hidden: ReadonlySet<ElementId> = new Set();
   let preview: { move: MoveState; dx: number; dy: number } | null = null;
   /** The resize in progress, previewed on the elements around it (arrows reroute). */
   let resizePreview: { drag: ResizeDrag; rect: Rect } | null = null;
 
-  const liveIds = (elements: readonly BoardElement[]): Set<ElementId> => {
+  const liveIds = (elements: readonly BoardElement[], byId: ElementsById): Set<ElementId> => {
     const ids = new Set<ElementId>();
     for (const element of elements) if (isAlwaysLive(element)) ids.add(element.id);
     // A sticker playing its animation (the timer ran out) is drawn as DOM while it plays.
@@ -231,12 +234,25 @@ export async function startEngineBoard(parts: EngineBoardParts, signal: AbortSig
     const { editing, cropping } = useSelection.getState();
     if (editing) ids.add(editing.id);
     if (cropping) ids.add(cropping);
+    // The live layer sits above the canvas. Keep overlapping foreground elements above it in board order.
+    if (ids.size) {
+      const regions: Box[] = [];
+      const measures = currentMeasures();
+      for (const element of elements) {
+        if (!regions.length && !ids.has(element.id)) continue;
+        const box = element.type === 'arrow' ? arrowBoundsBox(element, byId, measures) : elementBoundsWithTitle(element, measures, false, settled.zoom);
+        if (box && (ids.has(element.id) || regions.some((liveBox) => placementRectsOverlap(box, liveBox, 2)))) {
+          ids.add(element.id);
+          regions.push(box);
+        }
+      }
+    }
     return ids;
   };
 
-  /** Publishes the live list; returns the live ids. */
-  const pushLive = (elements: readonly BoardElement[]): Set<ElementId> => {
-    const live = liveIds(elements);
+  /** Publishes the live list in draw order. */
+  const pushLive = (elements: readonly BoardElement[], byId: ElementsById): Set<ElementId> => {
+    const live = liveIds(elements, byId);
     const liveList = elements.filter((element) => live.has(element.id)).map((element) => element.id);
     const current = useEngineView.getState().live;
     if (liveList.length !== current.length || liveList.some((id, index) => id !== current[index])) useEngineView.setState({ live: liveList });
@@ -257,7 +273,7 @@ export async function startEngineBoard(parts: EngineBoardParts, signal: AbortSig
       byId = new Map(resized.map((element) => [element.id, element]));
       elements = resized.map((element, index) => (drag.members.has(element.id) ? before[index]! : element));
     }
-    const live = pushLive(elements);
+    const live = pushLive(elements, byId);
     engineRef.drawn = byId;
     mirror.sync({
       elements,
@@ -300,7 +316,8 @@ export async function startEngineBoard(parts: EngineBoardParts, signal: AbortSig
       if (state.editing === previous.editing && state.cropping === previous.cropping) return;
       // Now, in the same render as the edit: an editor first mounted under the canvas would be
       // mounted again above it a frame later, and lose its focus (and the edit) on the way.
-      pushLive(shownBoard().elements);
+      const { elements, byId } = shownBoard();
+      pushLive(elements, byId);
       scheduleSync();
     }),
     useTheme.subscribe(() => {

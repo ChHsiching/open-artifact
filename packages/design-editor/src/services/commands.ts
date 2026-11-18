@@ -529,7 +529,7 @@ export function addNote(kind: CanvasNote['kind'] | undefined, at: { x: number; y
   const id = freshId('n', Object.keys(doc.canvas.notes));
   const note: CanvasNote = { x: Math.round(at.x), y: Math.round(at.y), text: '', ...extra };
   if (kind && kind !== 'sticky') note.kind = kind;
-  if (kind === 'title1') note.maxW = 1200;
+  if (kind === 'title1') Object.assign(note, { maxW: 1200, size: 24, bold: false }, extra);
   if (!kind || kind === 'sticky') note.w = 240;
   if (view.page && doc.canvas.pages.length > 1 && view.page !== doc.canvas.pages[0]?.id) note.page = view.page;
   doc.updateCanvas((canvas) => ({ ...canvas, notes: { ...canvas.notes, [id]: note } }));

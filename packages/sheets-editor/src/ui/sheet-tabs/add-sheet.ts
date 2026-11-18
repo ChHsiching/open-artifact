@@ -2,7 +2,7 @@ import { Menu } from '../../kit/menu.tsx';
 import { Button } from '../../kit/button.tsx';
 import type { Dynamic } from '../../dynamic.ts';
 import { jsxs, Fragment, jsx } from 'react/jsx-runtime';
-import { FILE_UPLOAD_ICON } from '../../import/file-sources.ts';
+import { FILE_UPLOAD_ICON, IMPORT_FILE_SOURCES, type ImportFileSource } from '../../import/file-sources.ts';
 import { importFileChoices } from '../../import/csv-file.ts';
 import { shortcutFor } from '../../keys/key-press.ts';
 import { sheetMessages } from '../../i18n/sheet-messages.ts';
@@ -13,9 +13,22 @@ import { ToolbarMenu } from '../format-toolbar.ts';
 export function AddSheetMenuItems({
   onBlankChosen: onBlankChosen,
   onImportChosen: onImportChosen,
+  filesForAgent = NO_FILES_FOR_AGENT,
+  onFileForAgentChosen: onFileForAgentChosen,
 }: Dynamic) {
   return jsxs(Fragment, {
     children: [
+      (filesForAgent as readonly ImportFileSource[]).map((source) =>
+        jsx(
+          Menu.Item,
+          {
+            icon: IMPORT_FILE_SOURCES[source].mark,
+            onClick: () => onFileForAgentChosen(source),
+            children: IMPORT_FILE_SOURCES[source].name(),
+          },
+          source,
+        ),
+      ),
       importFileChoices.map(
         (input?: Dynamic) =>
           jsx(
@@ -53,7 +66,7 @@ export function AddSheetButton({
     'aria-label': sheetMessages.addSheet(),
     tooltip: false,
   };
-  if (isAddSheetBlankOnly())
+  if (isAddSheetBlankOnly(menuProps.filesForAgent))
     return jsx(ToolbarTooltip, {
       name: sheetMessages.addSheet(),
       shortcut: shortcutFor('addSheet'),
@@ -88,4 +101,8 @@ export function AddSheetButton({
     }),
   });
 }
-export const isAddSheetBlankOnly = (imports: readonly unknown[] = importFileChoices): boolean => imports.length === 0;
+const NO_FILES_FOR_AGENT: readonly ImportFileSource[] = [];
+export const isAddSheetBlankOnly = (
+  filesForAgent: readonly unknown[] = NO_FILES_FOR_AGENT,
+  imports: readonly unknown[] = importFileChoices,
+): boolean => filesForAgent.length + imports.length === 0;

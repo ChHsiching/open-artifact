@@ -7,13 +7,14 @@
  */
 
 import type { ChromeReport } from '@open-artifact/runtime';
+import { slideHistory } from './history.ts';
 import { agentChrome, chromeReporter, openMessageCount } from '@open-artifact/editor-kit';
 import { create } from 'zustand';
 import { isDirty, useDeck, type SaveState } from '../state/deck.ts';
 import { useView } from '../state/view.ts';
 import { useAgent } from './agent.ts';
-import { redo, undo } from './commands.ts';
-import { useComments } from './comments.ts';
+import { currentSlide, redo, undo } from './commands.ts';
+import { canComment, elementAnchor, parseAnchor, useComments } from './comments.ts';
 import { writingShortfall, type WritingProgress } from './creation.ts';
 import { exportBusy, runExport, type ExportRequest } from './exports.ts';
 import { playableSlides } from './present.ts';
@@ -24,20 +25,20 @@ type ChromeAction = NonNullable<ChromeReport['actions']>[number];
 type ChromeFormat = NonNullable<ChromeReport['formats']>[number];
 type ChromeSaved = NonNullable<ChromeReport['saved']>;
 
-/** Export dialogs the editor opens itself (the PDF options). */
+/** Format-specific options for exports requested by the Shell. */
 interface ExportUi {
-  /** A pending PDF request from the Shell (its request id), or a local one (null). */
-  pdf: { request: string | null } | null;
+  /** The Shell request awaiting PDF options. */
+  pdf: { request: string } | null;
   /** A pending web page request, the same way. */
-  html: { request: string | null } | null;
+  html: { request: string } | null;
   /** The last run: what the export could not do. */
   notes: { name: string; notes: string[] } | null;
   /** An export asked for while the agent is still writing the deck, waiting for "Download anyway". */
-  partial: { request: ExportRequest; shellRequest: string | null; progress: WritingProgress } | null;
+  partial: { request: ExportRequest; shellRequest: string; progress: WritingProgress } | null;
   running: boolean;
-  openPdf(request: string | null): void;
+  openPdf(request: string): void;
   closePdf(): void;
-  openHtml(request: string | null): void;
+  openHtml(request: string): void;
   closeHtml(): void;
   setNotes(notes: ExportUi['notes']): void;
 }
@@ -98,6 +99,7 @@ function savedOf(save: SaveState): ChromeSaved {
 
 /** The export formats offered. */
 export function exportFormats(): ChromeFormat[] {
+  if (session().viewer.role !== 'owner') return [];
   const deck = useDeck.getState();
   const empty = deck.status !== 'ready' || playableSlides().length === 0;
   const disabled = empty || exportBusy();
@@ -110,12 +112,11 @@ export function exportFormats(): ChromeFormat[] {
       disabled,
       variants: [
         { id: 'current', label: 'PowerPoint, current fonts' },
-        { id: 'embed', label: 'PowerPoint, embedded fonts' },
         { id: 'basic', label: 'PowerPoint, basic fonts' },
         { id: 'pictures', label: 'PowerPoint, slides as pictures' },
       ],
     },
-    { format: 'html', label: 'Web page (.html)', description: 'A self-contained page that presents the deck', disabled },
+    { format: 'html', label: 'Web page (.html)', interactive: true, description: 'A self-contained page that presents the deck', disabled },
     { format: 'png', label: 'Current slide as image (.png)', disabled: disabled || !useView.getState().current },
   ];
 }
@@ -127,39 +128,37 @@ function actions(): ChromeAction[] {
     { id: 'undo', disabled: deck.undo.length === 0 || deck.readOnly },
     { id: 'redo', disabled: deck.redo.length === 0 || deck.readOnly },
     { id: 'open_find' },
+    ...(canComment() && currentSlide() ? [{ id: 'comment_selection' }] : []),
     { id: 'save_now', disabled: !isDirty(deck) || deck.readOnly },
     { id: 'present', label: 'Present', disabled: playableSlides().length === 0 },
   ];
 }
 
 /**
- * Runs an export the Shell or the toolbar asked for. While the agent is
+ * Runs an export the Shell asked for. While the agent is
  * still writing the deck, the person is first asked whether to download the
  * slides written so far (`confirmed` skips the question).
  */
-export async function startExport(request: ExportRequest, shellRequest: string | null = null, confirmed = false): Promise<void> {
+export async function startExport(request: ExportRequest, shellRequest: string, confirmed = false): Promise<void> {
   const shell = session().shell;
   if (exportBusy()) {
-    if (shellRequest) shell?.exportState(shellRequest, 'busy');
+    shell?.exportState(shellRequest, 'busy');
     return;
   }
   const writing = writingShortfall();
   if (writing && !confirmed) {
-    // A question already open is answered no: the newer request takes its place.
-    const waiting = useExportUi.getState().partial;
-    if (waiting?.shellRequest) shell?.exportState(waiting.shellRequest, 'declined', 'Another download was asked for.');
     useExportUi.setState({ partial: { request, shellRequest, progress: writing } });
     return;
   }
-  if (shellRequest) shell?.exportState(shellRequest, 'started');
+  shell?.exportState(shellRequest, 'started');
   useExportUi.setState({ running: true });
   try {
     const result = await runExport(request, undefined, { writing: writing ?? undefined });
-    if (shellRequest) shell?.exportState(shellRequest, 'done');
+    shell?.exportState(shellRequest, 'done');
     useExportUi.getState().setNotes(result.notes.length ? { name: result.name, notes: result.notes } : null);
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
-    if (shellRequest) shell?.exportState(shellRequest, 'failed', reason);
+    shell?.exportState(shellRequest, 'failed', reason);
     useExportUi.getState().setNotes({ name: 'Download failed', notes: [reason] });
   } finally {
     useExportUi.setState({ running: false });
@@ -172,7 +171,7 @@ export function answerPartialExport(download: boolean): void {
   if (!waiting) return;
   useExportUi.setState({ partial: null });
   if (download) void startExport(waiting.request, waiting.shellRequest, true);
-  else if (waiting.shellRequest) session().shell?.exportState(waiting.shellRequest, 'declined', 'The deck is still being written.');
+  else session().shell?.exportState(waiting.shellRequest, 'declined', 'The deck is still being written.');
 }
 
 /** Starts reporting to the Shell, if there is one. */
@@ -185,6 +184,7 @@ export function startShellBridge(): void {
     return {
       agent: agentChrome(useAgent.getState().status),
       exports: false,
+      history: slideHistory.store.getState().available,
       ...(deck.status === 'ready' ? { saved: savedOf(deck.save) } : {}),
       leaveLosesWork: isDirty(deck) && deck.save !== 'saved',
       actions: actions(),
@@ -202,9 +202,13 @@ export function startShellBridge(): void {
     if (state.current !== previous.current) report();
   });
   useExportUi.subscribe(report);
+  slideHistory.store.subscribe(report);
   shell.onFilesChanged(() => true);
   shell.onCommand((command) => {
     switch (command.cmd) {
+      case 'history':
+        slideHistory.toggle();
+        return;
       case 'exports':
         return [];
       case 'action':
@@ -215,6 +219,17 @@ export function startShellBridge(): void {
           case 'redo':
             redo();
             break;
+          case 'comment_selection': {
+            const slide = currentSlide();
+            if (slide && canComment()) {
+              const view = useView.getState();
+              if (view.mode !== 'edit') view.setMode('edit');
+              const comments = useComments.getState();
+              comments.setOn(true);
+              comments.setDraft(elementAnchor(slide, view.selection.length === 1 ? view.selection[0]! : null));
+            }
+            break;
+          }
           case 'open_find':
             useView.getState().toggle('findOpen', true);
             break;
@@ -231,7 +246,13 @@ export function startShellBridge(): void {
         return;
       case 'comments_mode': {
         const comments = useComments.getState();
-        comments.setOn(command.on ?? !comments.on);
+        const on = command.on ?? !comments.on;
+        if (on && !canComment()) return;
+        comments.setOn(on);
+        if (on && command.anchor) {
+          const anchor = parseAnchor(command.anchor);
+          if (anchor.slide === useView.getState().current) comments.setDraft(anchor);
+        }
         return;
       }
       case 'comments_list': {
@@ -241,10 +262,18 @@ export function startShellBridge(): void {
       }
       case 'export_format': {
         const { request, format, variant } = command;
+        if (session().viewer.role !== 'owner') {
+          shell.exportState(request, 'unsupported');
+          return;
+        }
+        const ui = useExportUi.getState();
+        if (exportBusy() || ui.pdf || ui.html || ui.partial) {
+          shell.exportState(request, 'busy');
+          return;
+        }
         if (format === 'pdf' || format === 'html') {
-          if (exportBusy()) shell.exportState(request, 'busy');
-          else if (format === 'pdf') useExportUi.getState().openPdf(request);
-          else useExportUi.getState().openHtml(request);
+          if (format === 'pdf') ui.openPdf(request);
+          else ui.openHtml(request);
           return;
         }
         if (format === 'pptx') void startExport(pptxRequest(variant), request);

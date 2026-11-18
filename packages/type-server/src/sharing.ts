@@ -26,6 +26,7 @@
  * the server's port, for every artifact this server shares.
  */
 
+import { DOC_API } from '@open-artifact/runtime/doc-api';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFileSync, renameSync, writeFileSync } from 'node:fs';
 import type { IncomingMessage, Server, ServerResponse } from 'node:http';
@@ -260,9 +261,9 @@ export class SharingFile {
 /** Page routes a commenter may write: the comment threads (not sending them to the agent). */
 const COMMENT_WRITES = new Set<string>([API.commentsCreate, API.commentsReply, API.commentsEdit, API.commentsReact, API.commentsResolve, API.commentsMove]);
 /** Page routes that change the artifact. */
-const EDIT_WRITES = new Set<string>([API.publish, API.assets, API.dbWrite, API.commentsRemove, API.roomEmit, API.historyRestore, API.historyDismiss, SHEET_API.send]);
+const EDIT_WRITES = new Set<string>([API.publish, API.assets, API.dbWrite, API.commentsRemove, API.roomEmit, API.historyRestore, API.historyDismiss, DOC_API.restore, DOC_API.importFile, SHEET_API.send]);
 /** Page routes that answer with a POST: everyone's, as reads are (a Sheet's widget refuses a write by role itself). */
-const POSTED_READS = new Set<string>([SHEET_API.read, SHEET_API.widget]);
+const POSTED_READS = new Set<string>([SHEET_API.read, SHEET_API.widget, DOC_API.session, DOC_API.read, DOC_API.history, DOC_API.version, DOC_API.call]);
 /** Page routes that act on this computer or reach the agent: the owner's alone. */
 const OWNER_WRITES = new Set<string>([API.agentSend, API.commentsSend, API.downloads, API.mcpCall, SHEET_API.importFile]);
 
@@ -538,7 +539,15 @@ export class LanSharing {
     }
     const { entry, role } = found;
     const title = entry.target.title;
-    const to = page(entry.target);
+    const destination = new URL(page(entry.target), 'http://localhost');
+    if (entry.target.type === 'docs') {
+      const query = new URL(req.url ?? '/', destination).searchParams;
+      for (const key of ['tab', 'comment']) {
+        const value = query.get(key);
+        if (value && /^[a-zA-Z0-9_-]{1,128}$/.test(value)) destination.searchParams.set(key, value);
+      }
+    }
+    const to = destination.pathname + destination.search;
     if (local) {
       req.resume();
       const lan = entry.on ? this.lan.network.addresses().find((a) => !isTailnet(a)) : undefined;

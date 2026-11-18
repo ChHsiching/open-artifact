@@ -11,7 +11,7 @@
  * inlined; images, fonts and uploads become `data:` URLs.
  */
 
-import { SUPPORT_SCRIPT_TAG } from '@open-artifact/dc';
+import { supportScriptTag } from '@open-artifact/dc';
 
 /** Root-relative URL of an upload (`/_blob/<id>`). */
 export const BLOB_REF = /\/_blob\/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9]+)?/g;
@@ -114,8 +114,27 @@ const scriptJson = (value: unknown): string => JSON.stringify(value).replace(/</
  * The bootstrap that serves the embedded copies to the runtime's `fetch`:
  * its own page (the runtime re-reads its source) and files next to it.
  */
-export function standaloneBootstrap(self: string, files: Readonly<Record<string, string>>): string {
-  return `(function(){var F=${scriptJson(files)};var S=${scriptJson(self)};var of=window.fetch;var strip=function(u){return u.replace(/#.*$/,'')};var here=strip(location.href);var base=here.replace(/[?].*$/,'').replace(/[^/]*$/,'');window.fetch=function(input,init){try{var u=strip(new URL(typeof input==='string'?input:input.url,location.href).href);if(u===here)return Promise.resolve(new Response(S,{headers:{'content-type':'text/html'}}));if(u.indexOf(base)===0){var k=decodeURIComponent(u.slice(base.length).replace(/[?].*$/,''));if(Object.prototype.hasOwnProperty.call(F,k))return Promise.resolve(new Response(F[k]));}}catch(e){}return of.apply(this,arguments);};})();`;
+export function standaloneBootstrap(self: string, files: Readonly<Record<string, string>>, path = 'index.dc.html'): string {
+  return `(function () {
+    const path = ${scriptJson(path)}, source = ${scriptJson(self)}, files = ${scriptJson(files)};
+    window.__dcExport = {path, source, files};
+    const request = window.fetch;
+    const project = new URL(path, 'https://artifact.invalid/');
+    window.fetch = function (input, init) {
+      try {
+        const name = typeof input === 'string' ? input : input.url || input.href;
+        if (name === location.href) return Promise.resolve(new Response(source));
+        const here = new URL(location.href);
+        const url = new URL(name, here.protocol === 'about:' ? project : here);
+        const relative = here.protocol !== 'about:' && url.origin === here.origin && url.href.startsWith(new URL('.', here).href)
+          ? url.href.slice(new URL('.', here).href.length) : name;
+        const target = new URL(relative, project);
+        const key = decodeURIComponent(target.pathname.slice(1));
+        if (target.origin === project.origin && Object.hasOwn(files, key)) return Promise.resolve(new Response(files[key]));
+      } catch {}
+      return request.apply(this, arguments);
+    };
+  })();`;
 }
 
 /** What {@link standaloneDocument} embeds. */
@@ -146,13 +165,6 @@ export function standaloneDocument({ path, source, files, uploads, runtime }: St
   for (const [name, data] of files) if (typeof data === 'string' && TEXT_FILE.test(name)) texts.set(name, inline(name, data));
 
   const self = inline(path, source);
-  // Files the runtime fetches, by their path from the artboard's folder (the page's own folder offline).
-  const served: Record<string, string> = {};
-  for (const [name, text] of texts) {
-    const rel = relativePath(boardDir, name);
-    if (!rel.startsWith('../')) served[rel] = text;
-  }
-
   let html = self;
   // Linked stylesheets and scripts the browser loads by itself: inline them.
   for (const [name, text] of texts) {
@@ -163,8 +175,10 @@ export function standaloneDocument({ path, source, files, uploads, runtime }: St
       html = html.replace(new RegExp(`<script\\b([^>]*?)\\bsrc=["'](?:\\./)?${rel}["']([^>]*)>\\s*</script>`, 'gi'), (_m, a: string, b: string) => `<script${a}${b}>\n${inlineScript(text)}\n</script>`);
     }
   }
-  const scripts = `<script>${inlineScript(standaloneBootstrap(self, served))}</script>\n<script>\n${inlineScript(runtime)}\n</script>`;
-  if (html.includes(SUPPORT_SCRIPT_TAG)) return html.replace(SUPPORT_SCRIPT_TAG, () => scripts);
+  const bootstrap = standaloneBootstrap(self, Object.fromEntries(texts), path);
+  const scripts = `<script>${inlineScript(bootstrap)}</script>\n<script>\n${inlineScript(runtime)}\n</script>`;
+  const tag = supportScriptTag(html);
+  if (tag) return html.replace(tag, () => scripts);
   const head = /<head(\s[^>]*)?>/i.exec(html);
   if (head) return `${html.slice(0, head.index + head[0].length)}\n${scripts}${html.slice(head.index + head[0].length)}`;
   return `${scripts}\n${html}`;
@@ -182,6 +196,30 @@ export interface ExportedBoard {
 }
 
 const escapeHtml = (text: string): string => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+/** A portable gallery. Only an embedded frame can navigate its own artboard. */
+export function standaloneCanvas(title: string, boards: readonly (ExportedBoard & { html: string })[], marker: string, runtime: string): string {
+  const gallery = boards.map(b => `<section><h2>${escapeHtml(b.title)}</h2><iframe title="${escapeHtml(b.title)}" width="${b.width}" height="${b.height}" sandbox="allow-scripts allow-popups"></iframe></section>`).join('\n');
+  return `<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(title)}</title>
+<style>body{background:#f5f4ef;color:#1f1e1d;font:14px/1.4 system-ui;margin:48px}main{display:flex;flex-direction:column;align-items:flex-start;gap:48px}h2{font-size:13px;font-weight:500;color:#6b6a68;margin:0 0 12px}iframe{border:0;background:white;display:block;box-shadow:0 1px 3px #0002}</style>
+<main>${gallery}</main>
+<script>
+const runtime = ${scriptJson(inlineScript(runtime))};
+const pages = new Map(${scriptJson(boards.map(b => [b.path, b.html]))});
+const frames = Array.from(document.querySelectorAll('iframe'));
+function show(frame, path) {
+  const html = pages.get(path);
+  if (html !== undefined) frame.srcdoc = html.replace(${scriptJson(marker)}, () => runtime);
+}
+window.addEventListener('message', event => {
+  const frame = frames.find(f => f.contentWindow === event.source);
+  const request = event.data?.__dc;
+  if (frame && request?.type === 'navigate') show(frame, request.path);
+});
+Array.from(pages.keys()).forEach((path, i) => show(frames[i], path));
+</script></html>`;
+}
 
 /** `index.html` of the canvas export: every artboard, page by page, as a link. */
 export function canvasIndexHtml(title: string, boards: readonly ExportedBoard[]): string {

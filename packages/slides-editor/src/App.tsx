@@ -9,7 +9,7 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { Loader2, Plus, Presentation, TriangleAlert } from 'lucide-react';
 import { Button, EmptyState } from '@open-artifact/ui';
-import { deckOrder, useDeck } from './state/deck.ts';
+import { useDeck } from './state/deck.ts';
 import { useOrder } from './state/outline.ts';
 import { useView } from './state/view.ts';
 import { installKeyboard } from './keyboard.ts';
@@ -20,7 +20,9 @@ import { startComments, useComments } from './services/comments.ts';
 import { startCreation, useCreation } from './services/creation.ts';
 import { startCursors } from './services/cursors.ts';
 import { startDesignSystems } from './services/design-systems.ts';
-import { slideFromHash, startLocationSync } from './services/location.ts';
+import { HistoryDialog } from './components/HistoryDialog.tsx';
+import { startHistory } from './services/history.ts';
+import { initialSlide, startLocationSync } from './services/location.ts';
 import { pendingRecovery } from './services/recovery.ts';
 import { maybeSession, resolveSrc, startSession } from './services/session.ts';
 import { startShellBridge } from './services/shell.ts';
@@ -51,8 +53,8 @@ async function boot(): Promise<void> {
   await loadDeck();
   const deck = useDeck.getState();
   if (deck.status !== 'ready') return;
-  // A `#slide-N` link opens that slide; otherwise the first one.
-  useView.getState().showSlide(slideFromHash() ?? deckOrder(deck)[0] ?? null);
+  // Start at the linked slide when opening a shared address.
+  useView.getState().showSlide(initialSlide());
   startLocationSync();
   startPresence();
   startCreation();
@@ -68,6 +70,7 @@ async function boot(): Promise<void> {
   }
   startShellBridge();
   void startComments();
+  void startHistory();
   startDesignSystems();
   // Unsaved changes from an earlier visit wait for the person's choice.
   if (!deck.readOnly) useRecoveryOffer.getState().set(pendingRecovery());
@@ -181,6 +184,7 @@ export function App(): ReactNode {
         {onStage && showProperties && !empty ? <PropertiesPanel /> : null}
         <CommentList />
         <Dialogs />
+        <HistoryDialog />
         <Presenter />
       </div>
     </TipGroup>

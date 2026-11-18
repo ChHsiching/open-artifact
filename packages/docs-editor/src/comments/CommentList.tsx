@@ -3,10 +3,11 @@ import { PanelEdge, usePanelWidth } from '@open-artifact/editor-kit/react';
 import type { CommentThread } from '@open-artifact/runtime';
 import { Segmented } from '@open-artifact/ui';
 import { X } from 'lucide-react';
-import { type ReactNode, useMemo } from 'react';
+import { type ReactNode, useLayoutEffect, useMemo, useRef } from 'react';
 import { PHONE_QUERY, useMedia } from '../app/media.ts';
 import { setDocs, useDocs } from '../app/store.ts';
 import { revealThread } from './actions.ts';
+import { NewThreadCard } from './NewThreadCard.tsx';
 import { type CommentFilter, docComments, setCommentUi, useCommentUi, useThreads } from './store.ts';
 import { ReactionChip, ThreadCard } from './ThreadCard.tsx';
 import { byRecent, isReactionThread } from './threads.ts';
@@ -51,6 +52,11 @@ export function CommentList(): ReactNode {
   const holds = useCommentUi(state => state.placed);
   const files = useDocs(state => state.project?.files);
   const activeTab = useDocs(state => state.activeTab);
+  const writing = useCommentUi(state => !!state.composer && state.composer.anchor.tab === activeTab);
+  const list = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (writing && list.current) list.current.scrollTop = 0;
+  }, [writing]);
 
   const groups = useMemo(() => {
     const shown = threads.filter(thread => filter === 'all' || (filter === 'open' ? thread.status === 'open' : thread.status === 'resolved'));
@@ -86,8 +92,9 @@ export function CommentList(): ReactNode {
           className="w-full [&>*]:flex-1"
         />
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-6">
-        {groups.length === 0 ? (
+      <div ref={list} className="min-h-0 flex-1 overflow-y-auto px-3 pb-6">
+        {writing && <NewThreadCard />}
+        {groups.length === 0 && !writing ? (
           <div className="py-10 text-center text-[13px] text-chrome-muted">No comments</div>
         ) : (
           groups.map(group => (

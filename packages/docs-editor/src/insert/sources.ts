@@ -1,5 +1,6 @@
 /** What each typeahead menu lists for its query. */
 import { getDocs } from '../app/store.ts';
+import { canAskFromText, openAsk } from '../ask/actions.ts';
 import { searchEmoji } from './emoji.ts';
 import { mentionOptions } from './mentions.ts';
 import { knownPeople } from './people.ts';
@@ -8,7 +9,12 @@ import { slashSource } from './slash-items.ts';
 
 export const mentionSource: OptionSource = query => {
   const project = getDocs().project;
-  return mentionOptions(query, { people: knownPeople(), files: project?.files ?? [], enums: project?.enums ?? [] });
+  return mentionOptions(query, {
+    people: knownPeople(),
+    files: project?.files ?? [],
+    enums: project?.enums ?? [],
+    ...(canAskFromText() ? { askAgent: (view: Parameters<typeof openAsk>[0]) => void openAsk(view) } : {}),
+  });
 };
 
 export const emojiSource: OptionSource = query =>

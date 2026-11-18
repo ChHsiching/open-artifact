@@ -38,6 +38,7 @@ import {
   type TextLine,
 } from '@open-artifact/export-kit';
 import { nodeAt, parsePathKey, SLIDE_HEIGHT, SLIDE_WIDTH, type DeckFace, type Slide } from '@open-artifact/slides-core';
+import { embedStillsReady } from '../render/embed-still.ts';
 import { SlideView } from '../render/SlideView.tsx';
 import { installSlideStyles, slideStylesheet } from '../render/css.ts';
 import { fitElement } from '../render/fit.ts';
@@ -73,6 +74,7 @@ export interface CaptureContext {
   /** Self-contained `@font-face` rules drawn into pictures. */
   fontCss: string;
   /** Called when a picture had to be drawn with the fallback renderer. */
+  onMissingEmbed?: () => void;
   onFallback?: () => void;
   /** Called for each picture that could not be read. */
   onMissingPicture?: (src: string) => void;
@@ -107,7 +109,7 @@ function refit(root: HTMLElement, slide: Slide): void {
 }
 
 /** Renders a slide offscreen and waits until it is fully drawn. */
-export async function mountSlide(slide: Slide, context: Pick<CaptureContext, 'resolveSrc' | 'faces'>): Promise<MountedSlide> {
+export async function mountSlide(slide: Slide, context: Pick<CaptureContext, 'resolveSrc' | 'faces' | 'onMissingEmbed'>, captureEmbeds = true): Promise<MountedSlide> {
   installSlideStyles();
   syncDeckFonts(context.faces, context.resolveSrc);
   const host = document.createElement('div');
@@ -127,7 +129,7 @@ export async function mountSlide(slide: Slide, context: Pick<CaptureContext, 're
   const ref = createRef<HTMLDivElement>();
   const reactRoot = createRoot(host);
   flushSync(() => {
-    reactRoot.render(createElement(SlideView, { slide, options: { mode: 'export', resolveSrc: context.resolveSrc }, rootRef: ref }));
+    reactRoot.render(createElement(SlideView, { slide, options: { mode: 'export', captureEmbeds, resolveSrc: context.resolveSrc }, rootRef: ref }));
   });
   const dispose = (): void => {
     reactRoot.unmount();
@@ -137,6 +139,9 @@ export async function mountSlide(slide: Slide, context: Pick<CaptureContext, 're
   if (!root) {
     dispose();
     throw new Error('The slide could not be drawn.');
+  }
+  if (captureEmbeds) {
+    if ((await embedStillsReady(root)).includes(false)) context.onMissingEmbed?.();
   }
   await picturesReady(root, IMAGE_TIMEOUT);
   await fontsReady(document, FONT_TIMEOUT);

@@ -15,6 +15,7 @@ import {
   MAX_PAGES,
   MIN_BOARD_SIZE,
   intersects,
+  noteFontSize,
   pageOf,
 } from './canvas.ts';
 
@@ -145,10 +146,24 @@ export function checkDesignProject(files: ReadonlyMap<string, string>, options: 
   for (const id of noteIds) {
     const note = notes[id];
     if (!ID_PATTERN.test(id)) add('canvas.json', 'error', `Note id "${id}" must match [A-Za-z0-9_-]{1,40}.`);
-    if (typeof note?.x !== 'number' || typeof note?.y !== 'number' || typeof note?.text !== 'string') {
-      add('canvas.json', 'error', `Note "${id}" needs numeric x, y and a text.`);
+    if (typeof note?.x !== 'number' || typeof note?.y !== 'number') {
+      add('canvas.json', 'error', `Note "${id}" needs numeric x and y.`);
+      continue;
     }
-    if (note?.kind === 'title1' && note.maxW === undefined) add('canvas.json', 'warning', `Title note "${id}" should set maxW (its row's width).`);
+    if ((!note.kind || note.kind === 'sticky' || note.kind === 'title1') && typeof note.text !== 'string') add('canvas.json', 'error', `Note "${id}" needs text.`);
+    if (note.kind === 'link' && (typeof note.href !== 'string' || !note.href.trim())) add('canvas.json', 'error', `Link card "${id}" needs an href.`);
+    if (note.page !== undefined && !pageIds.has(String(note.page))) add('canvas.json', 'error', `Note "${id}" names unknown page "${String(note.page)}".`);
+    if (note.kind === 'title1' && noteFontSize(note.size, 'title1') >= 72 && typeof note.text === 'string') {
+      if (note.maxW === undefined) add('canvas.json', 'warning', `Title note "${id}" should set maxW (its row's width).`);
+      const width = typeof note.maxW === 'number' && note.maxW > 0 ? note.maxW : Math.max(1, note.text.length) * noteFontSize(note.size, 'title1');
+      const page = note.page ?? pages[0]?.id;
+      const x = note.x, y = note.y;
+      const inColumn = entries.filter(([, b]) => (b.page ?? pages[0]?.id) === page && Number(b.x) < x + width && Number(b.x) + Number(b.w) > x);
+      const below = inColumn.filter(([, b]) => Number(b.y) >= y && Number(b.y) - y < 223).sort((a, b) => Number(a[1].y) - Number(b[1].y));
+      const over = inColumn.filter(([, b]) => Number(b.y) < y && Number(b.y) + Number(b.h) > y);
+      if (below.length) add('canvas.json', 'error', `Title "${id}" is ${Number(below[0]![1].y) - y} px above ${below[0]![0]}. Leave 223 px above its row (y ≤ ${Number(below[0]![1].y) - 223}).`);
+      if (over.length) add('canvas.json', 'error', `Title "${id}" sits over ${over[0]![0]}. Move it at least 223 px above its row.`);
+    }
     if (note?.groups !== undefined) {
       const groups = note.groups;
       if (!Array.isArray(groups) || groups.some((group) => typeof group !== 'string' || !ID_PATTERN.test(group))) {

@@ -15,6 +15,7 @@
 import {
   buildBoardFile,
   boardFileName,
+  boardFileJsonReplacer,
   isRasterDataUrl,
   orderElementsForReading,
   serializeBoardFile,
@@ -130,7 +131,9 @@ function needsEmbedding(image: ImageElement): boolean {
 
 /** Builds the board file. */
 export async function exportBoardFile(input: BoardFileInput): Promise<BoardFileDownload> {
-  const { board, measures } = input;
+  const { measures } = input;
+  // Scrub text before drawing the preview too. The live board keeps its working sharing links.
+  const board: Board = JSON.parse(JSON.stringify(input.board, boardFileJsonReplacer));
   const elements = board.content.elements;
   const assets = await loadPictureAssets(elements, 'ink', input.timeoutMs ?? RASTER_IMAGE_LOAD_TIMEOUT_MS);
   try {
@@ -150,9 +153,14 @@ export async function exportBoardFile(input: BoardFileInput): Promise<BoardFileD
             ...board,
             content: {
               ...board.content,
-              elements: elements.map((element) => {
-                const src = element.type === 'image' ? kept.get(element.id) : undefined;
-                return src !== undefined ? { ...element, src } : element;
+              elements: elements.map((element): BoardElement => {
+                if (element.type !== 'image') return element;
+                const { src, video, crop, href, type, ...box } = element;
+                const picture = needsEmbedding(element) ? kept.get(element.id) : src;
+                // A portable copy of a video holds its poster. Local blob URLs belong to the source board.
+                if (picture) return { ...box, type, src: picture, ...(crop && { crop }), ...(href && { href }) };
+                const label = href ? `[Picture not included](${href})` : 'Picture not included';
+                return { ...box, type: 'shape', kind: 'rect', color: 'white', text: label };
               }),
             },
           },

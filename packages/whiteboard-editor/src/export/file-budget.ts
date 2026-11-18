@@ -49,8 +49,10 @@ export function embedPixelSize(natural: PixelSize, longEdge: number): PixelSize 
  * while at least {@link BOARD_FILE_IMAGE_MIN_PX}.
  */
 export function embedLongEdges(natural: PixelSize): number[] {
+  const first = Math.min(Math.max(natural.w, natural.h), BOARD_FILE_IMAGE_MAX_PX);
+  if (first < BOARD_FILE_IMAGE_MIN_PX) return first > 0 ? [first] : [];
   const edges: number[] = [];
-  for (let edge = Math.min(Math.max(natural.w, natural.h), BOARD_FILE_IMAGE_MAX_PX); edge >= BOARD_FILE_IMAGE_MIN_PX; edge = Math.floor(edge * BOARD_FILE_IMAGE_SHRINK)) edges.push(edge);
+  for (let edge = first; edge >= BOARD_FILE_IMAGE_MIN_PX; edge = Math.floor(edge * BOARD_FILE_IMAGE_SHRINK)) edges.push(edge);
   return edges;
 }
 

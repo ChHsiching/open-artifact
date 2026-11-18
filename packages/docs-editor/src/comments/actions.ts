@@ -12,13 +12,16 @@ import type { EditorView } from 'prosemirror-view';
 import { docClient } from '../app/doc-client.ts';
 import { maybeSession } from '../app/session.ts';
 import { showTab } from '../app/start.ts';
-import { getDocs, setDocs } from '../app/store.ts';
+import { getDocs, setDocs, useDocs } from '../app/store.ts';
 import { currentView, useEditor } from '../editor/format.ts';
 import { rangesOf as suggestionRanges } from '../suggest/positions.ts';
 import type { SuggestionReplyTarget } from '../suggest/reply.ts';
-import { type DocAnchor, anchorLocation, quoteDetail, quoteLabel, withoutPlace } from './anchor.ts';
+import { commentCells, mixesCellsAndText } from '../tables/comment-cells.ts';
+import { type DocAnchor, anchorLocation, cellsDetail, cellsLabel, quoteDetail, quoteLabel, withoutPlace } from './anchor.ts';
 import { blockIdAt, idsOfRange, textUnits, unitRange } from './anchor-map.ts';
-import { AGENT_KEY, mentionsIn } from './mentions.ts';
+import { judgeComment } from './judge.ts';
+import { mentionsIn } from './mentions.ts';
+import { CommentOutbox, type OutboxEntry, type OutboxItem, indexedDbOutboxStore, isNetworkError, outboxText } from './outbox.ts';
 import { rangesOf } from './plugin.ts';
 import {
   type Composer,
@@ -35,6 +38,7 @@ import {
   threadById,
   useCommentUi,
 } from './store.ts';
+import { docLinkBase } from '../selbar/navigate.ts';
 import { commentLink, isOwn, reactedByMe } from './threads.ts';
 
 const failed = (title: string) => (error: unknown) => {
@@ -115,19 +119,29 @@ function blockComposer(view: EditorView, tab: string, pos: number): Composer | n
   return { anchor, label: 'Empty paragraph', location: anchorLocation(anchor, bid), text: '' };
 }
 
-/** A composer for a table cell. */
-function cellComposer(view: EditorView, tab: string, selection: CellSelection): Composer | null {
-  const cell = selection.$anchorCell.nodeAfter;
-  const bid = cell?.attrs.bid as string | null | undefined;
-  if (!cell || !bid) return null;
-  const words = cell.textContent;
-  const anchor: DocAnchor = { kind: 'cell', tab, cell: bid };
-  return { anchor, label: words ? quoteLabel(words) : 'Table cell', detail: words ? quoteDetail(words, '') : 'An empty table cell', location: anchorLocation(anchor, bid), text: '' };
+/** A composer for the selected cells: one cell, or several of one table (a range, a row, a column, the table). */
+function cellComposer(tab: string, selection: CellSelection): Composer | null {
+  const picked = commentCells(selection);
+  if (!picked) return null;
+  if (picked.cells.length === 1) {
+    const cell = selection.$anchorCell.nodeAfter;
+    const words = cell?.textContent ?? '';
+    const anchor: DocAnchor = { kind: 'cell', tab, cell: picked.cells[0]! };
+    return { anchor, label: words ? quoteLabel(words) : 'Table cell', detail: words ? quoteDetail(words, '') : 'An empty table cell', location: anchorLocation(anchor, null), text: '' };
+  }
+  const anchor: DocAnchor = { kind: 'cells', tab, cells: picked.cells, ...(picked.table ? { table: picked.table } : {}) };
+  return { anchor, label: cellsLabel(picked.shape), detail: cellsDetail(picked.shape, picked.words), location: anchorLocation(anchor, null), text: '' };
 }
 
-function openComposer(composer: Composer | null): boolean {
-  if (!composer) {
-    toast.add({ title: 'Couldn’t comment on this', description: 'Select some words, a table cell or a paragraph with text.' });
+/** Why a selection that takes in table cells and text around them (or two tables) gets no comment. */
+const CELLS_AND_TEXT = 'Comments attach to text or to table cells; select some text, or cells inside one table, and comment again.';
+
+/** What a selection gets: a composer, a refusal saying why not (a string), nothing to comment on (`null`). */
+type Picked = Composer | string | null;
+
+function openComposer(composer: Picked): boolean {
+  if (!composer || typeof composer === 'string') {
+    toast.add({ title: 'Couldn’t comment on this', description: composer || 'Select some words, table cells or a paragraph with text.' });
     return false;
   }
   showMargin();
@@ -153,15 +167,16 @@ export function selectionCommentable(state: EditorState | null): boolean {
   return !state.selection.empty;
 }
 
-/** A composer for the selection: its words, its first cell, or the paragraph of the caret. */
-async function selectionComposer(): Promise<Composer | null | undefined> {
+/** A composer for the selection: its words, its cells, or the paragraph of the caret. */
+async function selectionComposer(): Promise<Picked | undefined> {
   if (!canComment()) return undefined;
   const found = await settledView();
   if (!found) return undefined;
   const { view, tab } = found;
   const { selection } = view.state;
-  if (selection instanceof CellSelection) return cellComposer(view, tab, selection);
+  if (selection instanceof CellSelection) return cellComposer(tab, selection);
   if (selection.empty) return blockComposer(view, tab, selection.from);
+  if (mixesCellsAndText(view.state.doc, selection.from, selection.to)) return CELLS_AND_TEXT;
   return wordsComposer(view, tab, selection.from, selection.to);
 }
 
@@ -186,9 +201,79 @@ export async function commentOnSuggestion(target: SuggestionReplyTarget): Promis
   return openComposer(wordsComposer(view, tab, from, to) ?? blockComposer(view, tab, from));
 }
 
-/** Hands a thread to the agent when its newest message is addressed to it. */
-async function handOver(thread: CommentThread, to: readonly string[]): Promise<void> {
-  if (to.includes(AGENT_KEY) && canAskAgent()) await docComments.sendToAgent(thread.id);
+/**
+ * Hands a thread to the agent when its newest message is addressed to it, or (judge.ts) when it is a reply going on
+ * a talk with the agent, unasked. `edited`: the message was changed, not written.
+ */
+async function handOver(thread: CommentThread, to: readonly string[], edited = false): Promise<void> {
+  if (!canAskAgent()) return;
+  const { choice } = judgeComment({ thread, to, edited });
+  if (choice === 'asked') await docComments.sendToAgent(thread.id);
+  // A reply going on a talk with the agent reaches it unasked: no "Sent" notice, and a host that refuses it is no error.
+  else if (choice === 'wake') await capability()?.sendToAgent(thread.id, { unasked: true }).then(putThread, () => undefined);
+}
+
+// ---- comments kept while the server can't be reached -------------------------------------------------------------
+
+const outbox = new CommentOutbox({ store: indexedDbOutboxStore() });
+
+/** Whose kept comments are whose: the doc and the viewer. */
+function outboxScope(): string | null {
+  const doc = getDocs().project?.id;
+  const viewer = maybeSession()?.viewer.id;
+  return doc && viewer ? `${doc}|${viewer}` : null;
+}
+
+/** Posts a kept comment, as if it had just been written. */
+async function sendKept(entry: OutboxEntry): Promise<void> {
+  const comments = capability();
+  if (!comments) throw new TypeError('comments are not connected yet');
+  if (entry.kind === 'create') {
+    const thread = await comments.create(entry.input);
+    putThread(thread);
+    await handOver(thread, entry.input.to ?? []).catch(() => undefined);
+    return;
+  }
+  let thread = await comments.reply(entry.threadId, entry.text, entry.to?.length ? { to: entry.to } : undefined);
+  if (thread.status === 'resolved') thread = await comments.setResolved(entry.threadId, false);
+  putThread(thread);
+  await handOver(thread, entry.to ?? []).catch(() => undefined);
+}
+
+const outboxHandlers = {
+  scope: outboxScope,
+  send: sendKept,
+  refused: (entry: OutboxEntry, error: unknown) => {
+    const text = outboxText(entry);
+    toast.add({ title: 'A comment that waited to be sent could not be saved', description: `“${text.length > 80 ? `${text.slice(0, 79)}…` : text}”: ${error instanceof Error ? error.message : String(error)}` });
+  },
+};
+
+let outboxStarted = false;
+
+/** Starts sending kept comments once the page knows its doc and viewer and has its comments. */
+function startOutbox(): boolean {
+  if (outboxStarted) return true;
+  if (!capability() || !outboxScope()) return false;
+  outboxStarted = true;
+  void outbox.start(outboxHandlers);
+  return true;
+}
+
+/** A comment the connection failed is kept and sent later; answers whether it was. */
+async function keepForLater(error: unknown, item: OutboxItem): Promise<boolean> {
+  if (!isNetworkError(error) || !startOutbox()) return false;
+  const kept = await outbox.keep(item).catch(() => null);
+  if (!kept) return false;
+  toast.add({ title: 'Couldn’t reach the server', description: `Your ${item.kind === 'create' ? 'comment' : 'reply'} is kept and will be sent when the connection is back.` });
+  return true;
+}
+
+// What an earlier page kept goes out once this page has its doc.
+if (typeof window !== 'undefined' && !startOutbox()) {
+  const stop = useDocs.subscribe(() => {
+    if (startOutbox()) stop();
+  });
 }
 
 /** Saves the composer's thread (or another new thread's); resolves whether it was saved. */
@@ -197,21 +282,26 @@ export async function createThread(text: string, composer: Composer | null = use
   const body = bodyOf(text);
   if (!comments || !composer || !body) return false;
   const to = addressees(body);
+  const input = {
+    anchor: docComments.adapter.serialize(composer.anchor),
+    label: composer.label,
+    ...(composer.detail ? { detail: composer.detail } : {}),
+    location: composer.location,
+    text: body,
+    ...(to.length ? { to } : {}),
+  };
   try {
-    const thread = await comments.create({
-      anchor: docComments.adapter.serialize(composer.anchor),
-      label: composer.label,
-      ...(composer.detail ? { detail: composer.detail } : {}),
-      location: composer.location,
-      text: body,
-      ...(to.length ? { to } : {}),
-    });
+    const thread = await comments.create(input);
     putThread(thread);
     if (useCommentUi.getState().composer === composer) setCommentUi({ composer: null });
     setActive(thread.id);
     await handOver(thread, to);
     return true;
   } catch (error) {
+    if (await keepForLater(error, { kind: 'create', input })) {
+      if (useCommentUi.getState().composer === composer) setCommentUi({ composer: null });
+      return true;
+    }
     failed('The comment could not be saved')(error);
     return false;
   }
@@ -220,8 +310,8 @@ export async function createThread(text: string, composer: Composer | null = use
 /** Reacts to the selection: a thread whose only message is the emoji. */
 export async function reactOnSelection(emoji: string): Promise<boolean> {
   const composer = await selectionComposer();
-  if (!composer) {
-    if (composer === null) openComposer(null);
+  if (!composer || typeof composer === 'string') {
+    if (composer !== undefined) openComposer(composer);
     return false;
   }
   showMargin();
@@ -244,6 +334,13 @@ export async function reply(threadId: string, text: string): Promise<boolean> {
     await handOver(thread, to);
     return true;
   } catch (error) {
+    if (await keepForLater(error, { kind: 'reply', threadId, text: body, ...(to.length ? { to } : {}) })) {
+      docComments.store.setState(state => {
+        const { [threadId]: _kept, ...replies } = state.replies;
+        return { replies };
+      });
+      return true;
+    }
     failed('The reply could not be saved')(error);
     return false;
   }
@@ -258,7 +355,7 @@ export async function editMessage(threadId: string, messageId: string, text: str
     const thread = await comments.edit(threadId, messageId, body, to.length ? { to } : undefined);
     putThread(thread);
     setCommentUi({ editing: null });
-    if (thread.messages.at(-1)?.id === messageId) await handOver(thread, to);
+    if (thread.messages.at(-1)?.id === messageId) await handOver(thread, to, true);
     return true;
   } catch (error) {
     failed('The comment could not be changed')(error);
@@ -321,7 +418,7 @@ export async function pressReactionThread(thread: CommentThread, canDelete: bool
 export async function copyLink(thread: CommentThread): Promise<void> {
   const tab = docComments.anchorOf(thread).tab;
   try {
-    await navigator.clipboard.writeText(commentLink(location.href, thread.id, tab));
+    await navigator.clipboard.writeText(commentLink(docLinkBase().href, thread.id, tab));
     toast.add({ title: 'Link copied' });
   } catch {
     toast.add({ title: 'Couldn’t copy the link' });

@@ -3,16 +3,15 @@
  * not draw it), the board timer, the zoom menu and, for viewers, a lock.
  *
  * The zoom menu also holds the view options: follow someone, ask everyone
- * to follow you, single-key tool shortcuts, the timer chime and Download.
+ * to follow you, single-key tool shortcuts and the timer chime.
  */
 
 import { LIVE_MESSAGES } from '@open-artifact/whiteboard-core';
 import { ChevronDown, CloudOff, Loader2, Lock, MessageCircle, TriangleAlert } from 'lucide-react';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { MAX_ZOOM, ZOOM_PRESETS, zoomPercent } from '../lib/camera.ts';
 import { modKey } from '../lib/tools.ts';
 import { redo, undo } from '../services/commands.ts';
-import { downloadBoardPng } from '../services/export.ts';
 import { useShellDraws } from '../services/shell.ts';
 import { fitBoard, fitSelection } from '../services/navigation.ts';
 import { readOnlyLabel } from '@open-artifact/editor-kit';
@@ -35,25 +34,53 @@ import { Card, ChromeButton, ChromeMenu, ChromeMenuItem, ChromeMenuLabel, Chrome
 export function BoardPill() {
   const session = maybeSession();
   const readOnly = !(session?.canEdit ?? false);
+  const corner = useShellDraws((state) => state.framed && state.draws.size > 0);
   const lockLabel = readOnlyLabel(session?.viewer.role ?? 'viewer');
   return (
-    <Card role="toolbar" aria-label="Board view" className="wb-pill h-9 px-1">
-      {readOnly ? null : <SaveStatus />}
-      <BoardTimer />
-      <ZoomMenu readOnly={readOnly} />
-      {lockLabel ? (
-        <Tip label={lockLabel === 'Comment only' ? 'Comment only: you can add and reply to comments, not change the board' : 'View only'}>
-          <span role="img" aria-label={lockLabel} className="flex h-7 items-center px-1.5 text-chrome-muted">
-            {lockLabel === 'Comment only' ? <MessageCircle className="size-3.5" aria-hidden="true" /> : <Lock className="size-3.5" aria-hidden="true" />}
-          </span>
-        </Tip>
-      ) : null}
-    </Card>
+    <>
+      <Card role="toolbar" aria-label="Board view" className="wb-pill h-9 px-1">
+        {readOnly ? null : <SaveStatus />}
+        <BoardTimer />
+        {corner ? null : <ZoomMenu readOnly={readOnly} />}
+        {lockLabel ? (
+          <Tip label={lockLabel === 'Comment only' ? 'Comment only: you can add and reply to comments, not change the board' : 'View only'}>
+            <span role="img" aria-label={lockLabel} className="flex h-7 items-center px-1.5 text-chrome-muted">
+              {lockLabel === 'Comment only' ? <MessageCircle className="size-3.5" aria-hidden="true" /> : <Lock className="size-3.5" aria-hidden="true" />}
+            </span>
+          </Tip>
+        ) : null}
+      </Card>
+      {corner && <CornerZoom readOnly={readOnly} />}
+    </>
   );
 }
 
+/** When the shell supplies document controls, keep zoom at the foot, clear of the active tool tray. */
+function CornerZoom({ readOnly }: { readOnly: boolean }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const zoom = ref.current;
+    const root = zoom?.closest('.wb-root');
+    const foot = root?.querySelector('.wb-foot');
+    if (!root || !foot || !zoom) return;
+    const place = () => {
+      const area = root.getBoundingClientRect();
+      const bar = foot.getBoundingClientRect();
+      const fits = area.right - bar.right >= zoom.offsetWidth + 20;
+      zoom.style.bottom = (area.bottom - (fits ? bar.bottom : bar.top - 8)) + 'px';
+    };
+    const observer = new ResizeObserver(place);
+    for (const node of [root, zoom, foot]) observer.observe(node);
+    place();
+    return () => observer.disconnect();
+  }, []);
+  return <Card ref={ref} role="toolbar" aria-label="Board zoom" className="wb-corner-zoom">
+    <ZoomMenu readOnly={readOnly} corner />
+  </Card>;
+}
+
 /** "54% ⌄": the zoom readout and its menu. */
-function ZoomMenu({ readOnly }: { readOnly: boolean }) {
+function ZoomMenu({ readOnly, corner = false }: { readOnly: boolean; corner?: boolean }) {
   const zoom = useCamera((state) => state.camera.zoom);
   const compact = useCamera((state) => state.compact);
   const range = zoomRange({ compact });
@@ -65,12 +92,12 @@ function ZoomMenu({ readOnly }: { readOnly: boolean }) {
   const chime = usePreferences((state) => state.timerChime);
   const timer = useBoard((state) => state.board.content.timer !== undefined);
   const history = useVersionHistoryEntry();
-  const shellFormats = useShellDraws((state) => state.draws.has('formats'));
   const mod = modKey();
   const percent = zoomPercent(zoom);
   const preset = ZOOM_PRESETS.some((value) => Math.abs(value - zoom) < 1e-4);
   return (
     <ChromeMenu
+      side={corner ? 'top' : 'bottom'}
       align="end"
       tip={{ label: 'Zoom and view' }}
       trigger={
@@ -125,18 +152,14 @@ function ZoomMenu({ readOnly }: { readOnly: boolean }) {
           Timer chime
         </ChromeMenuItem>
       ) : null}
-      <ChromeMenuSeparator />
       {history.shown ? (
-        <ChromeMenuItem checked={history.open} onSelect={() => toggleVersionHistory()}>
-          Version history
-        </ChromeMenuItem>
+        <>
+          <ChromeMenuSeparator />
+          <ChromeMenuItem checked={history.open} onSelect={() => toggleVersionHistory()}>
+            Version history
+          </ChromeMenuItem>
+        </>
       ) : null}
-      {/* In a Shell the Share panel's Export tab has the board's formats. */}
-      {shellFormats ? null : (
-        <ChromeMenuItem disabled={empty} title={empty ? 'The board is empty.' : undefined} onSelect={() => void downloadBoardPng()}>
-          Download board
-        </ChromeMenuItem>
-      )}
     </ChromeMenu>
   );
 }

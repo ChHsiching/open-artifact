@@ -3,12 +3,12 @@
  * their results written to the store and failures shown as toasts.
  */
 
-import { artifactIdOf, type ShareRequest, type ShellBoot } from '@open-artifact/protocol';
+import { DOC_FRAGMENT, SLIDE_FRAGMENT, artifactIdOf, type ShareView, type ShareRequest, type ShellBoot } from '@open-artifact/protocol';
 import { toast } from '@open-artifact/ui';
 import { ApiError, api, errorText, subscribeLibraryEvents } from '../lib/api.ts';
 import { copyText, fileNameOf } from '../lib/format.ts';
 import { t } from '../lib/i18n.ts';
-import { appendSent, deliveryOf, devBoot, parseSent } from './model.ts';
+import { appendSent, deliveryOf, designPageFragment, sheetPageFragment, devBoot, parseSent } from './model.ts';
 import { filesChanged, toHost } from './bridge.ts';
 import { useShell } from './store.ts';
 
@@ -22,9 +22,18 @@ const bootOf = (): ShellBoot => {
   return boot;
 };
 
+function shareFragment(boot: ShellBoot | null, fragment: string): string {
+  if (boot?.type === 'docs' && DOC_FRAGMENT.test(fragment)) return fragment;
+  if (boot?.type === 'sheets') return sheetPageFragment(fragment);
+  if (boot?.type === 'design') return designPageFragment(fragment);
+  return boot?.type === 'slides' && SLIDE_FRAGMENT.test(fragment) ? fragment : '';
+}
+
 /** The Shell's own address for this artifact. */
-export function shellLink(): string {
-  return `${location.origin}/a/${encodeURIComponent(bootOf().id)}`;
+export function shellLink(fragment = location.hash): string {
+  const boot = bootOf();
+  const base = boot.typeServer ? boot.typeServer.invite ?? location.origin + location.pathname : `${location.origin}/a/${encodeURIComponent(boot.id)}`;
+  return base + shareFragment(boot, fragment);
 }
 
 /**
@@ -140,8 +149,8 @@ export function newSession(prompt: string): void {
 }
 
 /** Copies the Shell's link. */
-export async function copyShellLink(): Promise<void> {
-  await copyText(shellLink());
+export async function copyShellLink(fragment?: string): Promise<void> {
+  await copyText(shellLink(fragment));
   notify(t('linkCopied'));
 }
 
@@ -157,7 +166,17 @@ export async function copyPath(): Promise<void> {
 export async function refreshShare(change?: Omit<ShareRequest, 'id'>): Promise<void> {
   const store = useShell.getState();
   try {
-    const view = change ? await api.setShare({ id: bootOf().id, ...change }) : await api.share(bootOf().id);
+    const boot = bootOf();
+    let view: ShareView;
+    if (boot.typeServer?.sharePath) {
+      const response = await fetch(boot.typeServer.sharePath, change && {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(change),
+      });
+      if (!response.ok) throw new Error((await response.json()).error?.message ?? response.statusText);
+      view = await response.json() as ShareView;
+    } else {
+      view = change ? await api.setShare({ id: boot.id, ...change }) : await api.share(boot.id);
+    }
     store.patchShare({ view, error: '', unsupported: false });
   } catch (error) {
     if (error instanceof ApiError && error.code === 'unsupported') store.patchShare({ view: null, unsupported: true, error: '' });
@@ -173,8 +192,9 @@ let copiedTimer: ReturnType<typeof setTimeout> | null = null;
  * one turns that on.
  */
 export async function copyShareLink(which: string, url: string): Promise<void> {
-  await copyText(url);
   const store = useShell.getState();
+  const page = which === 'page' ? '' : shareFragment(store.boot, location.hash);
+  await copyText(url + page);
   store.patchShare({ copied: which });
   if (copiedTimer) clearTimeout(copiedTimer);
   copiedTimer = setTimeout(() => {

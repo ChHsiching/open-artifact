@@ -14,6 +14,7 @@
  *   the popup is blocked the notes show under the slide instead.
  */
 
+import { reportSlide } from '../../services/location.ts';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { ChevronLeft, ChevronRight, Maximize, Minimize, StickyNote, X } from 'lucide-react';
@@ -119,6 +120,8 @@ function Show({ start, speaker }: { start: string; speaker: boolean }): ReactNod
   const notesUnder = speaker && popupBlocked;
   const stageH = notesUnder ? size.h * 0.72 : size.h;
   const scale = Math.min(size.w / SLIDE_WIDTH, stageH / SLIDE_HEIGHT);
+
+  useEffect(() => { reportSlide(position.id); }, [position.id]);
 
   // A slide that left the show (deleted, skipped) hands over to its neighbour.
   useEffect(() => {

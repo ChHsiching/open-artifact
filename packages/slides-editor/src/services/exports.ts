@@ -111,6 +111,7 @@ async function render(request: ExportRequest, job: ExportJob): Promise<Blob> {
  * the host refusing it, another export running).
  */
 export async function runExport(request: ExportRequest, progress?: (done: number, total: number) => void, options: { writing?: { written: number; planned: number } } = {}): Promise<ExportResult> {
+  if (maybeSession()?.viewer.role !== 'owner') throw new Error('Only the owner can download the deck.');
   if (busy) throw new Error('Another export is still running.');
   const state = useDeck.getState();
   if (state.status !== 'ready') throw new Error('The deck has not finished loading.');
@@ -130,6 +131,7 @@ export async function runExport(request: ExportRequest, progress?: (done: number
       faces,
       fontCss: '',
       onFallback: () => notes.add('rasterFallback', current),
+      onMissingEmbed: () => notes.add('embedPdf', current),
       onMissingPicture: () => notes.add('picture', current),
     };
     if (request.format !== 'html') {

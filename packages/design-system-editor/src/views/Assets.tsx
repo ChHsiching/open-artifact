@@ -5,18 +5,19 @@
  */
 
 import { Copy, Download, FileIcon, Info, Pencil, Plus, Trash2, Upload, X } from 'lucide-react';
-import { useEffect, useRef, useState, type DragEvent } from 'react';
-import type { AssetItem, TileSize } from '@open-artifact/design-system-core';
-import { Button, ConfirmDialog, Dialog, IconButton, MenuItem, MenuSeparator, TextInput, cn } from '@open-artifact/ui';
+import { useEffect, useRef, useState, type DragEvent, type MouseEvent } from 'react';
+import { assetGroupKey, type AssetItem, type TileSize } from '@open-artifact/design-system-core';
+import { Button, ConfirmDialog, Dialog, IconButton, MenuItem, MenuSeparator, TextInput, cn, toast } from '@open-artifact/ui';
 import { create } from 'zustand';
 import { useFiles } from '../state/files.ts';
 import { useModel } from '../state/model.ts';
 import { anchorId, useView } from '../state/view.ts';
 import { projectUrl } from '../lib/color.ts';
-import { addAssetGroup, editText, removeAsset, renameAsset, reorderAssets, uploadAssets } from '../services/edit.ts';
+import { addAssetGroup, editIndex, editText, relocateAssets, removeAsset, renameAsset, reorderAssets, uploadAssets } from '../services/edit.ts';
+import { droppedBrandFiles } from '../lib/drop-files.ts';
 import { copyText, downloadUrl } from '../services/downloads.ts';
 import { CommentBadge } from '../components/Comments.tsx';
-import { ContextMenu, InlineText, PageHeader, formatSize, useAnchor, useEditable, useFocusProps } from './common.tsx';
+import { ContextMenu, InlineText, PageHeader, formatSize, useFocusProps } from './common.tsx';
 
 /** Which tile is being renamed and which is shown in the details pane (`group/name` keys). */
 const useAssetUi = create<{ renaming: string | null; details: string | null; removing: AssetItem | null }>()(() => ({ renaming: null, details: null, removing: null }));
@@ -27,6 +28,7 @@ const itemKey = (item: AssetItem): string => `${item.group}/${item.name}`;
 const TILE: Record<TileSize, number> = { xl: 320, l: 240, m: 176, s: 128, xs: 96 };
 
 /** Previewable images. */
+const VIDEO = /\.(mp4|webm|mov|ogv)$/i;
 const IMAGE = /\.(png|jpe?g|gif|webp|avif|svg|ico|bmp)$/i;
 
 /** Where an asset's bytes are served. */
@@ -44,6 +46,8 @@ interface TileProps {
   width: number;
   editable: boolean;
   dragging: boolean;
+  selected: boolean;
+  onSelect(event: MouseEvent): void;
   onDragStart(): void;
   onDragEnter(): void;
   onDragEnd(): void;
@@ -88,7 +92,7 @@ function AssetActions({ item, editable }: { item: AssetItem; editable: boolean }
   );
 }
 
-function Tile({ item, width, editable, dragging, onDragStart, onDragEnter, onDragEnd, onDelete }: TileProps) {
+function Tile({ item, width, editable, dragging, selected, onSelect, onDragStart, onDragEnter, onDragEnd, onDelete }: TileProps) {
   const focus = useFocusProps({ kind: 'asset', name: itemKey(item) });
   const renaming = useAssetUi((s) => s.renaming === itemKey(item));
   const setRenaming = (on: boolean): void => useAssetUi.setState({ renaming: on ? itemKey(item) : null });
@@ -99,6 +103,11 @@ function Tile({ item, width, editable, dragging, onDragStart, onDragEnter, onDra
     <figure
       id={anchorId('asset', itemKey(item))}
       {...focus}
+      onClick={(event) => {
+        if (event.target instanceof Element && event.target.closest('button, input, select')) return;
+        if (editable) onSelect(event);
+        if (!event.metaKey && !event.ctrlKey && !event.shiftKey) focus.onClick();
+      }}
       onDoubleClick={() => useAssetUi.setState({ details: itemKey(item) })}
       onContextMenu={(event) => {
         event.preventDefault();
@@ -114,12 +123,13 @@ function Tile({ item, width, editable, dragging, onDragStart, onDragEnter, onDra
       onDragEnd={onDragEnd}
       className={cn(
         'group relative flex flex-col overflow-hidden rounded-lg border border-line bg-surface data-[focused]:border-accent data-[focused]:ring-2 data-[focused]:ring-accent/30',
+        selected && 'border-accent ring-2 ring-accent/30',
         dragging && 'opacity-40',
       )}
       style={{ width }}
     >
       <div className="flex items-center justify-center bg-surface-2" style={{ height: width * 0.75, background: 'repeating-conic-gradient(var(--color-surface-2) 0% 25%, var(--color-surface) 0% 50%) 50% / 16px 16px' }}>
-        {url && isImage(item) ? <img src={url} alt={item.name} draggable={false} className="max-h-full max-w-full object-contain p-3" /> : <FileIcon className="size-8 text-fg-subtle" />}
+        {url && isImage(item) ? <img src={url} alt={item.name} draggable={false} className="max-h-full max-w-full object-contain p-3" /> : url && VIDEO.test(item.name) ? <video src={url} muted preload="metadata" className="max-h-full max-w-full" /> : <FileIcon className="size-8 text-fg-subtle" />}
       </div>
       <figcaption className="flex items-center gap-1 border-t border-line px-2 py-1.5">
         <div className="min-w-0 flex-1">
@@ -170,7 +180,25 @@ function Tile({ item, width, editable, dragging, onDragStart, onDragEnter, onDra
 }
 
 function Group({ name, tile, items, editable }: { name: string; tile: TileSize; items: AssetItem[]; editable: boolean }) {
-  const key = items[0]?.group ?? name;
+  const key = name;
+  const { index, assets } = useModel();
+  const [selected, setSelected] = useState<string[]>([]);
+  const last = useRef<string | null>(null);
+  const [action, setAction] = useState<'rename' | 'remove' | null>(null);
+  const [newName, setNewName] = useState(name);
+  const [working, setWorking] = useState(false);
+  const chosen = selected.filter((name) => items.some((item) => item.name === name));
+  const move = async (to: string | null, names?: readonly string[]) => {
+    setWorking(true);
+    try {
+      if (await relocateAssets(name, to, names)) {
+        setAction(null);
+        setSelected([]);
+      }
+    } finally {
+      setWorking(false);
+    }
+  };
   const notePath = `assets/${key}/README.md`;
   const note = useFiles((s) => s.texts[notePath]);
   const input = useRef<HTMLInputElement>(null);
@@ -185,7 +213,7 @@ function Group({ name, tile, items, editable }: { name: string; tile: TileSize; 
     setDropping(false);
     if (!event.dataTransfer.files.length || !editable) return;
     event.preventDefault();
-    void uploadAssets(key, [...event.dataTransfer.files]);
+    void droppedBrandFiles(event.dataTransfer).then((files) => uploadAssets(key, files, true)).catch(() => toast.add({ title: 'Could not read these files' }));
   };
 
   return (
@@ -220,6 +248,19 @@ function Group({ name, tile, items, editable }: { name: string; tile: TileSize; 
                 event.target.value = '';
               }}
             />
+            <select aria-label={`Tile size for ${name}`} value={tile} className="rounded border border-line bg-surface px-1 text-xs"
+              onChange={(event) => {
+                const size = event.target.value as TileSize;
+                const groupKey = assetGroupKey(index.assetGroups, name);
+                editIndex((raw) => {
+                  const groups = (raw.assetGroups ?? {}) as typeof index.assetGroups;
+                  return { ...raw, assetGroups: { ...groups, [groupKey]: { ...(groups[groupKey] ?? { name, order: [], files: {} }), tile: size } } };
+                });
+              }}>
+              {Object.keys(TILE).reverse().map((size) => <option key={size} value={size}>{size.toUpperCase()}</option>)}
+            </select>
+            <IconButton size="sm" label={`Rename group ${name}`} icon={<Pencil className="size-3.5" />} onClick={() => { setNewName(name); setAction('rename'); }} />
+            <IconButton size="sm" label={`Remove group ${name}`} icon={<Trash2 className="size-3.5" />} onClick={() => setAction('remove')} />
             <Button size="sm" icon={<Upload className="size-3.5" />} onClick={() => input.current?.click()}>
               Upload
             </Button>
@@ -235,6 +276,22 @@ function Group({ name, tile, items, editable }: { name: string; tile: TileSize; 
           onCommit={(text) => editText(notePath, text.trim() ? `${text.trim()}\n` : null)}
         />
       </div>
+      {editable && chosen.length > 0 && <div className="mb-3 flex items-center gap-2 text-xs">
+        <span>{chosen.length} selected</span>
+        <select aria-label="Move selected files to group" disabled={working} value="" className="rounded border border-line bg-surface p-1"
+          onChange={(event) => { if (event.target.value) void move(event.target.value, chosen); }}>
+          <option value="">Move to group…</option>
+          {assets.filter((entry) => entry.name !== name).map((entry) => <option key={entry.name}>{entry.name}</option>)}
+        </select>
+        <Button size="sm" onClick={() => setSelected([])}>Clear selection</Button>
+      </div>}
+      <Dialog open={action === 'rename'} onOpenChange={(open) => { if (!open) setAction(null); }} title="Rename asset group"
+        footer={<Button variant="primary" disabled={working || !newName.trim() || newName === name} onClick={() => void move(newName)}>Rename</Button>}>
+        <TextInput autoFocus aria-label="Group name" value={newName} onChange={(event) => setNewName(event.target.value)}
+          onKeyDown={(event) => { if (event.key === 'Enter' && !working) void move(newName); }} />
+      </Dialog>
+      <ConfirmDialog open={action === 'remove'} onOpenChange={(open) => { if (!open) setAction(null); }} title={`Remove group ${name}?`}
+        description="The group's files move to archived/ and its upload records are removed." confirmLabel="Remove group" danger onConfirm={() => { if (!working) void move(null); }} />
       {shown.length ? (
         <div className="flex flex-wrap gap-3">
           {shown.map((item) => (
@@ -244,6 +301,19 @@ function Group({ name, tile, items, editable }: { name: string; tile: TileSize; 
               width={TILE[tile]}
               editable={editable}
               dragging={dragged === item.name}
+              selected={chosen.includes(item.name)}
+              onSelect={(event) => {
+                if (event.shiftKey && last.current !== null) {
+                  const start = shown.findIndex((other) => other.name === last.current);
+                  const end = shown.indexOf(item);
+                  if (start >= 0) setSelected(shown.slice(Math.min(start, end), Math.max(start, end) + 1).map((other) => other.name));
+                } else if (event.ctrlKey || event.metaKey) {
+                  setSelected(chosen.includes(item.name) ? chosen.filter((name) => name !== item.name) : [...chosen, item.name]);
+                } else {
+                  setSelected([item.name]);
+                }
+                last.current = item.name;
+              }}
               onDragStart={() => {
                 setDragged(item.name);
                 setOrder(items.map((i) => i.name));
@@ -329,6 +399,8 @@ function AssetDetails({ item, editable }: { item: AssetItem; editable: boolean }
       <div className="flex h-40 items-center justify-center rounded-md" style={{ background: 'repeating-conic-gradient(var(--color-surface-2) 0% 25%, var(--color-surface) 0% 50%) 50% / 16px 16px' }}>
         {url && isImage(item) ? (
           <img src={url} alt={item.name} className="max-h-full max-w-full object-contain p-2" onLoad={(event) => setDimensions({ w: event.currentTarget.naturalWidth, h: event.currentTarget.naturalHeight })} />
+        ) : url && VIDEO.test(item.name) ? (
+          <video src={url} controls preload="metadata" className="max-h-full max-w-full" />
         ) : (
           <FileIcon className="size-10 text-fg-subtle" />
         )}
@@ -369,11 +441,10 @@ function AssetDetails({ item, editable }: { item: AssetItem; editable: boolean }
 
 export function Assets() {
   const { assets } = useModel();
-  const editable = useEditable();
+  const editable = !useFiles((s) => s.readOnly);
   const details = useAssetUi((s) => s.details);
   const removing = useAssetUi((s) => s.removing);
   const focus = useView((s) => s.focus);
-  useAnchor();
   const count = assets.reduce((n, group) => n + group.items.length, 0);
   // The details pane follows the focused tile once open.
   const wanted = details && focus?.kind === 'asset' ? focus.name : details;

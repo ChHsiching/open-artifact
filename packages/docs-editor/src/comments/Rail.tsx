@@ -18,7 +18,7 @@ import { CommentList } from './CommentList.tsx';
 import { cancelComposer } from './actions.ts';
 import { NewThreadCard } from './NewThreadCard.tsx';
 import { type MarkedRange, liveRanges, rangesOf } from './plugin.ts';
-import { type Hold, NEW_THREAD, canComment, docComments, setActive, useCommentUi, useThreads } from './store.ts';
+import { type Hold, NEW_THREAD, docComments, setActive, useCommentUi, useThreads } from './store.ts';
 import { ReactionChip, ThreadCard } from './ThreadCard.tsx';
 import { isReactionThread } from './threads.ts';
 
@@ -231,8 +231,8 @@ function Margin({ tab, room }: { tab: string; room: boolean }): ReactNode {
     placed.current = new Set([...tops.keys()]);
   }, [tops]);
 
-  // The column stays on wide pages for those who can comment, so the page does not jump when the first one starts.
-  if (!items.length) return canComment() && room ? <div className="hidden w-80 flex-none xl:block" aria-hidden="true" data-margin="" /> : null;
+  // With no comments the page keeps the middle of the window; the column comes in with the first one.
+  if (!items.length) return null;
 
   const byId = new Map(items.map(item => [item.id, item]));
   const openItem = (id: string, open: boolean) => {

@@ -72,6 +72,8 @@ export async function snapshotPage(chrome: string, request: SnapshotRequest): Pr
       '--headless=new',
       '--remote-debugging-port=0',
       `--user-data-dir=${profile}`,
+      // Keep this temporary profile independent of the macOS login keychain.
+      ...(process.platform === 'darwin' ? ['--use-mock-keychain'] : []),
       `--window-size=${request.width},${request.height}`,
       '--hide-scrollbars',
       '--no-first-run',

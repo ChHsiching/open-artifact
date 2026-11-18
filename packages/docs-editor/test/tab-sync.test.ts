@@ -117,7 +117,7 @@ describe('a tab kept in step with the type server', () => {
     await settle(a);
     assert.equal(opIds.length, 2);
     assert.equal(opIds[0], opIds[1]);
-    assert.ok(statuses.includes('offline'));
+    assert.ok(statuses.includes('unsaved'));
     assert.equal(statuses.at(-1), 'saved');
     assert.equal((await serverTexts())[0], 'Notes!');
     await a.stop();

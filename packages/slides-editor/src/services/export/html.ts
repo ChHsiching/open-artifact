@@ -14,13 +14,15 @@ import { nodeAt, parsePathKey, SLIDE_HEIGHT, SLIDE_WIDTH, videoEmbedUrl, type Im
 import type { HtmlQuality } from '../exports.ts';
 import { BUILD_MS, slideStylesheet } from '../../render/css.ts';
 import { fontFaceRule } from '../../render/fonts.ts';
-import { embedDocument } from '../../render/SlideView.tsx';
+import { embedDocument } from '../../render/embed-still.ts';
 import { mountSlide, PAGE_RESET } from '../capture.ts';
+import { currentSourceDeck } from '../../state/deck.ts';
+import { elementMotion, readMotionRules } from '../motion.ts';
 import { buildSteps, TRANSITION_MS } from '../present.ts';
 import { blobToDataUrl, shrinkPicture } from '@open-artifact/export-kit';
 import { deckFontCss, deckText } from './fonts.ts';
 import { breathe, type ExportJob, type ExportSlide } from './job.ts';
-import { PLAYER_CSS, PLAYER_SCRIPT } from './player.ts';
+import { PLAYER_CSS, PLAYER_SCRIPT, READER_CSS } from './player.ts';
 
 /** Largest single file inlined, bytes. */
 const MAX_INLINE_FILE = 10 * 1024 * 1024;
@@ -170,9 +172,9 @@ interface SlidePlan {
 }
 
 /** One slide's markup, ready for the page. */
-async function slideMarkup(entry: ExportSlide, job: ExportJob, inliner: Inliner): Promise<{ html: string; plan: SlidePlan }> {
+async function slideMarkup(entry: ExportSlide, job: ExportJob, inliner: Inliner, rules: ReturnType<typeof readMotionRules>): Promise<{ html: string; plan: SlidePlan; keyframes: string }> {
   const slide = entry.slide;
-  const mounted = await mountSlide(slide, job.capture);
+  const mounted = await mountSlide(slide, job.capture, false);
   try {
     const copy = mounted.root.cloneNode(true) as HTMLElement;
     copy.setAttribute('data-open-artifact-mode', 'present');
@@ -207,10 +209,12 @@ async function slideMarkup(entry: ExportSlide, job: ExportJob, inliner: Inliner)
         const value = still.getAttribute(name);
         if (value !== null) frame.setAttribute(name, value);
       }
-      frame.className = still.className.replace(/\boa-embed-still\b/, '').trim();
+      frame.className = still.className.replace(/\bopen-artifact-embed-still\b/, '').trim();
       frame.setAttribute('title', 'Embedded page');
       frame.setAttribute('sandbox', 'allow-scripts');
       frame.setAttribute('loading', 'lazy');
+      frame.setAttribute('tabindex', '-1');
+      frame.style.pointerEvents = 'none';
       frame.setAttribute('srcdoc', embedDocument(node.html));
       still.replaceWith(frame);
     }
@@ -229,12 +233,28 @@ async function slideMarkup(entry: ExportSlide, job: ExportJob, inliner: Inliner)
       if (node.buildIn) el.setAttribute('data-open-artifact-in', node.buildIn.effect);
       if (node.buildOut) el.setAttribute('data-open-artifact-out', node.buildOut.effect);
     }
+    let keyframes = '';
+    if (slide.motion) {
+      const motion = slide.motion;
+      const fragments = new Set(motion.fragments.map(fragment => fragment.origin));
+      for (const element of [copy, ...copy.querySelectorAll<HTMLElement>('[data-open-artifact-path]')]) {
+        const node = element === copy ? undefined : nodeAt(slide, parsePathKey(element.dataset.openArtifactPath ?? ''));
+        const origin = element === copy ? 0 : node?.origin;
+        if (origin === undefined) continue;
+        if (fragments.has(origin)) element.dataset.fragment = String(origin);
+        if (node?.buildIn || node?.buildOut || !(motion.elements[origin] || motion.starting[origin])) continue;
+        const effect = elementMotion(motion.elements[origin] ?? {}, motion.starting[origin], rules, `oa-start-${entry.number}-${origin}`);
+        if (effect.animation) element.dataset.animation = effect.animation;
+        if (effect.count) element.dataset.count = JSON.stringify(effect.count);
+        keyframes += effect.keyframes;
+      }
+    }
     const builds: SlidePlan['builds'] = [];
     slide.children.forEach((child, i) => {
       if (child.buildIn || child.buildOut) builds.push({ child: i, enters: Boolean(child.buildIn) });
     });
-    const plan: SlidePlan = { transition: slide.transition, builds, steps: buildSteps(slide, { flow: false }) };
-    return { html: copy.outerHTML, plan };
+    const plan: SlidePlan = { transition: slide.transition, builds, steps: buildSteps(slide) };
+    return { html: copy.outerHTML, plan, keyframes };
   } finally {
     mounted.dispose();
   }
@@ -265,11 +285,14 @@ async function pageFonts(job: ExportJob): Promise<string> {
 export async function exportHtml(job: ExportJob, options: { quality: HtmlQuality } = { quality: 'best' }): Promise<Blob> {
   const inliner = new Inliner(job, options.quality);
   const fonts = await pageFonts(job);
+  const motionCss = [...(currentSourceDeck()?.sheet.motion ?? [])];
+  const rules = readMotionRules(motionCss);
   const frames: string[] = [];
   const plans: SlidePlan[] = [];
   for (const [index, entry] of job.slides.entries()) {
     job.begin(entry.number);
-    const { html, plan } = await slideMarkup(entry, job, inliner);
+    const { html, plan, keyframes } = await slideMarkup(entry, job, inliner, rules);
+    if (keyframes) motionCss.push(keyframes);
     frames.push(`<section class="open-artifact-frame${index === 0 ? ' open-artifact-on' : ''}" aria-roledescription="slide" aria-label="Slide ${index + 1}">${html}</section>`);
     plans.push(plan);
     job.progress(index + 1);
@@ -277,13 +300,16 @@ export async function exportHtml(job: ExportJob, options: { quality: HtmlQuality
   }
   if (frames.length === 0) throw new Error('There are no slides to export.');
   const plan = JSON.stringify({ buildMs: BUILD_MS, durations: TRANSITION_MS, slides: plans }).replace(/</g, '\\u003c');
+  const readerStyle = `:root{--slide-aspect:${SLIDE_WIDTH}/${SLIDE_HEIGHT};--page-scale:calc(100vw / ${SLIDE_WIDTH}px)}
+${READER_CSS}`;
   const page =
     '<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n' +
     '<meta name="viewport" content="width=device-width, initial-scale=1">\n' +
     '<meta name="generator" content="Open Artifact">\n' +
     `<title>${escapeHtml(job.title)}</title>\n` +
     `${fonts}\n` +
-    `<style>${PAGE_RESET}\n${slideStylesheet()}\n${PLAYER_CSS.replaceAll('1920px', `${SLIDE_WIDTH}px`)}</style>\n` +
+    `<style>${PAGE_RESET}\n${slideStylesheet()}\n${PLAYER_CSS.replaceAll('1920px', `${SLIDE_WIDTH}px`)}\n${readerStyle}\n${motionCss.join('\n').replace(/<\/style/gi, '<\\/style')}</style>\n` +
+    `<noscript><style>${readerStyle.replaceAll('html.open-artifact-reader', 'html').replaceAll('.open-artifact-reader ', '')}</style></noscript>\n` +
     '</head>\n<body>\n' +
     `<main class="open-artifact-deck" aria-roledescription="slide deck" aria-label="${escapeHtml(job.title)}">\n${frames.join('\n')}\n</main>\n` +
     '<div class="open-artifact-hud" aria-hidden="true"></div>\n' +

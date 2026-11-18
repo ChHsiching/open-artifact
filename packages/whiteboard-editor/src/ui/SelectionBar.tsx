@@ -10,7 +10,7 @@
  * being typed into, gets the text bar, groups split by dividers:
  *
  *   [kind] | size, (text color), bold, italic, link | bullets, alignment |
- *   fill, border, lock | open link, comment, (delete), More actions
+ *   fill, border, lock | open link, (delete), More actions
  *
  * (kind for shapes and texts only, text color for texts only; while typing
  * there is no lock, and the format buttons of `FormatBar.tsx` act on the
@@ -18,7 +18,7 @@
  *
  *   [video] | [kind] | size, text color, alignment |
  *   fill, arrow start, border / line / ink, arrow end, crop, picture link,
- *   align items, lock | open link, comment, (delete), More actions
+ *   align items, lock | open link, (delete), More actions
  *
  * each control only when every selected item takes it (arrows aside).
  * Delete is on the bar for touch only; layer order, group, tidy up,
@@ -30,7 +30,7 @@
  * bar, the keyboard and the context menu refuse and announce alike.
  */
 
-import { AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignLeft, AlignCenter, AlignRight, AlignStartHorizontal, AlignStartVertical, ArrowUpRight, CircleDot, Crop, Ellipsis, Link2, Lock, MessageCircle, Minus, MoveLeft, MoveRight, Shapes, Trash2, Type } from 'lucide-react';
+import { AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignLeft, AlignCenter, AlignRight, AlignStartHorizontal, AlignStartVertical, ArrowUpRight, CircleDot, Crop, Ellipsis, Link2, Lock, Minus, MoveLeft, MoveRight, Shapes, Trash2, Type } from 'lucide-react';
 import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import {
   INK_COLOR_NAMES,
@@ -64,7 +64,6 @@ import {
   type TextSize,
 } from '@open-artifact/whiteboard-core';
 import { surfaceRef } from '../canvas/BoardSurface.tsx';
-import { boardComments, useComments } from '../collab/comments.ts';
 import { openBoardLink, linkDisplayUrl } from '../elements/links.ts';
 import { isRichTextItem, type RichTextItem } from '../elements/mark-across.ts';
 import { boardToScreen } from '../lib/camera.ts';
@@ -903,7 +902,6 @@ export function SelectionBar(): ReactNode {
   const camera = useCamera((state) => state.camera);
   const viewWidth = useCamera((state) => state.width);
   const viewHeight = useCamera((state) => state.height);
-  const commentsOn = useComments((state) => state.available) && boardComments.canComment();
   const menuOpen = useContextMenu((state) => state.open && state.kind === 'items');
   const coarse = useCoarsePointer();
 
@@ -999,19 +997,6 @@ export function SelectionBar(): ReactNode {
         onClick={() => {
           leaveTyping();
           openBoardLink(link);
-        }}
-      />
-    ) : null,
-    commentsOn ? (
-      <ToolButton
-        key="comment"
-        label="Comment"
-        tip="Comment on this element"
-        tipSide={side}
-        icon={<MessageCircle aria-hidden="true" />}
-        onClick={() => {
-          leaveTyping();
-          useTool.getState().setCommentMode(true);
         }}
       />
     ) : null,

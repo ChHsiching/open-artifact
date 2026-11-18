@@ -4,6 +4,7 @@
  * the elements' own source so other apps get usable HTML.
  */
 
+import { applySplices, escapeAttribute, getAttribute, parseDcDocument, parseTemplate, type Splice } from '@open-artifact/dc';
 import type { BoardEntry, CanvasNote } from '@open-artifact/design-core';
 
 /** What a copy holds. */
@@ -29,7 +30,7 @@ export type ClipboardPayload =
        */
       standalone?: string;
     }
-  | { kind: 'objects'; boards: { path: string; entry: BoardEntry; source: string }[]; notes: CanvasNote[] };
+  | { kind: 'objects'; externalCode?: boolean; boards: { path: string; entry: BoardEntry; source: string }[]; notes: CanvasNote[] };
 
 export const MARKER = 'data-open-artifact-design';
 
@@ -69,6 +70,43 @@ export function clipboardData(payload: ClipboardPayload): { html: string; text: 
 /** Reads our payload out of clipboard HTML. */
 export function payloadFromHtml(html: string): ClipboardPayload | null {
   const match = new RegExp(`${MARKER}="([^"]*)"`).exec(html);
-  return match ? decode(match[1]!) : null;
+  if (match) return decode(match[1]!);
+  const external = /\bdata-appifact-object=["']([A-Za-z0-9+/=]+)["']/.exec(html);
+  if (!external) return null;
+  try {
+    const decoded = new TextDecoder().decode(Uint8Array.from(atob(external[1]!), c => c.charCodeAt(0)));
+    const value = JSON.parse(decoded);
+    if (value?.appifact !== 1 || value.kind !== 'design-artboards' || !Array.isArray(value.data?.artboards)) return null;
+    const boards: Extract<ClipboardPayload, { kind: 'objects' }>['boards'] = [];
+    const stems = new Set<string>();
+    for (const board of value.data.artboards) {
+      if (!board || typeof board.src !== 'string' || typeof board.stem !== 'string' || !board.stem || stems.has(board.stem) || board.stem.includes('/') || ![board.dx, board.dy, board.w, board.h].every(Number.isFinite)) return null;
+      stems.add(board.stem);
+      boards.push({ path: board.stem + '.dc.html', source: board.src, entry: { x: board.dx, y: board.dy, w: board.w, h: board.h, title: board.stem } });
+    }
+    return boards.length ? { kind: 'objects', externalCode: true, boards, notes: [] } : null;
+  } catch { return null; }
 }
 
+/** Redirect imports and prototype links to other boards in the same paste. */
+export function remapBoardReferences(source: string, path: string, names: ReadonlyMap<string, string>): string {
+  const template = parseDcDocument(source).template;
+  if (!template) return source;
+  const base = new URL(path, 'https://artifact.invalid/');
+  const edits: Splice[] = [];
+  for (const element of parseTemplate(template.text).elements) {
+    const imported = element.tag === 'dc-import';
+    const attr = getAttribute(element, imported ? 'name' : 'href');
+    if (!attr?.value || (!imported && element.tag !== 'a')) continue;
+    let url: URL;
+    try { url = new URL(imported ? attr.value + '.dc.html' : attr.value, base); } catch { continue; }
+    if (url.origin !== base.origin) continue;
+    let target: string;
+    try { target = decodeURIComponent(url.pathname.slice(1)); } catch { continue; }
+    const renamed = names.get(target);
+    if (!renamed) continue;
+    const value = imported ? renamed.replace(/\.dc\.html$/, '') : renamed + url.search + url.hash;
+    if (value !== attr.value) edits.push({ start: template.start + attr.start, end: template.start + attr.end, text: `${attr.name}="${escapeAttribute(value)}"` });
+  }
+  return applySplices(source, edits);
+}

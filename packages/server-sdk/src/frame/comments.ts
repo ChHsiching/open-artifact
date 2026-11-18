@@ -44,6 +44,8 @@ export interface CommentMessage {
   /** Who the message asks, as the page named them (`agent` asks the agent). */
   to?: string[];
   reactions?: MessageReaction[];
+  /** The agent's reply to a message that was sent to it without asking it (no `@agent`): it joined without being asked. */
+  joined?: boolean;
 }
 
 /** At most this many recipients on a message. */
@@ -57,6 +59,8 @@ export interface ThreadAgentState {
   deliveredAt?: string;
   repliedAt?: string;
   via?: string;
+  /** When a reply that did not ask the agent was sent to it after it had answered; its next reply has `joined`. */
+  unaskedAt?: string;
 }
 
 export interface Thread {
@@ -70,6 +74,8 @@ export interface Thread {
   createdAt: string;
   updatedAt: string;
   resolvedAt?: string;
+  /** Who resolved it, while it is resolved. */
+  resolvedBy?: Author;
   messages: CommentMessage[];
 }
 
@@ -190,8 +196,10 @@ export class CommentStore {
       thread.messages.push(message);
       thread.updatedAt = at;
       if (author.kind === 'agent') {
-        thread.agent = { ...(thread.agent ?? {}), status: 'replied', repliedAt: at };
-        if (resolve) setStatus(thread, 'resolved', at);
+        if (thread.agent?.unaskedAt) message.joined = true;
+        const { unaskedAt: _answered, ...agent } = thread.agent ?? { status: 'replied' as const };
+        thread.agent = { ...agent, status: 'replied', repliedAt: at };
+        if (resolve) setStatus(thread, 'resolved', at, author);
       } else if (thread.status === 'resolved') {
         setStatus(thread, 'open', at);
       }
@@ -235,10 +243,10 @@ export class CommentStore {
     });
   }
 
-  setResolved(threadId: unknown, resolved: boolean): Thread {
+  setResolved(threadId: unknown, resolved: boolean, by?: Author): Thread {
     return this.mutate((doc) => {
       const thread = this.find(doc, threadId);
-      setStatus(thread, resolved ? 'resolved' : 'open', now());
+      setStatus(thread, resolved ? 'resolved' : 'open', now(), by);
       return thread;
     });
   }
@@ -277,20 +285,39 @@ export class CommentStore {
     });
   }
 
-  markSent(threadId: unknown): Thread {
+  /**
+   * Marks the thread sent to the agent. `unasked`: a reply that does not ask the agent, sent because it already took
+   * part in the thread; only such a thread can be, and it keeps its status (nothing waits on the agent). One the agent
+   * had answered remembers it (`unaskedAt`), so the agent's next reply there is marked `joined`.
+   */
+  markSent(threadId: unknown, { unasked = false }: { unasked?: boolean } = {}): Thread {
     return this.mutate((doc) => {
       const thread = this.find(doc, threadId);
-      thread.agent = { status: 'pending', sentAt: now() };
+      if (!unasked) {
+        thread.agent = { status: 'pending', sentAt: now() };
+        return thread;
+      }
+      if (!thread.agent && !thread.messages.some((m) => m.author?.kind === 'agent')) {
+        throw new FrameError('invalid_argument', 'Only a thread the agent took part in is sent to it without asking it.');
+      }
+      const agent: ThreadAgentState = thread.agent ?? { status: 'replied' };
+      thread.agent = agent.status === 'replied' ? { ...agent, unaskedAt: now() } : agent;
       return thread;
     });
   }
 }
 
-function setStatus(thread: Thread, status: Thread['status'], at: string): void {
+function setStatus(thread: Thread, status: Thread['status'], at: string, by?: Author): void {
   thread.status = status;
   thread.updatedAt = at;
-  if (status === 'resolved') thread.resolvedAt = at;
-  else delete thread.resolvedAt;
+  if (status === 'resolved') {
+    thread.resolvedAt = at;
+    if (by) thread.resolvedBy = { ...by };
+    else delete thread.resolvedBy;
+  } else {
+    delete thread.resolvedAt;
+    delete thread.resolvedBy;
+  }
 }
 
 function findMessage(thread: Thread, messageId: unknown): CommentMessage {
@@ -341,6 +368,7 @@ export function agentView(thread: Thread, n?: number): Record<string, unknown> {
       ...(m.editedAt ? { editedAt: m.editedAt } : {}),
       ...(m.to?.length ? { to: m.to } : {}),
       ...(m.reactions?.length ? { reactions: m.reactions.map((r) => `${r.emoji} ${r.author.kind === 'agent' ? 'agent' : r.author.name}`) } : {}),
+      ...(m.joined ? { joined: true } : {}),
     })),
   };
 }

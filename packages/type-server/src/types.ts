@@ -137,7 +137,7 @@ export const TYPES: Record<TypeName, TypeDefinition> = {
     title: 'Design System',
     marker: 'design-system.json',
     scaffold: (title) => ({ 'design-system.json': `${JSON.stringify(emptySystemIndex(title), null, 2)}\n` }),
-    check: (files) => checkDesignSystem(files),
+    check: (files, context) => checkDesignSystem(files, context?.blobExists),
     // The Design System editor publishes a small record (tab, selection); accept plain objects only.
     validateContext: (value) => (value && typeof value === 'object' && !Array.isArray(value) && JSON.stringify(value).length <= 8192 ? value : null),
     // Threads on tokens, text styles, components, assets and sections (anchors: the view's focus shape).

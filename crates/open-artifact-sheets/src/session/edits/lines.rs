@@ -30,8 +30,8 @@ pub(super) mod follow;
 pub(super) mod groups;
 
 /// The narrowest and widest a column may be, and the lowest and highest a row, in pixels.
-const NARROWEST_COLUMN: u32 = 8;
-const WIDEST_COLUMN: u32 = 2000;
+pub(super) const NARROWEST_COLUMN: u32 = 8;
+pub(super) const WIDEST_COLUMN: u32 = 2000;
 const LOWEST_ROW: u32 = 8;
 const HIGHEST_ROW: u32 = 2000;
 /// How deep groups may nest.
@@ -297,10 +297,10 @@ fn make_ops(workbook: &Workbook, edit: Edit, context: &Context) -> Result<Made, 
             delete(workbook, sheet, columns, (a..=b).map(|p| at(&sheet.columns, p)).collect())
         }
         Edit::MoveRows { sheet_id, one_row, other_row, after_row } => {
-            move_lines(workbook, sheet_of(workbook, &sheet_id)?, rows, (&one_row, &other_row), after_row)
+            move_lines(workbook, sheet_of(workbook, &sheet_id)?, rows, (&one_row, &other_row), after_row, context.is_among_several)
         }
         Edit::MoveColumns { sheet_id, one_column, other_column, after_column } => {
-            move_lines(workbook, sheet_of(workbook, &sheet_id)?, columns, (&one_column, &other_column), after_column)
+            move_lines(workbook, sheet_of(workbook, &sheet_id)?, columns, (&one_column, &other_column), after_column, context.is_among_several)
         }
         Edit::HideRows { sheet_id, rows: runs } => {
             let sheet = sheet_of(workbook, &sheet_id)?;
@@ -437,6 +437,15 @@ fn fit_columns(workbook: &Workbook, sheet: &Sheet, ends: (&str, &str), at_least:
             widths.push((column, width));
         }
     }
+    let sizes = column_width_runs(workbook, widths);
+    if sizes.is_empty() {
+        return Ok(Made::nothing());
+    }
+    Ok(Made::ops(vec![Op::SetColumnWidths { sheet_id: sheet.id.clone(), widths: sizes }]))
+}
+
+/// Packs consecutive column IDs with equal widths into the run used by setColumnWidths.
+pub(super) fn column_width_runs(workbook: &Workbook, widths: impl IntoIterator<Item = (LineId, u32)>) -> Vec<ColumnsToSize> {
     let mut sizes: Vec<ColumnsToSize> = Vec::new();
     let mut last: Option<LineId> = None;
     for (column, width) in widths {
@@ -452,10 +461,7 @@ fn fit_columns(workbook: &Workbook, sheet: &Sheet, ends: (&str, &str), at_least:
         }
         last = Some(column);
     }
-    if sizes.is_empty() {
-        return Ok(Made::nothing());
-    }
-    Ok(Made::ops(vec![Op::SetColumnWidths { sheet_id: sheet.id.clone(), widths: sizes }]))
+    sizes
 }
 
 /// The settings asked for that are not as they are.
@@ -603,7 +609,7 @@ fn is_filled_only_first(sheet: &Sheet, (top, bottom, left, right): (usize, usize
 }
 
 /// Moves the lines from one end to the other after a line (first of all when `None`).
-fn move_lines(workbook: &Workbook, sheet: &Sheet, lines: Lines, ends: (&str, &str), after: Option<String>)
+fn move_lines(workbook: &Workbook, sheet: &Sheet, lines: Lines, ends: (&str, &str), after: Option<String>, among_several: bool)
     -> Result<Made, Refused> {
     let (a, b) = span(workbook, sheet, lines, ends)?;
     let axis = lines.axis(sheet);
@@ -614,6 +620,9 @@ fn move_lines(workbook: &Workbook, sheet: &Sheet, lines: Lines, ends: (&str, &st
     };
     if stays || (a == 0 && b + 1 == axis.len()) {
         return Ok(Made::nothing());
+    }
+    if among_several {
+        return Err(Refused::Because("moveAmongSeveralEdits"));
     }
     let moved: Vec<LineId> = (a..=b).map(|p| at(axis, p)).collect();
     let after_line = to.map(|p| at(axis, p));

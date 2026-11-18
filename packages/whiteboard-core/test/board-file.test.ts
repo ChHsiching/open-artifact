@@ -58,6 +58,16 @@ describe('board file', () => {
     assert.equal(file.outline.split('\n')[0], 'Name Score');
   });
 
+  it('removes sharing keys from exported links and titles, preserving unrelated URL escapes', () => {
+    const url = 'https://example.org/artifact/diagram';
+    const key = 'abcDEF0123456789';
+    assert.equal(boardFileJsonReplacer('href', url + '?sk=' + key + '&page=1'), url + '?page=1');
+    assert.equal(boardFileJsonReplacer('text', url + '%253Fsk%253D' + key), url);
+    assert.equal(boardFileJsonReplacer('href', url + '?sk=' + key + '&sk=' + key + '&page=1'), url + '?page=1');
+    assert.equal(boardFileJsonReplacer('text', 'See: ' + url + '?q=a%20b'), 'See: ' + url + '?q=a%20b');
+    assert.equal(boardFileName('Review sk=' + key), 'Review.json');
+  });
+
   it('round-trips through JSON', () => {
     const text = serializeBoardFile(buildBoardFile(sample));
     const parsed = parseBoardFile(text);

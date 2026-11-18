@@ -13,8 +13,8 @@ import { cn } from '@open-artifact/ui';
 import type { Focus } from '../state/view.ts';
 import { useAgent } from '../services/agent.ts';
 import { anchorLabel, parseAnchor, serializeAnchor, threadsByAnchor, type SystemAnchor } from '../lib/comment-anchors.ts';
-import { closeComments, openComments, systemComments, useCommentScope, useComments } from '../services/comments.ts';
-import { canComment } from '../services/comments.ts';
+import { canComment, closeComments, openComments, systemComments, useCommentScope, useComments } from '../services/comments.ts';
+import { maybeSession } from '../services/session.ts';
 
 /** Open threads per anchor, memoized on the thread list. */
 function useOpenByAnchor(): Map<string, CommentThread[]> {
@@ -29,19 +29,24 @@ function useOpenByAnchor(): Map<string, CommentThread[]> {
  */
 export function CommentBadge({ focus, className }: { focus: Focus; className?: string }) {
   const available = useComments((s) => s.available);
+  const on = useComments((s) => s.on);
   const byAnchor = useOpenByAnchor();
   if (!available) return null;
-  const count = byAnchor.get(serializeAnchor(focus))?.length ?? 0;
-  if (!count && !canComment()) return null;
+  const key = serializeAnchor(focus);
+  const threads = byAnchor.get(key);
+  const count = threads?.length ?? 0;
+  const canStart = canComment() && (on || !maybeSession()?.shell);
+  if (!count && !canStart) return null;
   return (
     <button
       type="button"
-      data-comment-badge={serializeAnchor(focus)}
+      data-comment-badge={key}
       aria-label={count ? `${count} comments on ${anchorLabel(focus)}` : `Comment on ${anchorLabel(focus)}`}
       title={count ? `${count} open ${count === 1 ? 'comment' : 'comments'}` : 'Comment'}
       onClick={(event) => {
         event.stopPropagation();
-        openComments(focus);
+        if (canStart) openComments(focus);
+        else if (threads?.[0]) systemComments.reveal(threads[0]);
       }}
       className={cn(
         'inline-flex h-5 shrink-0 items-center gap-0.5 rounded-full px-1.5 text-[11px] font-semibold tabular-nums transition-opacity',
@@ -142,7 +147,7 @@ export function CommentsOverlay(): ReactNode {
           <ItemCards scope={scope} agent={agent} />
         </CommentsLayer>
       ) : null}
-      <AllComments comments={systemComments} agent={agent} top={TOP} hint="Click the comment badge beside a token, text style, component, asset or section." />
+      <AllComments comments={systemComments} agent={agent} top={TOP} hint="Turn on Comments, then select a token, text style, component, asset or section." />
     </>
   );
 }

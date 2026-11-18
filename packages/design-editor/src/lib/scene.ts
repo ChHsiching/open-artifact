@@ -11,7 +11,7 @@
 import { parseColor, type CameraState, type CanvasItem, type Color } from '@open-artifact/canvas-engine';
 import type { BoardEntry, CanvasNote, Rect } from '@open-artifact/design-core';
 import type { Camera } from '../state/view.ts';
-import { DEFAULT_STICKY, isPathNote, noteBounds, noteColor } from './notes.ts';
+import { DEFAULT_STICKY, arrowHeads, noteStroke, penViewBox, isPathNote, noteBounds, noteColor } from './notes.ts';
 
 /** Engine item id of an artboard. */
 export const boardItemId = (path: string): string => `b:${path}`;
@@ -93,20 +93,6 @@ function noteFill(value: string | undefined, use: 'sticky' | 'stroke', fallback:
 /** Texture key of an image note. */
 export const imageKey = (src: string): string => `img:${src}`;
 
-/** Arrowhead lines at the end of a polyline (box coordinates), as path data. */
-function arrowHead(points: readonly (readonly [number, number])[]): string {
-  if (points.length < 2) return '';
-  const [x2, y2] = points[points.length - 1]!;
-  const [x1, y1] = points[points.length - 2]!;
-  const angle = Math.atan2(y2 - y1, x2 - x1);
-  const size = 12;
-  const ax = x2 - size * Math.cos(angle - 0.45);
-  const ay = y2 - size * Math.sin(angle - 0.45);
-  const bx = x2 - size * Math.cos(angle + 0.45);
-  const by = y2 - size * Math.sin(angle + 0.45);
-  return `M${ax} ${ay}L${x2} ${y2}L${bx} ${by}`;
-}
-
 /** The world rect a note's item covers. */
 export function noteRect(note: CanvasNote, measured?: { w: number; h: number }): Rect {
   if (isPathNote(note)) return noteBounds(note);
@@ -117,7 +103,7 @@ export function noteRect(note: CanvasNote, measured?: { w: number; h: number }):
     case 'oval':
       return { x: note.x, y: note.y, w: note.w ?? 160, h: note.h ?? 100 };
     case 'link':
-      return { x: note.x, y: note.y, w: note.w ?? 280, h: measured?.h ?? 66 };
+      return { x: note.x, y: note.y, w: note.w ?? 640, h: measured?.h ?? note.h ?? 112 };
     case 'title1': {
       const bounds = noteBounds(note);
       return { ...bounds, w: measured?.w ?? bounds.w, h: measured?.h ?? bounds.h };
@@ -130,19 +116,22 @@ export function noteRect(note: CanvasNote, measured?: { w: number; h: number }):
 /** The engine item of a note: its body (text is drawn by the DOM), without a hover outline like artboards. */
 export function noteItem(id: string, note: CanvasNote, look: NoteLook): CanvasItem {
   const rect = noteRect(note, look.measured);
-  const base = { id: noteItemId(id), ...rect, layer: 1, z: look.z, movable: look.editable, resizable: look.editable && !isPathNote(note), hover: false };
+  const base = { id: noteItemId(id), ...rect, ...(note.rotate ? { rotation: note.rotate * Math.PI / 180 } : {}), layer: 1, z: look.z, movable: look.editable, resizable: look.editable && !isPathNote(note), hover: false };
   if (isPathNote(note)) {
-    const stroke = noteFill(note.color, 'stroke', '#2b2b2b');
-    const width = note.kind === 'pen' && typeof note.stroke === 'number' && note.stroke > 0 ? note.stroke : 3;
+    const { width, color, dash } = noteStroke(note);
+    const stroke = noteFill(color, 'stroke', '#2b2b2b');
     const points = (note.points ?? []).map(([x, y]) => [x + note.x - rect.x, y + note.y - rect.y] as const);
-    const line = { ...base, kind: 'path' as const, stroke, strokeWidth: width, cap: 'round' as const, join: 'round' as const, hitStrokeOnly: true };
-    if (note.kind === 'arrow') {
-      const d = points.map(([x, y], i) => `${i ? 'L' : 'M'}${x} ${y}`).join('') + arrowHead(points);
-      return { ...line, d };
+    const line = { ...base, kind: 'path' as const, stroke, strokeWidth: width, ...(dash ? { dash } : {}), cap: 'round' as const, join: 'round' as const, hitStrokeOnly: true };
+    if (note.kind === 'pen' && note.d && !points.length) return { ...line, d: note.d, viewBox: penViewBox(note.d) };
+    const heads = arrowHeads(note, points);
+    if (heads.length) {
+      // Close only the filled triangles. Open subpaths get an implicit closing edge
+      // when filled, so retrace open wings and the shaft before adding the heads.
+      const shaft = [...points, ...points.slice(0, -1).reverse()].map(([x, y], i) => `${i ? 'L' : 'M'}${x} ${y}`).join(' ');
+      const d = shaft + heads.map(h => h.d).join('');
+      return { ...line, d, fill: heads.some(h => h.filled) ? stroke : undefined };
     }
-    const dash: [number, number] | undefined =
-      note.kind === 'pen' && note.dash === 'dashed' ? [width * 3, width * 2.5] : note.kind === 'pen' && note.dash === 'dotted' ? [0.01, width * 2] : undefined;
-    return { ...line, points: points.flat(), ...(dash ? { dash } : {}) };
+    return { ...line, points: points.flat() };
   }
   switch (note.kind) {
     case 'image':
@@ -166,7 +155,7 @@ export function noteItem(id: string, note: CanvasNote, look: NoteLook): CanvasIt
       return {
         ...base,
         kind: 'rect',
-        fill: noteFill(note.color, 'sticky', DEFAULT_STICKY),
+        fill: noteFill(note.fill ?? note.color, 'sticky', DEFAULT_STICKY),
         radius: 2,
         shadow: { color: 'rgba(0,0,0,0.1)', blur: 10, dy: 3 },
       };

@@ -2,14 +2,14 @@
  * Comment pins on the stage: the shared pins, card and composer
  * (`@open-artifact/editor-kit`, CommentViews.tsx) placed on the slide on
  * stage. Pins sit where the thread was placed (a point on the slide), else at
- * the top-right corner of its element, else at the slide's corner. The stage
- * itself starts new threads (Stage.tsx), so only the pins are shared.
+ * the top-right corner of its element, else at the slide's corner. The shared
+ * capture surface turns clicks and drags into slide-coordinate anchors.
  */
 
 import { useCallback, useLayoutEffect, useMemo, useState, type ReactNode } from 'react';
-import { nodeAt, SLIDE_WIDTH, type Slide } from '@open-artifact/slides-core';
-import { CommentPins as SharedPins } from '@open-artifact/editor-kit/react';
-import type { PinPlace, Point } from '@open-artifact/editor-kit';
+import { nodeAt, SLIDE_HEIGHT, SLIDE_WIDTH, type Slide } from '@open-artifact/slides-core';
+import { CommentCapture, CommentPins as SharedPins } from '@open-artifact/editor-kit/react';
+import type { Box, PinPlace, Point } from '@open-artifact/editor-kit';
 import { useAgent } from '../../services/agent.ts';
 import { anchorOf, anchorPath, elementAnchor, slidesComments, useComments, type SlideAnchor } from '../../services/comments.ts';
 import { elementOf, measure } from '../stage/geometry.ts';
@@ -75,13 +75,35 @@ export function CommentPins({ ctx, slide }: { ctx: StageContext; slide: Slide })
   );
   const camera = useMemo(() => ({ x: 0, y: 0, zoom: ctx.scale }), [ctx.scale]);
 
+  const areaAnchor = (from: Point, to: Point): SlideAnchor => {
+    const clamp = (value: number, limit: number): number => Math.max(0, Math.min(limit, value));
+    const x = clamp(Math.min(from.x, to.x), SLIDE_WIDTH);
+    const y = clamp(Math.min(from.y, to.y), SLIDE_HEIGHT);
+    return elementAnchor(slide, null, { x, y }, {
+      w: clamp(Math.max(from.x, to.x), SLIDE_WIDTH) - x,
+      h: clamp(Math.max(from.y, to.y), SLIDE_HEIGHT) - y,
+    });
+  };
+  const highlight = (anchor: SlideAnchor): Box | null => {
+    if (anchor.x !== undefined && anchor.y !== undefined && anchor.w !== undefined && anchor.h !== undefined) {
+      return { x: anchor.x, y: anchor.y, w: anchor.w, h: anchor.h, area: true };
+    }
+    const path = anchorPath(slide, anchor);
+    const element = path && elementOf(ctx.root, path);
+    return element ? measure(ctx.root, element, ctx.scale) : null;
+  };
+
   return (
     <div data-open-artifact-comment-ui className="contents">
+      <div className="pointer-events-auto contents">
+        <CommentCapture comments={slidesComments} enabled camera={() => camera} anchorAt={anchorAt} areaAnchor={areaAnchor} />
+      </div>
       <SharedPins<SlideAnchor>
         comments={slidesComments}
         camera={camera}
         viewport={layout.viewport}
         place={place}
+        highlight={highlight}
         anchorAt={anchorAt}
         agent={{ available: agent.available, name: agent.name, wakesIdle: agent.wakesIdle }}
         piles={false}

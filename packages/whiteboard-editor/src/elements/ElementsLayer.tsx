@@ -49,7 +49,9 @@ import { ImageView, StickerView } from './MediaViews.tsx';
 import { ArrowView, StrokeView } from './LineViews.tsx';
 import { LinkView, TableView, TimerView } from './CardViews.tsx';
 import { NoteView, SectionView, ShapeView, TextView } from './BlockViews.tsx';
-import { elementDomId } from './item.tsx';
+import { useBoardRecovery } from '../services/load-recovery.ts';
+import { rotationStyle } from './style.ts';
+import { elementDomId, useItemProps } from './item.tsx';
 import { useElementView } from './view-state.ts';
 import { useEngineView } from '../engine/mode.ts';
 
@@ -64,10 +66,19 @@ export function layerOrder(elements: readonly BoardElement[]): ElementId[] {
   return sections.length === 0 ? rest : [...sections, ...rest];
 }
 
+function PausedMedia({ element }: { element: Extract<BoardElement, { type: 'image' | 'html' }> }) {
+  const item = useItemProps(element);
+  return <div {...item} className="wb-el wb-paused-media" style={{
+    left: element.x, top: element.y, width: element.w, height: element.h, ...rotationStyle(element),
+  }}>{element.type === 'html' ? 'Embed paused' : 'Picture paused'}</div>;
+}
+
 /** One element, drawn by the view of its type. */
 export const ElementView = memo(function ElementView({ id }: { id: ElementId }) {
   const element = useShownElement(id);
+  const paused = useBoardRecovery((state) => state.paused);
   if (!element) return null;
+  if (paused && (element.type === 'image' || element.type === 'html')) return <PausedMedia element={element} />;
   switch (element.type) {
     case 'note':
       return <NoteView element={element} />;

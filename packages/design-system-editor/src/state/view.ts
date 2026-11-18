@@ -51,7 +51,7 @@ export const useView = create<ViewState>()((set) => ({
   file: null,
 
   go(section, anchor = null) {
-    set({ section, anchor });
+    set({ section, anchor: anchor ?? `ds-page-${section}`, search: '' });
   },
   setFocus(focus) {
     set({ focus });
@@ -72,12 +72,12 @@ export const useView = create<ViewState>()((set) => ({
     set({ theme });
   },
   openFile(file) {
-    set({ section: 'files', file });
+    set({ section: 'files', file, search: '', anchor: null, focus: file ? { kind: 'file', name: file } : null });
   },
 }));
 
 /** A stable DOM id for an anchor. */
-export const anchorId = (kind: string, name: string): string => `ds-${kind}-${name.replace(/[^A-Za-z0-9_-]/g, '_')}`;
+export const anchorId = (kind: string, name: string): string => `ds-${kind}-${encodeURIComponent(name)}`;
 
 /** The section and anchor that show an item. */
 export function focusTarget(focus: Focus): { section: SectionId; anchor: string | null } {

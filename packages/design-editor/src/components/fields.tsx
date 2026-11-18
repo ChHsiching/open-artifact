@@ -91,6 +91,7 @@ export interface PInputProps {
  */
 export function PInput({ value, onCommit, placeholder, unit, prefix, disabled, className, mono, ...aria }: PInputProps) {
   const [draft, setDraft] = useState(value);
+  const cancelled = useRef(false);
   useEffect(() => setDraft(value), [value]);
   const commit = (text = draft) => {
     const trimmed = text.trim();
@@ -107,12 +108,15 @@ export function PInput({ value, onCommit, placeholder, unit, prefix, disabled, c
         disabled={disabled}
         spellCheck={false}
         onChange={(event) => setDraft(event.target.value)}
-        onBlur={() => commit()}
+        onBlur={() => {
+          if (!cancelled.current) commit();
+          cancelled.current = false;
+        }}
         onKeyDown={(event) => {
           if (event.key === 'Enter') {
-            commit();
             event.currentTarget.blur();
           } else if (event.key === 'Escape') {
+            cancelled.current = true;
             setDraft(value);
             event.currentTarget.blur();
           } else if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {

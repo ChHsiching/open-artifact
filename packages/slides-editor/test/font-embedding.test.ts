@@ -16,7 +16,7 @@ import {
   type EmbeddingOptions,
   type FontUse,
 } from '../src/services/export/font-embedding.ts';
-import { EOT_MAGIC, EOT_VERSION, fsTypeAllowsEmbedding, panoseHex, readFontTables, wrapEot } from '../src/services/export/font-tables.ts';
+import { containsGlyph, EOT_MAGIC, EOT_VERSION, fsTypeAllowsEmbedding, panoseHex, readFontTables, wrapEot } from '../src/services/export/font-tables.ts';
 import { ExportNotes, nameList } from '../src/services/export/notes.ts';
 import { pptxEntries, type PptxSlide } from '../src/services/export/ooxml.ts';
 
@@ -392,5 +392,43 @@ describe('export notes: fonts and effects', () => {
       'Noto Sans: embedded for one script only: characters of other scripts show in a substitute font.',
       'The deck was still being written: only 3 of 8 planned slides were included.',
     ]);
+  });
+});
+
+describe('embedded font glyph coverage', () => {
+  it('looks up BMP glyphs and rejects a missing glyph or an invalid offset', () => {
+    const cmap = new DataView(new ArrayBuffer(38));
+    cmap.setUint16(2, 1);
+    cmap.setUint32(8, 12);
+    cmap.setUint16(12, 4);
+    cmap.setUint16(14, 26);
+    cmap.setUint16(18, 2);
+    cmap.setUint16(26, 0x4e01);
+    cmap.setUint16(30, 0x4e00);
+    cmap.setUint16(34, 2);
+    cmap.setUint16(36, 7);
+    assert.equal(containsGlyph(cmap, 0x4e00), true);
+    assert.equal(containsGlyph(cmap, 0x4e01), false);
+    cmap.setUint16(36, 0);
+    assert.equal(containsGlyph(cmap, 0x4e00), false);
+    cmap.setUint16(34, 0xfffe);
+    assert.equal(containsGlyph(cmap, 0x4e00), false);
+  });
+
+  it('reads full Unicode groups including supplementary Han characters', () => {
+    const cmap = new DataView(new ArrayBuffer(40));
+    cmap.setUint16(2, 1);
+    cmap.setUint32(8, 12);
+    cmap.setUint16(12, 12);
+    cmap.setUint32(16, 28);
+    cmap.setUint32(24, 1);
+    cmap.setUint32(28, 0x20000);
+    cmap.setUint32(32, 0x20002);
+    cmap.setUint32(36, 0);
+    assert.equal(containsGlyph(cmap, 0x20000), false);
+    assert.equal(containsGlyph(cmap, 0x20002), true);
+    assert.equal(containsGlyph(cmap, 0x20003), false);
+    cmap.setUint32(24, 9999);
+    assert.equal(containsGlyph(cmap, 0x20002), false);
   });
 });

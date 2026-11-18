@@ -12,14 +12,16 @@ import { cn } from '@open-artifact/ui';
 import { useDocument } from '../state/document.ts';
 import { useView } from '../state/view.ts';
 import { observeNoteSize } from '../services/engine.ts';
-import { DEFAULT_STICKY, dashArray, inlineRuns, isPathNote, markdownBlocks, noteBounds, noteColor, noteFontSize } from '../lib/notes.ts';
+import { DEFAULT_STICKY, arrowHeads, penViewBox, noteStroke, inlineRuns, isPathNote, markdownBlocks, noteBounds, noteColor, noteFontSize } from '../lib/notes.ts';
 
 /** Renders inline Markdown runs. */
 function Inline({ text }: { text: string }) {
   return (
     <>
       {inlineRuns(text).map((run, index) =>
-        run.code ? (
+        run.href ? (
+          <a key={index} href={run.href} target="_blank" rel="noopener noreferrer" onPointerDown={event => event.stopPropagation()} className="pointer-events-auto underline">{run.text}</a>
+        ) : run.code ? (
           <code key={index} className="rounded bg-black/10 px-1 font-mono text-[0.9em]">
             {run.text}
           </code>
@@ -44,7 +46,7 @@ function Markdown({ text }: { text: string }) {
           </div>
         ) : block.kind === 'item' ? (
           <div key={index} className="flex gap-1.5">
-            <span>{block.ordered ? '•' : '–'}</span>
+            <span>{block.marker}</span>
             <span>
               <Inline text={block.text} />
             </span>
@@ -85,15 +87,17 @@ function removeNote(id: string): void {
 
 /** The in-place text editor. */
 function NoteEditor({ id, note, style }: { id: string; note: CanvasNote; style: CSSProperties }) {
-  const [draft, setDraft] = useState(note.text);
+  const [draft, setDraft] = useState(note.text ?? '');
   const ref = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
     // Focus after the current pointer event: a note created on pointerdown
     // mounts during it, and the browser's own mousedown focus change would
     // blur it at once (and an empty sticky is removed on blur).
     const timer = setTimeout(() => {
-      ref.current?.focus();
-      ref.current?.select();
+      const area = ref.current;
+      if (!area) return;
+      area.focus({ preventScroll: true });
+      area.setSelectionRange(area.value.length, area.value.length);
     }, 0);
     return () => clearTimeout(timer);
   }, []);
@@ -127,20 +131,15 @@ function NoteEditor({ id, note, style }: { id: string; note: CanvasNote; style: 
 function PathNote({ note }: { note: CanvasNote }) {
   const bounds = noteBounds(note);
   const pad = 12;
-  const stroke = noteColor(note.color, 'stroke', '#2b2b2b');
-  const width = note.kind === 'pen' && typeof note.stroke === 'number' && note.stroke > 0 ? note.stroke : 3;
+  const { width, color, dash } = noteStroke(note);
+  const stroke = noteColor(color, 'stroke', '#2b2b2b');
   const points = (note.points ?? []).map(([x, y]) => [x + note.x - bounds.x + pad, y + note.y - bounds.y + pad] as const);
   const d = points.map(([x, y], i) => `${i ? 'L' : 'M'}${x} ${y}`).join(' ');
-  const head = (() => {
-    if (note.kind !== 'arrow' || points.length < 2) return null;
-    const [x2, y2] = points[points.length - 1]!;
-    const [x1, y1] = points[points.length - 2]!;
-    const angle = Math.atan2(y2 - y1, x2 - x1);
-    const size = 12;
-    const a = [x2 - size * Math.cos(angle - 0.45), y2 - size * Math.sin(angle - 0.45)];
-    const b = [x2 - size * Math.cos(angle + 0.45), y2 - size * Math.sin(angle + 0.45)];
-    return `M${a[0]} ${a[1]} L${x2} ${y2} L${b[0]} ${b[1]}`;
-  })();
+  if (note.kind === 'pen' && note.d && !points.length) {
+    return <svg width={bounds.w} height={bounds.h} viewBox={`0 0 ${penViewBox(note.d).join(' ')}`} preserveAspectRatio="none" className="overflow-visible">
+      <path d={note.d} fill="none" stroke={stroke} strokeWidth={width} strokeDasharray={dash?.join(' ')} vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>;
+  }
   return (
     <svg
       width={bounds.w + pad * 2}
@@ -148,8 +147,8 @@ function PathNote({ note }: { note: CanvasNote }) {
       className="pointer-events-none absolute overflow-visible"
       style={{ left: bounds.x - note.x - pad, top: bounds.y - note.y - pad }}
     >
-      <path d={d} fill="none" stroke={stroke} strokeWidth={width} strokeDasharray={note.kind === 'pen' ? dashArray(note.dash, width) : undefined} strokeLinecap="round" strokeLinejoin="round" />
-      {head ? <path d={head} fill="none" stroke={stroke} strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" /> : null}
+      <path d={d} fill="none" stroke={stroke} strokeWidth={width} strokeDasharray={dash?.join(' ')} strokeLinecap="round" strokeLinejoin="round" />
+      {arrowHeads(note, points).map((head, i) => <path key={i} d={head.d} fill={head.filled ? stroke : 'none'} stroke={stroke} strokeWidth={width} strokeLinecap="round" strokeLinejoin="round" />)}
       {/* A wide invisible stroke makes thin paths easy to grab. */}
       <path d={d} fill="none" stroke="transparent" strokeWidth={16} className="pointer-events-auto" />
     </svg>
@@ -174,14 +173,26 @@ export const NoteView = memo(function NoteView({ id, note, bare = false }: NoteV
   const outer = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => (bare && outer.current ? observeNoteSize(outer.current) : undefined), [bare]);
   const fontSize = noteFontSize(note.size, note.kind);
+  const titleContent = useRef<HTMLSpanElement>(null);
+  const [fit, setFit] = useState(1);
+  useLayoutEffect(() => {
+    const el = titleContent.current;
+    if (!el || note.kind !== 'title1') return;
+    const measure = () => setFit(Math.min(1, (note.maxW ?? 1200) / Math.max(1, el.offsetWidth), (note.maxH ?? Infinity) / Math.max(1, el.offsetHeight)));
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    measure();
+    return () => observer.disconnect();
+  }, [note.kind, note.maxW, note.maxH, editing]);
   const textStyle: CSSProperties = {
     fontSize,
     lineHeight: 1.35,
-    fontWeight: note.bold || note.kind === 'title1' ? 700 : 400,
+    fontWeight: (note.bold ?? note.kind === 'title1') ? 700 : 400,
     fontStyle: note.italic ? 'italic' : undefined,
     color: note.kind === 'title1' ? noteColor(note.color, 'stroke', '#1d1d1b') : '#1d1d1b',
   };
-  const position: CSSProperties = { left: note.x, top: note.y };
+  const position: CSSProperties = { left: note.x, top: note.y,
+    ...(note.rotate || note.flipX || note.flipY ? { transform: `rotate(${note.rotate ?? 0}deg) scale(${note.flipX ? -1 : 1},${note.flipY ? -1 : 1})` } : {}) };
 
   if (bare && (isPathNote(note) || note.kind === 'image')) return null;
 
@@ -196,7 +207,7 @@ export const NoteView = memo(function NoteView({ id, note, bare = false }: NoteV
   if (note.kind === 'image') {
     return (
       <div data-note={id} className="absolute" style={{ ...position, width: note.w ?? 320, height: note.h ?? 240 }}>
-        {note.src ? <img src={note.src} alt={note.text} draggable={false} className="size-full select-none object-contain" /> : null}
+        {note.src ? <img src={note.src} alt={note.alt ?? note.text ?? ''} draggable={false} className="size-full select-none object-contain" /> : null}
       </div>
     );
   }
@@ -206,17 +217,17 @@ export const NoteView = memo(function NoteView({ id, note, bare = false }: NoteV
       <div
         ref={outer}
         data-note={id}
-        className={cn('absolute flex flex-col gap-1 rounded-lg border p-3', bare ? 'pointer-events-none border-transparent' : 'border-black/10 bg-white shadow-sm')}
-        style={{ ...position, width: note.w ?? 280 }}
+        className={cn('absolute flex flex-col justify-center gap-1 rounded-lg border px-6', bare ? 'pointer-events-none border-transparent' : 'border-black/10 bg-white shadow-sm')}
+        style={{ ...position, width: note.w ?? 640, height: note.h ?? 112 }}
       >
-        <div className="truncate text-[14px] font-semibold text-[#1d1d1b]">{note.text || note.href}</div>
+        <div className="truncate text-[24px] font-semibold text-[#1d1d1b]">{note.title || note.text || note.href}</div>
         {note.href ? (
           <a
             href={note.href}
             target="_blank"
             rel="noreferrer noopener"
             onPointerDown={(event) => event.stopPropagation()}
-            className="pointer-events-auto truncate text-[12px] text-[#2f6fd6] underline"
+            className="pointer-events-auto truncate text-[16px] text-[#2f6fd6] underline"
           >
             {note.href}
           </a>
@@ -236,7 +247,7 @@ export const NoteView = memo(function NoteView({ id, note, bare = false }: NoteV
           width: note.w ?? 160,
           height: note.h ?? 100,
           border: `3px solid ${bare ? 'transparent' : noteColor(note.color, 'stroke', '#2b2b2b')}`,
-          background: note.fill && !bare ? noteColor(note.fill, 'sticky', 'transparent') : 'transparent',
+          background: !bare ? noteColor(note.fill ?? note.css?.fill, 'sticky', 'transparent') : 'transparent',
           borderRadius: note.kind === 'rect' ? 6 : undefined,
         }}
       >
@@ -256,8 +267,8 @@ export const NoteView = memo(function NoteView({ id, note, bare = false }: NoteV
         {editing ? (
           <NoteEditor id={id} note={note} style={textStyle} />
         ) : (
-          <div className="whitespace-pre-wrap" style={textStyle}>
-            {note.text || ' '}
+          <div style={{ ...textStyle, height: fontSize * 1.35 * fit }}>
+            <span ref={titleContent} className="inline-block origin-top-left whitespace-pre" style={{ transform: `scale(${fit})` }}>{note.text || ' '}</span>
           </div>
         )}
       </div>
@@ -269,10 +280,11 @@ export const NoteView = memo(function NoteView({ id, note, bare = false }: NoteV
     <div
       ref={outer}
       data-note={id}
-      className={cn('absolute rounded-sm p-3', bare ? 'pointer-events-none' : 'shadow-[0_1px_2px_rgba(0,0,0,0.12),0_4px_12px_rgba(0,0,0,0.06)]')}
-      style={{ ...position, width: note.w ?? 240, minHeight: note.h ?? 80, background: bare ? undefined : noteColor(note.color, 'sticky', DEFAULT_STICKY) }}
+      data-sticky-scroll=""
+      className={cn('absolute rounded-sm p-3', !editing && 'touch-none', bare ? 'pointer-events-none' : 'shadow-[0_1px_2px_rgba(0,0,0,0.12),0_4px_12px_rgba(0,0,0,0.06)]')}
+      style={{ ...position, width: note.w ?? 240, minHeight: note.h ?? 80, maxHeight: editing ? undefined : Math.max(note.h ?? 80, Math.round((note.w ?? 240) * 4 / 3)), overflowY: 'auto', background: bare ? undefined : noteColor(note.fill ?? note.color, 'sticky', DEFAULT_STICKY) }}
     >
-      {editing ? <NoteEditor id={id} note={note} style={textStyle} /> : <div style={textStyle}><Markdown text={note.text} /></div>}
+      {editing ? <NoteEditor id={id} note={note} style={textStyle} /> : <div style={textStyle}><Markdown text={note.text ?? ''} /></div>}
     </div>
   );
 });

@@ -10,14 +10,15 @@
  * - inline images (`data:`) pass through unchanged.
  */
 
-import { isArtifactLink, normalizeLinkHref } from '@open-artifact/whiteboard-core';
+import { maybeSession } from '../services/session.ts';
+import { normalizeLinkHref } from '@open-artifact/whiteboard-core';
 
 /** The prefix of artifact addresses. */
 export const ARTIFACT_ADDRESS_PREFIX = 'open-artifact://artifact/';
 
 /** The id in an artifact address, or `undefined` for other links. */
 export function artifactIdOf(href: string): string | undefined {
-  if (!isArtifactLink(href) || !href.startsWith(ARTIFACT_ADDRESS_PREFIX)) return undefined;
+  if (!href.startsWith(ARTIFACT_ADDRESS_PREFIX)) return undefined;
   const id = href.slice(ARTIFACT_ADDRESS_PREFIX.length).split(/[/?#]/)[0];
   return id === undefined || id === '' ? undefined : id;
 }
@@ -32,7 +33,7 @@ export function boardLinkTarget(href: string, shellOrigin?: string | null, pageO
   if (normalized === undefined) return undefined;
   const artifact = artifactIdOf(normalized);
   if (artifact === undefined) return /^https?:\/\//i.test(normalized) ? normalized : undefined;
-  const origin = shellOrigin ?? pageOrigin ?? (typeof location === 'undefined' ? '' : location.origin);
+  const origin = shellOrigin ?? maybeSession()?.shell?.origin ?? pageOrigin ?? (typeof location === 'undefined' ? '' : location.origin);
   return `${origin}/a/${encodeURIComponent(artifact)}`;
 }
 

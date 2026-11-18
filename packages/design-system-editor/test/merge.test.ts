@@ -131,3 +131,10 @@ describe('autoMerge', () => {
     assert.equal(autoMerge('components/Button/README.md', 'x\n', 'y\n', 'z\n'), null);
   });
 });
+
+it('retains concurrent uploads into the same group', () => {
+  const index = (names: string[]) => JSON.stringify({ groups: ['Logos'], assetGroups: { Logos: { order: names, files: Object.fromEntries(names.map((name) => [name, { name }])) } } });
+  const merged = JSON.parse(mergeIndexText(index([]), index(['one.png']), index(['two.png']))!);
+  assert.deepEqual(merged.assetGroups.Logos.order, ['one.png', 'two.png']);
+  assert.deepEqual(Object.keys(merged.assetGroups.Logos.files).sort(), ['one.png', 'two.png']);
+});

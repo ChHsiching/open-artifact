@@ -1,35 +1,110 @@
-/* What a previewed version changed, against the one before it. */
+/* What a previewed version changed: added words underlined, dropped ones struck through, reformatted ones dotted,
+   blocks added or dropped barred, blocks changed or moved outlined, and where a block moved from noted small. */
 
-.doc-text ins.doc-version-ins {
-  color: var(--doc-ins);
+.doc-version-text {
+  cursor: default;
+  --vh-quiet: var(--doc-muted);
+  --vh-strike: max(1.5px, 0.12em);
+}
+
+.doc-version-text :is(ins.vh-ins, del.vh-del, .vh-fmt) {
+  color: inherit;
+  border-radius: 2px;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  text-decoration-thickness: var(--vh-strike);
+  text-decoration-skip-ink: none;
+}
+
+.doc-version-text ins.vh-ins {
   background: var(--doc-ins-bg);
-  text-decoration: underline;
-  text-decoration-color: color-mix(in srgb, var(--doc-ins) 50%, transparent);
-  text-underline-offset: 2px;
+  text-decoration-line: underline;
+  text-decoration-style: solid;
+  text-decoration-color: var(--doc-ins);
+  text-underline-offset: 0.32em;
 }
 
-.doc-text del.doc-version-del {
-  color: var(--doc-del);
+.doc-version-text del.vh-del {
   background: var(--doc-del-bg);
-  text-decoration: line-through;
+  text-decoration-line: line-through;
+  text-decoration-color: var(--doc-del);
 }
 
-.doc-text .doc-version-block-ins {
+.doc-version-text .vh-fmt {
+  background: transparent;
+  text-decoration-line: underline;
+  text-decoration-style: dotted;
+  text-decoration-color: var(--vh-quiet);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.3em;
+}
+
+.doc-version-text .vh-block-ins {
   box-shadow: -3px 0 0 var(--doc-ins);
   background: var(--doc-ins-bg);
 }
 
-.doc-text .doc-version-block-del {
+.doc-version-text .vh-block-del {
   box-shadow: -3px 0 0 var(--doc-del);
   background: var(--doc-del-bg);
+  text-decoration-line: line-through;
+  text-decoration-color: var(--doc-del);
+  text-decoration-thickness: var(--vh-strike);
 }
 
-.doc-text .doc-version-block-del ins.doc-version-ins,
-.doc-text .doc-version-block-del del.doc-version-del,
-.doc-text .doc-version-block-ins ins.doc-version-ins {
+.doc-version-text :is(.vh-block-del, .vh-block-ins) :is(ins.vh-ins, del.vh-del) {
   background: none;
 }
 
-.doc-version-text {
-  cursor: default;
+.doc-version-text :is(.vh-block-chg, .vh-block-move) {
+  outline: 1px dotted var(--vh-quiet);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.doc-version-text hr:is(.vh-block-ins, .vh-block-del) {
+  box-shadow: none;
+  border-top: 2px solid var(--doc-ins);
+}
+
+.doc-version-text hr.vh-block-del {
+  border-top-color: var(--doc-del);
+}
+
+/* Where a block moved from: "Moved ↓" in small, muted type. */
+.doc-version-text .vh-moved {
+  margin: 0.2em 0;
+  padding: 0 0 0 2px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--vh-quiet);
+  background: none;
+  box-shadow: none;
+  outline: 0;
+  text-decoration-line: none;
+  list-style: none;
+}
+
+.doc-version-text li.vh-moved::marker {
+  content: none;
+}
+
+.doc-version-text :is(tr, td, th).vh-moved {
+  font-size: inherit;
+  text-decoration-line: line-through;
+}
+
+/* The change the strip is on. */
+.doc-version-text .vh-active {
+  outline: 2px solid var(--doc-accent);
+  outline-offset: 2px;
+}
+
+.doc-version-text .vh-block.vh-active {
+  outline-offset: 6px;
+  border-radius: 6px;
+}
+
+.doc-version-text [data-change-id] {
+  scroll-margin-block: 30vh;
 }

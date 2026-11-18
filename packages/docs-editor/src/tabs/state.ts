@@ -12,6 +12,8 @@ export interface TabsUiState {
   renaming: Renaming | null;
   /** The tab whose delete is being confirmed. */
   deleting: string | null;
+  /** The list of deleted tabs (to restore one) is open. */
+  deletedOpen: boolean;
   /**
    * Rows opened or shut by their toggle: an open row shows its subtabs and, for the open tab, its headings. A row
    * not listed is open when it has subtabs.
@@ -27,6 +29,7 @@ export const useTabsUi = create<TabsUiState>(() => ({
   pickerOpen: false,
   renaming: null,
   deleting: null,
+  deletedOpen: false,
   expanded: {},
   busy: false,
   error: null,

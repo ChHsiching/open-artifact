@@ -1,5 +1,6 @@
 /** What `@` finds: people, the agent, dates, the doc's tabs and its dropdowns. */
 import type { DocEnum, DocFile } from '@open-artifact/runtime/doc-api';
+import type { EditorView } from 'prosemirror-view';
 import { orderedTabs } from '../app/store.ts';
 import { insertDate, insertDropdownChip, insertMention } from './chips.ts';
 import { addDays, dateFromWords, isoDate, parseIsoDate, today } from './dates.ts';
@@ -16,6 +17,8 @@ export interface MentionWorld {
   enums: readonly DocEnum[];
   /** The day "today" is. */
   today?: Date;
+  /** Opens the ask card on the caret's line, when the agent can be asked from the text. */
+  askAgent?: (view: EditorView) => void;
 }
 
 const DATE_WORDS = 'date calendar due day when pick specific today tomorrow';
@@ -44,14 +47,28 @@ export function mentionOptions(rawQuery: string, world: MentionWorld): MenuOptio
       run: (view, range) => insertMention(view, { principal: person.id, name: person.name }, range),
     });
 
-  if (!query || 'agent'.startsWith(query))
-    out.push({
-      id: 'agent',
-      label: 'Agent',
-      section: 'Agent',
-      icon: 'agent',
-      run: (view, range) => insertMention(view, { principal: 'agent', name: 'Agent' }, range),
-    });
+  if (!query || 'agent'.startsWith(query) || wordsStart('ask agent', query))
+    out.push(
+      world.askAgent
+        ? {
+            id: 'agent',
+            label: 'Ask Agent',
+            detail: 'Write or edit here',
+            section: 'Agent',
+            icon: 'agent',
+            run: (view, range) => {
+              view.dispatch(view.state.tr.delete(range.from, range.to));
+              world.askAgent!(view);
+            },
+          }
+        : {
+            id: 'agent',
+            label: 'Agent',
+            section: 'Agent',
+            icon: 'agent',
+            run: (view, range) => insertMention(view, { principal: 'agent', name: 'Agent' }, range),
+          },
+    );
 
   const named = dateFromWords(query, day);
   const dates: MenuOption[] = [

@@ -28,7 +28,6 @@ import {
   Link,
   List,
   ListOrdered,
-  MessageCircle,
   PencilLine,
   Underline,
 } from 'lucide-react';
@@ -39,7 +38,6 @@ import { useDocument } from '../state/document.ts';
 import { useView, type ElementSelection } from '../state/view.ts';
 import { boardApi } from '../services/frames.ts';
 import { templateOf } from '../services/agent.ts';
-import { commentOnSelection, useComments } from '../services/comments.ts';
 import { attributeSelection, detachSelection, edit, detachSelectionRefusal, editSelectedComponent, selectedComponentPath, startTextEdit, styleSelection } from '../services/commands.ts';
 import { KEEP_TEXT_EDIT, applyEditedTextLink, cancelEditedTextLink, formatEditedText } from '../services/text-edit.ts';
 import { cancelScale, commitScale, setScaleFactor, useScale } from '../services/scale.ts';
@@ -849,13 +847,9 @@ const IMPORTS = new Set(['dc-import', 'x-import']);
 /** Ask about the selection, and open the properties panel. */
 function Tail({ lead }: { lead?: ReactNode }) {
   const setPanel = useView((s) => s.setPanel);
-  const setComposer = useView((s) => s.setComposer);
   return (
     <Group>
       {lead}
-      <StripButton tip="Comment on this element" aria-label="Comment" onClick={() => (useComments.getState().available ? commentOnSelection() : setComposer(true))}>
-        <MessageCircle {...ICON} />
-      </StripButton>
       <StripButton tip="Open the Properties panel" aria-label="Properties" onClick={() => setPanel('properties', true)}>
         <EllipsisVertical {...ICON} />
       </StripButton>

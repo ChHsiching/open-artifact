@@ -132,8 +132,12 @@ impl<'a> CellTables<'a> {
             .collect();
         declared.sort_by_key(|d| (d.placed.header.0, d.placed.columns.0));
         let mut tables = CellTables { workbook, sheet, grid, declared: Vec::new() };
-        declared.retain(|d| !tables.gives_way(&d.placed));
-        tables.declared = declared;
+        for d in declared {
+            let area = d.placed.area();
+            if !tables.gives_way(&d.placed) && !tables.declared.iter().any(|other| other.placed.area().meets(&area)) {
+                tables.declared.push(d);
+            }
+        }
         tables
     }
 

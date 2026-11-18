@@ -69,6 +69,7 @@ export const API = {
   historyDiff: '_api/history/diff',
   historyRestore: '_api/history/restore',
   historyDismiss: '_api/history/dismiss',
+  systemCopy: '_api/design/system-copy',
   mcpTools: '_api/mcp/tools',
   mcpCall: '_api/mcp/call',
 } as const;
@@ -82,7 +83,7 @@ export interface SessionResponse {
   viewer: Viewer;
   agent: AgentStatus;
   /** Stores the type keeps beside its files; absent ones are not offered (`db` / `comments` resolve `null`). */
-  stores?: { db?: boolean; comments?: boolean; history?: boolean; sheet?: boolean; doc?: boolean };
+  stores?: { systemCopy?: boolean; db?: boolean; comments?: boolean; history?: boolean; sheet?: boolean; doc?: boolean };
 }
 
 /** `GET _api/files` */
@@ -211,6 +212,8 @@ export interface CommentRemoveRequest {
 /** `POST _api/comments/send` request body. */
 export interface CommentSendRequest {
   threadId: string;
+  /** A reply that does not ask the agent, sent because it took part in the thread. */
+  unasked?: boolean;
 }
 
 /** 200 body of the comment routes that change one thread. */

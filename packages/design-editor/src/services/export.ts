@@ -1,5 +1,5 @@
 /**
- * Exports of artboards, from the focused view's Export menu: PNG at 1× / 2×
+ * Exports requested by the global frame shell. Formats include PNG at 1× / 2×
  * (or at a screen width, full length), JPEG at 1× / 2×, PDF (one page per
  * artboard at its own size; a Flow artboard — `print: "flow"` — laid out at
  * its paper's width and cut into paper pages; every page with a selectable
@@ -9,9 +9,8 @@
  * page as one PDF or a .zip of PNGs, and the whole canvas as a folder of web
  * pages with an index and a README.
  *
- * Each export renders the artboard in a hidden frame of the size it needs,
- * so what the focused view shows (its width, its scroll, its state) does not
- * change the file.
+ * Each export renders the artboard in a hidden frame at the requested size.
+ * Preview-width PNGs use the width selected in the focused view.
  *
  * Packing (PNG re-compression, PDF assembly, zip) runs in the export Worker
  * (`@open-artifact/wasm-export`), so only rendering each artboard happens
@@ -21,20 +20,21 @@
  * it lists come from `lib/export-formats.ts`.
  */
 
-import type { BoardBoot } from '@open-artifact/dc';
+import { attributeValue, parseDcDocument, parseTemplate, SUPPORT_SCRIPT_TAG, supportScriptTag, escapeAttribute, escapeText, type BoardBoot } from '@open-artifact/dc';
 import { boardsOnPage, pageOf, type BoardEntry } from '@open-artifact/design-core';
 import { saveFile } from '@open-artifact/editor-kit';
 import { toast } from '@open-artifact/ui';
 import { groupLines, maxCaptureScale } from '@open-artifact/export-kit';
 import { buildPdf, optimizePng, packZip, PT_PER_PX, type PdfPage, type ZipEntry } from '@open-artifact/wasm-export';
+import { ExportFonts } from '../lib/export-fonts.ts';
 import type { ExportJob } from '../lib/export-formats.ts';
-import { assetName, blobRefs, canvasIndexHtml, dataUrl, exportReadme, relativePath, rewriteRefs, standaloneDocument, TEXT_FILE, type ExportedBoard } from '../lib/export-html.ts';
+import { assetName, blobRefs, canvasIndexHtml, dataUrl, exportReadme, relativePath, rewriteRefs, standaloneCanvas, standaloneDocument, TEXT_FILE, type ExportedBoard } from '../lib/export-html.ts';
 import { dirOf, frameDocument } from '../lib/frame.ts';
 import { flowPages, flowPaper, type PageSlice } from '../lib/pagination.ts';
 import { pageBookmark, pageLinks, pageRuns } from '../lib/pdf-text.ts';
 import { useDocument } from '../state/document.ts';
 import { useView } from '../state/view.ts';
-import { CAPTURE_LIMITS, captureHtml, pageImage } from './capture.ts';
+import { CAPTURE_LIMITS, captureFigmaHtml, pageImage } from './capture.ts';
 import { documentBackground, documentBands, documentHeight, documentKeepBlocks, documentLinks, documentWords } from './print.ts';
 import { artifactPath, projectPath, session } from './session.ts';
 
@@ -180,22 +180,12 @@ let busy = false;
 /** True while an export runs. */
 export const exportBusy = (): boolean => busy;
 
-/**
- * Who asked for an export: the page's own menu (`page`), whose outcome the
- * page shows, or the Shell's Export tab (`shell`), which says itself when
- * one is busy or failed.
- */
-export type ExportFrom = 'page' | 'shell';
-
 /** What became of an export. */
 export type ExportOutcome = { state: 'done' } | { state: 'busy' } | { state: 'failed'; reason: string };
 
 /** Runs one export at a time, reporting failures. */
-async function run(label: string, work: () => Promise<void>, from: ExportFrom = 'page'): Promise<ExportOutcome> {
-  if (busy) {
-    if (from === 'page') toast.add({ title: 'Still exporting…' });
-    return { state: 'busy' };
-  }
+async function run(label: string, work: () => Promise<void>): Promise<ExportOutcome> {
+  if (busy) return { state: 'busy' };
   busy = true;
   const progress = toast.add({ title: `Exporting ${label}…`, timeout: 0 });
   try {
@@ -203,7 +193,6 @@ async function run(label: string, work: () => Promise<void>, from: ExportFrom = 
     return { state: 'done' };
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
-    if (from === 'page') toast.add({ title: `Couldn’t export ${label}`, description: reason });
     return { state: 'failed', reason };
   } finally {
     toast.close(progress);
@@ -212,47 +201,51 @@ async function run(label: string, work: () => Promise<void>, from: ExportFrom = 
 }
 
 /** Runs an export the Shell's Export tab asked for. */
-export function runJob(job: ExportJob, from: ExportFrom = 'shell'): Promise<ExportOutcome> {
+export function runJob(job: ExportJob): Promise<ExportOutcome> {
   switch (job.kind) {
     case 'png':
-      return exportPng(job.path, job.scale, job.width, from);
+      return exportPng(job.path, job.scale, job.width);
     case 'pngAll':
-      return exportAllPng(job.page, from);
+      return exportAllPng(job.page);
     case 'jpeg':
-      return exportJpeg(job.path, job.scale, from);
+      return exportJpeg(job.path, job.scale);
     case 'pdf':
-      return exportPdf(job.path, from);
+      return exportPdf(job.path);
     case 'pdfAll':
-      return exportAllPdf(job.page, from);
+      return exportAllPdf(job.page);
     case 'html':
-      return exportHtmlZip(job.path, from);
+      return exportHtmlZip(job.path);
     case 'single':
-      return exportSingleHtml(job.path, from);
+      return exportSingleHtml(job.path);
     case 'figma':
-      return exportFigmaHtml(job.path, from);
+      return exportFigmaHtml(job.path);
+    case 'standalone':
+      return exportStandalonePage(job.page);
+    case 'figmaPage':
+      return exportFigmaPage(job.page);
     case 'site':
-      return exportCanvasZip(from);
+      return exportCanvasZip();
   }
 }
 
 /** The artboard as a PNG at its own size (`scale` 1 or 2), or at `width` wide and full length. */
-export function exportPng(path: string, scale: number, width?: number, from?: ExportFrom): Promise<ExportOutcome> {
+export function exportPng(path: string, scale: number, width?: number): Promise<ExportOutcome> {
   return run('PNG', async () => {
     const entry = entryOf(path);
     const size = width ? { width, height: entry.h, fullLength: true } : { width: entry.w, height: entry.h };
     const blob = await withBoard(path, size, (doc, w, h) => pageImage(doc, w, h, { scale }));
     const suffix = width ? ` ${width}w` : '';
     await save(fileName(`${boardName(path)}${suffix}${scale > 1 ? `@${scale}x` : ''}`, 'png'), blobOf(await optimizePng(blob), 'image/png'));
-  }, from);
+  });
 }
 
 /** The artboard as a JPEG at its own size (`scale` 1 or 2), on white. */
-export function exportJpeg(path: string, scale: number, from?: ExportFrom): Promise<ExportOutcome> {
+export function exportJpeg(path: string, scale: number): Promise<ExportOutcome> {
   return run('JPEG', async () => {
     const entry = entryOf(path);
     const blob = await withBoard(path, { width: entry.w, height: entry.h }, (doc, w, h) => pageImage(doc, w, h, { scale, type: 'image/jpeg' }));
     await save(fileName(`${boardName(path)}${scale > 1 ? `@${scale}x` : ''}`, 'jpg'), blob);
-  }, from);
+  });
 }
 
 /** Most pages one PDF holds. */
@@ -311,25 +304,25 @@ async function pdfPages(paths: readonly string[]): Promise<PdfPage[]> {
 }
 
 /** The artboard as a PDF: one page at its size, or paper pages for a Flow artboard. */
-export function exportPdf(path: string, from?: ExportFrom): Promise<ExportOutcome> {
+export function exportPdf(path: string): Promise<ExportOutcome> {
   return run('PDF', async () => {
     const name = boardName(path);
     await save(fileName(name, 'pdf'), blobOf(await buildPdf(await pdfPages([path]), { title: name }), 'application/pdf'));
-  }, from);
+  });
 }
 
 /** Every artboard of the page as one PDF, in canvas position order. */
-export function exportAllPdf(page: string | null, from?: ExportFrom): Promise<ExportOutcome> {
+export function exportAllPdf(page: string | null): Promise<ExportOutcome> {
   return run('PDF', async () => {
     const paths = pageArtboards(page);
     if (!paths.length) throw new Error('This page has no artboards.');
     const title = pageTitle(page);
     await save(fileName(title, 'pdf'), blobOf(await buildPdf(await pdfPages(paths), { title }), 'application/pdf'));
-  }, from);
+  });
 }
 
 /** Every artboard of the page as PNGs (2× where it fits) in a .zip. */
-export function exportAllPng(page: string | null, from?: ExportFrom): Promise<ExportOutcome> {
+export function exportAllPng(page: string | null): Promise<ExportOutcome> {
   return run('PNGs', async () => {
     const paths = pageArtboards(page);
     if (!paths.length) throw new Error('This page has no artboards.');
@@ -345,7 +338,7 @@ export function exportAllPng(page: string | null, from?: ExportFrom): Promise<Ex
       entries.push({ name, data: blob });
     }
     await save(fileName(pageTitle(page), 'zip'), blobOf(await packZip(entries, { optimizePng: true }), 'application/zip'));
-  }, from);
+  });
 }
 
 function pageTitle(page: string | null): string {
@@ -392,11 +385,16 @@ async function usedFiles(path: string): Promise<Map<string, Uint8Array | string>
     }
     entries.set(file, data);
     if (typeof data !== 'string') continue;
+    const template = file.endsWith('.dc.html') && parseDcDocument(data).template;
+    if (template) {
+      for (const el of parseTemplate(template.text).elements) {
+        if (el.tag !== 'dc-import') continue;
+        const name = attributeValue(el, 'name');
+        if (name && /^[A-Za-z0-9_][A-Za-z0-9_.-]*$/.test(name)) queue.push(dirOf(file) + name + '.dc.html');
+      }
+    }
     for (const other of files) {
-      if (entries.has(other)) continue;
-      const base = other.replace(/^.*\//, '');
-      const used = other.endsWith('.dc.html') ? data.includes(`name="${base.replace(/\.dc\.html$/, '')}"`) : data.includes(base);
-      if (used) queue.push(other);
+      if (!other.endsWith('.dc.html') && !entries.has(other) && data.includes(other.replace(/^.*\//, ''))) queue.push(other);
     }
   }
   return entries;
@@ -434,7 +432,10 @@ async function readUploads(files: ReadonlyMap<string, Uint8Array | string>): Pro
 function withAssets(files: ReadonlyMap<string, Uint8Array | string>, uploads: Map<string, { data: Uint8Array; type: string | null }>): ZipEntry[] {
   const names = new Map([...uploads].map(([ref, upload]) => [ref, assetName(ref, upload.type)]));
   const entries: ZipEntry[] = [];
-  for (const [name, data] of files) {
+  for (const [name, original] of files) {
+    if ([...names.values()].includes(name)) continue;
+    const tag = typeof original === 'string' && name.endsWith('.dc.html') && supportScriptTag(original);
+    const data = tag && typeof original === 'string' ? original.replace(tag, SUPPORT_SCRIPT_TAG) : original;
     if (typeof data !== 'string' || !names.size) {
       entries.push({ name, data });
       continue;
@@ -470,14 +471,15 @@ function exportedBoard(path: string): ExportedBoard {
  * README, as a .zip. Served from a folder, `{name}.dc.html` runs as it does
  * here.
  */
-export function exportHtmlZip(path: string, from?: ExportFrom): Promise<ExportOutcome> {
+export function exportHtmlZip(path: string): Promise<ExportOutcome> {
   return run('HTML', async () => {
     const files = await usedFiles(path);
     const uploads = await readUploads(files);
     const zipped = withAssets(files, uploads.found);
     const taken = new Set(zipped.map((entry) => entry.name));
-    const runtime = `${dirOf(path)}support.js`;
-    zipped.push({ name: runtime, data: await runtimeCode() });
+    const runtime = await runtimeCode();
+    const folders = [...new Set([...files.keys()].filter(file => file.endsWith('.dc.html')).map(dirOf))];
+    for (const folder of folders) if (!taken.has(folder + 'support.js')) zipped.push({ name: folder + 'support.js', data: runtime });
     zipped.push({
       name: freeName('README.md', taken),
       data: exportReadme({
@@ -486,11 +488,11 @@ export function exportHtmlZip(path: string, from?: ExportFrom): Promise<ExportOu
         resources: [...files.keys()].filter((file) => file !== path),
         assets: uploads.found.size,
         missing: uploads.missing,
-        runtimes: [dirOf(path)],
+        runtimes: folders,
       }),
     });
     await save(fileName(boardName(path), 'zip'), blobOf(await packZip(zipped), 'application/zip'));
-  }, from);
+  });
 }
 
 /**
@@ -498,18 +500,54 @@ export function exportHtmlZip(path: string, from?: ExportFrom): Promise<ExportOu
  * linked styles and scripts inlined, images, fonts and uploads as data URLs,
  * imported artboards served to the runtime from the page itself.
  */
-export function exportSingleHtml(path: string, from?: ExportFrom): Promise<ExportOutcome> {
+export function exportSingleHtml(path: string): Promise<ExportOutcome> {
   return run('HTML', async () => {
-    const files = await usedFiles(path);
-    const source = files.get(path);
-    if (typeof source !== 'string') throw new Error('The artboard has not loaded.');
-    files.delete(path);
-    const uploads = await readUploads(new Map([...files, [path, source]]));
-    const urls = new Map([...uploads.found].map(([ref, upload]) => [ref, dataUrl(assetName(ref, upload.type), upload.data)]));
-    const html = standaloneDocument({ path, source, files, uploads: urls, runtime: await runtimeCode() });
-    if (uploads.missing.length) toast.add({ title: `${uploads.missing.length} uploaded file${uploads.missing.length === 1 ? '' : 's'} could not be included`, description: uploads.missing.map((m) => m.ref).join(', ') });
+    const fonts = new ExportFonts();
+    const html = await withFontNotices(await standaloneBoard(path, await runtimeCode(), fonts), fonts);
     await save(fileName(boardName(path), 'html'), new Blob([html], { type: 'text/html' }));
-  }, from);
+  });
+}
+
+async function withFontNotices(html: string, fonts: ExportFonts): Promise<string> {
+  const notice = await fonts.notice();
+  if (fonts.missing.size) toast.add({ title: 'Some fonts need a network connection', description: [...fonts.missing].join(', ') });
+  if (!notice) return html;
+  toast.add({ title: 'Fonts embedded', description: 'Please check their licenses before redistributing.' });
+  return html.replace(/<!doctype html>/i, tag => tag + '\n' + notice);
+}
+
+async function standaloneBoard(path: string, runtime: string, fonts: ExportFonts): Promise<string> {
+  const files = await usedFiles(path);
+  const points = new Set<number>();
+  for (const data of files.values()) if (typeof data === 'string') for (const char of data) points.add(char.codePointAt(0)!);
+  for (const [file, data] of files) if (typeof data === 'string' && /\.(?:html|css)$/i.test(file)) files.set(file, await fonts.inline(data, points));
+  const source = files.get(path);
+  if (typeof source !== 'string') throw new Error(`Could not read ${path}.`);
+  const uploads = await readUploads(files);
+  const urls = new Map([...uploads.found].map(([ref, upload]) => [ref, dataUrl(assetName(ref, upload.type), upload.data)]));
+  files.delete(path);
+  if (uploads.missing.length) toast.add({ title: 'Some uploads could not be included', description: uploads.missing.map(m => m.ref).join(', ') });
+  return standaloneDocument({ path, source, files, uploads: urls, runtime });
+}
+
+/** Interactive artboards share one offline runtime, and links stay inside their frame. */
+export function exportStandalonePage(page: string | null): Promise<ExportOutcome> {
+  return run('HTML', async () => {
+    const paths = pageArtboards(page);
+    if (!paths.length) throw new Error('This page has no artboards.');
+    const title = pageTitle(page);
+    const fonts = new ExportFonts();
+    const runtime = await runtimeCode();
+    let html: string;
+    if (paths.length === 1) html = await standaloneBoard(paths[0]!, runtime, fonts);
+    else {
+      const boards = [];
+      const marker = `/*runtime-${crypto.randomUUID()}*/`;
+      for (const path of paths) boards.push({ ...exportedBoard(path), html: await standaloneBoard(path, marker, fonts) });
+      html = standaloneCanvas(title, boards, marker, runtime);
+    }
+    await save(fileName(title, 'html'), new Blob([await withFontNotices(html, fonts)], { type: 'text/html' }));
+  });
 }
 
 /**
@@ -518,7 +556,7 @@ export function exportSingleHtml(path: string, from?: ExportFrom): Promise<Expor
  * artboard folder, an `index.html` linking every artboard page by page, and
  * a README.
  */
-export function exportCanvasZip(from?: ExportFrom): Promise<ExportOutcome> {
+export function exportCanvasZip(): Promise<ExportOutcome> {
   return run('canvas', async () => {
     const { canvas, trash, boards } = useDocument.getState();
     const listed = await projectFiles();
@@ -562,23 +600,54 @@ export function exportCanvasZip(from?: ExportFrom): Promise<ExportOutcome> {
       }).replace('`index.html`', `\`${index}\``),
     });
     await save(fileName(title, 'zip'), blobOf(await packZip(zipped), 'application/zip'));
-  }, from);
+  });
 }
-/** The artboard as one HTML page without frames or scripts, every style inline: for Figma's capture extension. */
-export function exportFigmaHtml(path: string, from?: ExportFrom): Promise<ExportOutcome> {
-  return run('HTML', async () => {
-    const entry = entryOf(path);
-    const html = await withBoard(path, { width: entry.w, height: entry.h }, async (doc) => {
-      const parts: string[] = [];
-      for (const child of [...doc.body.children]) {
-        if (/^(script|style|template|noscript)$/i.test(child.localName)) continue;
-        parts.push(await captureHtml(child));
-      }
-      const style = doc.defaultView!.getComputedStyle(doc.body).backgroundColor;
-      const background = style === 'transparent' || style === 'rgba(0, 0, 0, 0)' ? '#ffffff' : style;
-      const title = boardName(path).replace(/[<&]/g, (c) => (c === '<' ? '&lt;' : '&amp;'));
-      return `<!doctype html>\n<html lang="${doc.documentElement.lang || 'en'}">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=${entry.w}">\n<title>${title}</title>\n</head>\n<body style="margin: 0; width: ${entry.w}px; min-height: ${entry.h}px; background: ${background}">\n${parts.join('\n')}\n</body>\n</html>\n`;
-    });
-    await save(fileName(`${boardName(path)} (Figma)`, 'html'), new Blob([html], { type: 'text/html' }));
-  }, from);
+/** Flatten an artboard for Figma while its DOM and computed styles are available. */
+async function figmaBoard(path: string, fonts: ExportFonts) {
+  const entry = entryOf(path);
+  return withBoard(path, { width: entry.w, height: entry.h, fullLength: entry.expand === 'fill' || entry.print === 'flow' }, async (doc, width, height) => {
+    const points = new Set(Array.from(doc.body.textContent ?? '', char => char.codePointAt(0)!));
+    const styles = [];
+    for (const link of doc.querySelectorAll<HTMLLinkElement>('link[rel~="stylesheet"]')) {
+      if (link.href.startsWith('https://fonts.googleapis.com/css')) styles.push(await fonts.inline(link.outerHTML, points));
+    }
+    const parts = [];
+    for (const child of doc.body.children) {
+      if (!/^(script|style|template|noscript)$/i.test(child.localName)) parts.push(await captureFigmaHtml(child));
+    }
+    return { path, entry, title: boardName(path), width, height, top: entry.y, styles, background: documentBackground(doc), html: parts.join('\n') };
+  });
+}
+
+async function saveFigma(title: string, paths: string[]): Promise<void> {
+  if (!paths.length) throw new Error('This page has no artboards.');
+  const boards = [];
+  const fonts = new ExportFonts();
+  for (const path of paths) boards.push(await figmaBoard(path, fonts));
+  const placed = boards.sort((a, b) => a.entry.y - b.entry.y || a.entry.x - b.entry.x);
+  const left = Math.min(...boards.map(b => b.entry.x));
+  const top = placed[0]!.entry.y;
+  const sections = [];
+  for (const [index, board] of placed.entries()) {
+    for (const above of placed.slice(0, index)) {
+      if (above.entry.y >= board.entry.y || above.entry.x >= board.entry.x + board.width || board.entry.x >= above.entry.x + above.width) continue;
+      const gap = Math.max(80, board.entry.y - above.entry.y - above.entry.h);
+      board.top = Math.max(board.top, above.top + above.height + gap);
+    }
+    const x = board.entry.x - left + 64, y = board.top - top + 92;
+    const label = escapeAttribute(board.title);
+    sections.push(`<p style="position:absolute;margin:0;left:${x}px;top:${y - 28}px">${escapeText(board.title)}</p>
+<section class="artboard" data-file="${escapeAttribute(board.path)}" aria-label="${label}" style="position:absolute;overflow:hidden;left:${x}px;top:${y}px;width:${board.width}px;height:${board.height}px;background:${escapeAttribute(board.background)}">${board.html}</section>`);
+  }
+  const styles = [...new Set(boards.flatMap(b => b.styles))].join('\n');
+  const html = `<!doctype html><html lang="en"><meta charset="utf-8"><title>${escapeText(title)}</title>${styles}<body style="margin:0;background:#f5f4ef;font:14px system-ui">${sections.join('\n')}</body></html>`;
+  await save(fileName(title, 'figma.html'), new Blob([await withFontNotices(html, fonts)], { type: 'text/html' }));
+}
+
+export function exportFigmaHtml(path: string): Promise<ExportOutcome> {
+  return run('HTML', () => saveFigma(boardName(path), [path]));
+}
+
+export function exportFigmaPage(page: string | null): Promise<ExportOutcome> {
+  return run('HTML', () => saveFigma(pageTitle(page), pageArtboards(page)));
 }

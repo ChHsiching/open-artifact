@@ -27,11 +27,11 @@
 }
 
 :root {
-  --doc-ground: #f9f9f7;
+  --doc-ground: #ffffff;
   --doc-page: #ffffff;
   --doc-card: #ffffff;
   --doc-fg: rgb(0 0 0 / 0.9);
-  --doc-text: #1f1f1e;
+  --doc-text: #1f1e1d;
   --doc-muted: rgb(0 0 0 / 0.5);
   --doc-faint: rgb(0 0 0 / 0.3);
   --doc-hover: rgb(0 0 0 / 0.05);
@@ -42,8 +42,21 @@
   --doc-line: rgb(0 0 0 / 0.08);
   --doc-rule: rgb(0 0 0 / 0.12);
   --doc-accent: #257de0;
-  --doc-link: #1a64c2;
+  --doc-link: #256abf;
   --doc-code-bg: rgb(0 0 0 / 0.04);
+  --doc-secondary: #52514e;
+  --doc-quote-rule: rgb(219 217 212);
+  --doc-code-inline-bg: #f3f1ec;
+  --doc-code-block-bg: rgb(248 248 246);
+  --doc-code-fg: rgb(57 58 52);
+  --doc-table-rule: rgb(232 229 220);
+  --doc-table-head: rgb(243 243 243);
+  --doc-callout-info: #cde2fb;
+  --doc-callout-success: #caeac7;
+  --doc-callout-warning: #f9dca4;
+  --doc-callout-info-fg: #2c6bd6;
+  --doc-callout-success-fg: #3c7a36;
+  --doc-callout-warning-fg: #a15c00;
   --doc-mark: #fff3a3;
   --doc-ins: #1f7a3d;
   --doc-ins-bg: rgb(46 160 67 / 0.12);
@@ -85,6 +98,19 @@
     --doc-rule: rgb(255 255 255 / 0.14);
     --doc-link: #6aabf1;
     --doc-code-bg: rgb(255 255 255 / 0.06);
+    --doc-secondary: rgb(255 255 255 / 0.6);
+    --doc-quote-rule: rgb(255 255 255 / 0.2);
+    --doc-code-inline-bg: rgb(255 255 255 / 0.08);
+    --doc-code-block-bg: rgb(255 255 255 / 0.05);
+    --doc-code-fg: rgb(255 255 255 / 0.85);
+    --doc-table-rule: rgb(255 255 255 / 0.14);
+    --doc-table-head: rgb(255 255 255 / 0.05);
+    --doc-callout-info: rgb(44 107 214 / 0.28);
+    --doc-callout-success: rgb(60 122 54 / 0.32);
+    --doc-callout-warning: rgb(161 92 0 / 0.36);
+    --doc-callout-info-fg: #8fbcf5;
+    --doc-callout-success-fg: #94d18c;
+    --doc-callout-warning-fg: #f2c072;
     --doc-mark: rgb(255 214 0 / 0.3);
     --doc-ins: #6fd08c;
     --doc-ins-bg: rgb(46 160 67 / 0.2);
@@ -119,6 +145,19 @@
     --doc-rule: rgb(255 255 255 / 0.14);
     --doc-link: #6aabf1;
     --doc-code-bg: rgb(255 255 255 / 0.06);
+    --doc-secondary: rgb(255 255 255 / 0.6);
+    --doc-quote-rule: rgb(255 255 255 / 0.2);
+    --doc-code-inline-bg: rgb(255 255 255 / 0.08);
+    --doc-code-block-bg: rgb(255 255 255 / 0.05);
+    --doc-code-fg: rgb(255 255 255 / 0.85);
+    --doc-table-rule: rgb(255 255 255 / 0.14);
+    --doc-table-head: rgb(255 255 255 / 0.05);
+    --doc-callout-info: rgb(44 107 214 / 0.28);
+    --doc-callout-success: rgb(60 122 54 / 0.32);
+    --doc-callout-warning: rgb(161 92 0 / 0.36);
+    --doc-callout-info-fg: #8fbcf5;
+    --doc-callout-success-fg: #94d18c;
+    --doc-callout-warning-fg: #f2c072;
     --doc-mark: rgb(255 214 0 / 0.3);
     --doc-ins: #6fd08c;
     --doc-ins-bg: rgb(46 160 67 / 0.2);
@@ -134,6 +173,22 @@
     --doc-text-teal: #5fd3c0;
     --doc-text-purple: #b49cff;
   }
+}
+
+/* On a touch phone the shell opens the tab popover. Its trigger still anchors the list. */
+[data-doc-phone-bar] {
+  position: absolute;
+  inset-inline-start: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  pointer-events: none;
+}
+@media (max-width: 480px) and (pointer: coarse) {
+  .doc-page { padding-inline: 52px 66px; }
 }
 
 html,

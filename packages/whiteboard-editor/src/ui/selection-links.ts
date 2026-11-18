@@ -7,6 +7,7 @@
  */
 
 import { markdownLinkUrls, type BoardElement } from '@open-artifact/whiteboard-core';
+import { boardLinkTarget } from '../elements/links.ts';
 import { modKey } from '../lib/tools.ts';
 
 /** Why Open link is off when an item holds several links. */
@@ -17,8 +18,10 @@ export function severalLinksMessage(): string {
 /** The web links of one item, in reading order, without repeats. */
 export function elementLinks(element: BoardElement | undefined): string[] {
   switch (element?.type) {
-    case 'link':
-      return /^https?:/i.test(element.href) ? [element.href] : [];
+    case 'link': {
+      const target = boardLinkTarget(element.href);
+      return target ? [target] : [];
+    }
     case 'image':
       return element.href !== undefined ? [element.href] : [];
     case 'note':

@@ -1,18 +1,25 @@
-/** The bar over a cell selection: merge, split, colour, delete rows or columns, and the rest of the cell menu. */
+/**
+ * The bar over a cell selection: Comment and React on the cells (when the page offers them), merge, split, colour,
+ * delete rows or columns, and the rest of the cell menu.
+ */
 import { announce } from '@open-artifact/editor-kit';
 import { Card, ChromeButton, ChromeDivider, ChromeMenu, ToolButton } from '@open-artifact/editor-kit/react';
 import { Ellipsis, Palette } from 'lucide-react';
 import type { EditorState } from 'prosemirror-state';
 import { CellSelection } from 'prosemirror-tables';
 import type { EditorView } from 'prosemirror-view';
-import { type MouseEvent, type ReactNode, useState } from 'react';
+import { type MouseEvent, type ReactNode, useRef, useState } from 'react';
+import { type SelectionActionKey, useSelectionActions } from '../app/selection-actions.ts';
 import { useEditor } from '../editor/format.ts';
+import { formatChord } from '../selbar/chords.ts';
 import { CellMenuItems, ColorItems } from './CellMenu.tsx';
 import { cellElement } from './geometry.ts';
 import { TableIconView } from './icons.tsx';
 import { cellMenu, refOf } from './table-menu.ts';
 
 const BAR_HEIGHT = 40;
+/** The selection toolbar's actions that also take cells. */
+const CELL_ACTIONS: readonly SelectionActionKey[] = ['comment', 'react'];
 const GAP = 8;
 
 /** The selected cells' bounds on screen. */
@@ -44,6 +51,12 @@ export function CellBar(): ReactNode {
 }
 
 function Bar({ view, state, selection, onMenu }: { view: EditorView; state: EditorState; selection: CellSelection; onMenu(open: boolean): void }): ReactNode {
+  const bar = useRef<HTMLDivElement>(null);
+  const actions = useSelectionActions(hold => hold.actions);
+  const offered = CELL_ACTIONS.flatMap(key => {
+    const action = actions[key];
+    return action && action.available() ? [{ key, action }] : [];
+  });
   const page = view.dom.closest('.doc-page');
   const box = selectionBox(view, selection);
   const model = cellMenu(state, announce, selection.$headCell.pos);
@@ -58,7 +71,24 @@ function Bar({ view, state, selection, onMenu }: { view: EditorView; state: Edit
   const removeLines = model.remove.filter(action => action.key !== 'deleteTable');
   const menuOpen = (open: boolean) => onMenu(open);
   return (
-    <Card role="toolbar" aria-label="Cell actions" className="absolute z-30 h-10 gap-0.5 px-1" style={{ left, top }} onMouseDown={keepSelection}>
+    <Card ref={bar} role="toolbar" aria-label="Cell actions" className="absolute z-30 h-10 gap-0.5 px-1" style={{ left, top }} onMouseDown={keepSelection}>
+      {offered.map(({ key, action }) => {
+        const Icon = action.icon;
+        return (
+          <ToolButton
+            key={key}
+            size="md"
+            tipSide={side}
+            label={action.label}
+            shortcut={action.shortcut ? formatChord(action.shortcut) : undefined}
+            icon={<Icon className="size-4" />}
+            onClick={() => {
+              if (bar.current) action.run(bar.current);
+            }}
+          />
+        );
+      })}
+      {offered.length ? <ChromeDivider /> : null}
       {structure.map(action => (
         <ToolButton key={action.key} size="md" tipSide={side} label={action.label} icon={action.icon ? <TableIconView name={action.icon} /> : null} onClick={() => action.run(view)} />
       ))}

@@ -15,7 +15,7 @@ import { useView } from '../state/view.ts';
 import { projectUrl } from '../lib/color.ts';
 import { editText } from '../services/edit.ts';
 import { deleteFiles, ensureLoaded, isGenerated, isTextPath } from '../services/sync.ts';
-import { ContextMenu, PageHeader, useEditable } from './common.tsx';
+import { ContextMenu, PageHeader } from './common.tsx';
 
 /** What the tree's rows do: select (with ⌘/Ctrl or Shift, several) and open a context menu. */
 interface TreeActions {
@@ -55,6 +55,9 @@ function buildTree(paths: readonly string[]): Dir {
 function TreeDir({ dir, depth, selected, problems, actions }: { dir: Dir; depth: number; selected: string | null; problems: ReadonlyMap<string, SystemDiagnostic['level']>; actions: TreeActions }) {
   // Folders start open near the top, and around the selected file.
   const [open, setOpen] = useState(depth < 1 || (selected?.startsWith(dir.path) ?? false));
+  useEffect(() => {
+    if (selected?.startsWith(dir.path)) setOpen(true);
+  }, [selected, dir.path]);
   return (
     <div>
       {dir.name ? (
@@ -127,10 +130,12 @@ function TextEditor({ path, text, readOnly }: { path: string; text: string; read
 
 function FileView({ path }: { path: string }) {
   const text = useFiles((s) => s.texts[path]);
-  const entry = useFiles((s) => s.listing[path]);
+  const stored = useFiles((s) => s.listing[path]);
+  const upload = useModel().uploads.get(path);
+  const entry = stored ?? upload;
   const reading = useFiles((s) => s.reading[path] ?? false);
-  const editable = useEditable();
-  const textual = isTextPath(path);
+  const editable = !useFiles((s) => s.readOnly);
+  const textual = !upload && isTextPath(path);
   useEffect(() => {
     if (textual && text === undefined) void ensureLoaded(path);
   }, [path, text, textual]);
@@ -156,7 +161,9 @@ function FileView({ path }: { path: string }) {
         ) : (
           <p className="text-[13px] text-fg-subtle">{reading ? 'Reading…' : 'Not loaded.'}</p>
         )
-      ) : /\.(png|jpe?g|gif|webp|avif|ico|bmp)$/i.test(path) ? (
+      ) : /\.(mp4|webm|ogv|mov)$/i.test(path) ? (
+        <video src={projectUrl(path)} controls preload="metadata" className="max-h-[60vh] max-w-full" />
+      ) : /\.(png|jpe?g|gif|webp|avif|ico|bmp|svg)$/i.test(path) ? (
         <img src={projectUrl(path)} alt={path} className="max-h-[60vh] max-w-full rounded-lg border border-line" />
       ) : (
         <p className="text-[13px] text-fg-subtle">A binary file. Use Open raw to download it.</p>
@@ -191,19 +198,19 @@ function Diagnostics({ list }: { list: SystemDiagnostic[] }) {
 export function Files() {
   const listing = useFiles((s) => s.listing);
   const texts = useFiles((s) => s.texts);
-  const { files } = useModel();
+  const { files, uploads } = useModel();
   const selected = useView((s) => s.file);
   const paths = useMemo(() => {
-    const all = new Set(Object.keys(listing));
+    const all = new Set([...Object.keys(listing), ...uploads.keys()]);
     for (const [path, text] of Object.entries(texts)) {
       if (text === null) all.delete(path);
       else all.add(path);
     }
     return [...all];
-  }, [listing, texts]);
+  }, [listing, texts, uploads]);
   const tree = useMemo(() => buildTree(paths), [paths]);
   const sorted = useMemo(() => [...paths].sort(), [paths]);
-  const editable = useEditable();
+  const editable = !useFiles((s) => s.readOnly);
   const [marked, setMarked] = useState<ReadonlySet<string>>(new Set());
   const [anchor, setAnchor] = useState<string | null>(null);
   const [menu, setMenu] = useState<{ at: { x: number; y: number }; kind: 'file' | 'dir'; path: string } | null>(null);
@@ -215,7 +222,7 @@ export function Files() {
       return next.size === current.size ? current : next;
     });
   }, [paths]);
-  const deletable = (list: readonly string[]): string[] => list.filter((path) => path !== 'design-system.json' && !isGenerated(path));
+  const deletable = (list: readonly string[]): string[] => list.filter((path) => path !== 'design-system.json' && !uploads.has(path) && !isGenerated(path));
   const actions: TreeActions = {
     marked,
     onClickFile(path, event) {
@@ -250,7 +257,7 @@ export function Files() {
   const targetsOf = (target: { kind: 'file' | 'dir'; path: string }): string[] =>
     target.kind === 'dir' ? sorted.filter((path) => path.startsWith(target.path)) : marked.has(target.path) ? [...marked] : [target.path];
   const downloadAll = async (list: readonly string[]): Promise<void> => {
-    for (const path of list.slice(0, 50)) await downloadUrl(projectUrl(path), path.split('/').pop()!);
+    for (const path of list) await downloadUrl(projectUrl(path), path.split('/').pop()!);
   };
   const diagnostics = useMemo(() => checkDesignSystem(files), [files]);
   const problems = useMemo(() => {
@@ -268,7 +275,7 @@ export function Files() {
           marked.size ? (
             <>
               <span className="text-[12px] text-fg-muted">{marked.size} selected</span>
-              <Button size="sm" icon={<Download className="size-3.5" />} onClick={() => void downloadAll([...marked].filter((path) => path in listing))}>
+              <Button size="sm" icon={<Download className="size-3.5" />} onClick={() => void downloadAll([...marked].filter((path) => path in listing || uploads.has(path)))}>
                 Download
               </Button>
               {editable && deletable([...marked]).length ? (
@@ -302,7 +309,7 @@ export function Files() {
                   Open
                 </MenuItem>
               ) : null}
-              <MenuItem icon={<Download className="size-3.5" />} onSelect={() => void downloadAll(targetsOf(menu).filter((path) => path in listing))}>
+              <MenuItem icon={<Download className="size-3.5" />} onSelect={() => void downloadAll(targetsOf(menu).filter((path) => path in listing || uploads.has(path)))}>
                 {menu.kind === 'dir' ? 'Download files in folder' : targetsOf(menu).length > 1 ? `Download ${targetsOf(menu).length} files` : 'Download'}
               </MenuItem>
               <MenuItem icon={<Copy className="size-3.5" />} onSelect={() => void copyText(menu.kind === 'dir' ? menu.path : targetsOf(menu).join('\n'), menu.kind === 'dir' ? 'the folder path' : 'the path')}>

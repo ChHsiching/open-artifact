@@ -5,13 +5,14 @@
  * links), then the stale copy notes of installed design systems.
  */
 
-import { existsSync, readFileSync, readdirSync, statSync, type Dirent } from 'node:fs';
+import { existsSync, lstatSync, readFileSync, readdirSync, statSync, type Dirent } from 'node:fs';
 import { lstat, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { connectorsFile, parseConnectors } from './connectors.ts';
 import { readDbFiles } from './db-host.ts';
 import { staleCopyFindings } from './ds-sync.ts';
-import { ArtifactStore } from './store.ts';
+import { mimeOf } from './http.ts';
+import { ArtifactStore, blobFilenames } from './store.ts';
 import { EDITS_FILE, META_FILE, SHEET_DIR } from './sheets/store.ts';
 import { readDocFiles } from './docs/type.ts';
 import { TYPES, type CheckContext, type CheckFinding, type TypeName } from './types.ts';
@@ -36,7 +37,7 @@ async function scanProject(root: string): Promise<{ sizes: Map<string, number>; 
       else if (entry.isFile()) sizes.set(inner, (await lstat(file).catch(() => null))?.size ?? 0);
     }
   };
-  await walk(join(root, 'project'), '');
+  if ((await lstat(join(root, 'project')).catch(() => null))?.isDirectory()) await walk(join(root, 'project'), '');
   return { sizes, symlinks };
 }
 
@@ -44,15 +45,15 @@ async function scanProject(root: string): Promise<{ sizes: Map<string, number>; 
 function scanBlobs(root: string): { files: Map<string, { name: string; size: number }>; bytes: number } {
   const files = new Map<string, { name: string; size: number }>();
   let bytes = 0;
-  let names: string[] = [];
+  let entries: Dirent[];
   try {
-    names = readdirSync(join(root, '_blobs'));
+    const dir = join(root, '_blobs');
+    if (!lstatSync(dir).isDirectory()) return { files, bytes };
+    entries = readdirSync(dir, { withFileTypes: true });
   } catch {
     return { files, bytes };
   }
-  for (const name of names) {
-    const id = /^([0-9a-f]{32})\./.exec(name)?.[1];
-    if (!id) continue;
+  for (const [id, name] of blobFilenames(entries)) {
     let size = 0;
     try {
       size = statSync(join(root, '_blobs', name)).size;
@@ -84,7 +85,20 @@ export async function checkContextOf(root: string, type: TypeName): Promise<Chec
     blobBytes: blobs.bytes,
   };
   if (TYPES[type].store !== 'db') {
-    Object.assign(context, await scanProject(root));
+    const project = await scanProject(root);
+    Object.assign(context, project);
+    if (type === 'design-system') {
+      const imported = scanBlobs(join(root, 'project'));
+      context.blobExists = (id) => blobs.files.has(id) || imported.files.has(id);
+    }
+    if (type === 'design') {
+      const imported = new Set<string>();
+      for (const path of project.sizes.keys()) {
+        const id = /^assets\/([0-9a-f]{32})\.[^/]+$/.exec(path)?.[1];
+        if (id && /^(image|font|audio|video)\//.test(mimeOf(path))) imported.add(id);
+      }
+      context.blobExists = id => blobs.files.has(id) || imported.has(id);
+    }
     return context;
   }
   context.blobSize = (id) => blobs.files.get(id)?.size;

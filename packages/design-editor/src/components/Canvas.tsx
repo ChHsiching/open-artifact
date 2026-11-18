@@ -29,6 +29,7 @@ import {
   intersects,
   MIN_BOARD_SIZE,
   notesOnPage,
+  pageOf,
   type BoardEntry,
   type Canvas as CanvasModel,
   type CanvasNote,
@@ -42,9 +43,10 @@ import { addBoard, addNote, edit, moveObjects, moveSelectedElements, resizeObjec
 import { combineSelection, flowDropAt, freezeInherited, marqueeCandidates, marqueeHits, rootAddress, templateRoot, type FlowDrop, type MarqueeCandidate } from '../services/gestures.ts';
 import { pickDepth, type PickMode } from '../lib/pick-depth.ts';
 import type { Address } from '../lib/ops.ts';
+import { placeImages } from '../services/images.ts';
 import { session } from '../services/session.ts';
-import { templateOf } from '../services/agent.ts';
-import { pendingFit, viewportSize, visibleRect, zoomAt, zoomToFit } from '../services/viewport.ts';
+import { templateOf, useAgent } from '../services/agent.ts';
+import { pendingFit, viewportSize, visibleRect, zoomAt, zoomToBoards, zoomToFit } from '../services/viewport.ts';
 import { dashArray, noteBounds, noteFontSize } from '../lib/notes.ts';
 import { noteRect } from '../lib/scene.ts';
 import { BoardFrame } from './BoardFrame.tsx';
@@ -262,45 +264,6 @@ function resizeRect(rect: Rect, handle: Handle, dx: number, dy: number, min: num
   return { x: Math.round(x), y: Math.round(y), w: Math.round(w), h: Math.round(h) };
 }
 
-/** Uploads dropped or pasted images and places them as image notes. */
-export async function placeImages(files: readonly File[], at: { x: number; y: number }): Promise<void> {
-  const { assets } = session();
-  if (!assets) {
-    toast.add({ title: 'Images cannot be added here', description: 'This host does not accept uploads.' });
-    return;
-  }
-  let offset = 0;
-  for (const file of files) {
-    if (!file.type.startsWith('image/')) continue;
-    try {
-      const record = await assets.upload(file, { name: file.name });
-      const size = await imageSize(file);
-      const scale = Math.min(1, 480 / Math.max(size.width, size.height));
-      addNote('image', { x: at.x + offset, y: at.y + offset }, { src: record.url, text: file.name, w: Math.round(size.width * scale), h: Math.round(size.height * scale) });
-      offset += 24;
-    } catch (error) {
-      toast.add({ title: `Could not upload ${file.name}`, description: error instanceof Error ? error.message : String(error) });
-    }
-  }
-}
-
-/** Natural size of an image file. */
-function imageSize(file: Blob): Promise<{ width: number; height: number }> {
-  return new Promise((resolve) => {
-    const url = URL.createObjectURL(file);
-    const image = new Image();
-    image.onload = () => {
-      resolve({ width: image.naturalWidth || 320, height: image.naturalHeight || 240 });
-      URL.revokeObjectURL(url);
-    };
-    image.onerror = () => {
-      resolve({ width: 320, height: 240 });
-      URL.revokeObjectURL(url);
-    };
-    image.src = url;
-  });
-}
-
 /** Ends a running in-place text edit, committing it. */
 function endTextEdit(): void {
   const { textEdit } = useView.getState();
@@ -319,6 +282,8 @@ export function Canvas() {
   /** Who draws the canvas: the engine, or the DOM (`?open_artifact_engine=off`, or the engine could not start). */
   const [renderer, setRenderer] = useState<'engine' | 'dom'>(engineEnabled ? 'engine' : 'dom');
   const drag = useRef<Drag | null>(null);
+  const fingers = useRef(new Map<number, { x: number; y: number }>());
+  const touchTap = useRef<{ hit: Hit; target: HTMLElement; x: number; y: number } | null>(null);
   /** The element last pressed: pointer capture retargets the later click events to the root. */
   const pressed = useRef<HTMLElement | null>(null);
   const [marquee, setMarquee] = useState<Rect | null>(null);
@@ -340,6 +305,7 @@ export function Canvas() {
 
   const page = useView((s) => s.page);
   const tool = useView((s) => s.tool);
+  const agentStatus = useAgent(s => s.status);
   const spacePan = useView((s) => s.spacePan);
   const canvas = useDocument((s) => s.canvas);
   const readOnly = useDocument((s) => s.readOnly);
@@ -416,6 +382,24 @@ export function Canvas() {
     const element = root.current;
     if (!element) return;
     const onWheel = (event: WheelEvent): void => {
+      if (!event.ctrlKey && !event.metaKey) {
+        const sticky = (event.target as Element)?.closest<HTMLElement>('[data-sticky-scroll]');
+        if (sticky && sticky.scrollHeight > sticky.clientHeight) return;
+        const engine = activeEngine();
+        if (engine && event.target === engine.canvas) {
+          const { left, top } = element.getBoundingClientRect();
+          const hit = itemAt({ x: event.clientX - left, y: event.clientY - top });
+          if (hit && 'note' in hit) {
+            const note = element.querySelector<HTMLElement>(`[data-note="${CSS.escape(hit.note)}"][data-sticky-scroll]`);
+            if (note && note.scrollHeight > note.clientHeight) {
+              event.preventDefault();
+              event.stopImmediatePropagation();
+              note.scrollTop += event.deltaY * (event.deltaMode === 1 ? 16 : 1);
+              return;
+            }
+          }
+        }
+      }
       const engine = activeEngine();
       if (engine && event.target === engine.canvas) return;
       event.preventDefault();
@@ -442,8 +426,8 @@ export function Canvas() {
         view.setCamera({ ...view.camera, x: view.camera.x - dx * scale, y: view.camera.y - dy * scale });
       }
     };
-    element.addEventListener('wheel', onWheel, { passive: false });
-    return () => element.removeEventListener('wheel', onWheel);
+    element.addEventListener('wheel', onWheel, { passive: false, capture: true });
+    return () => element.removeEventListener('wheel', onWheel, true);
   }, []);
 
   /** Screen point relative to the canvas element. */
@@ -461,18 +445,25 @@ export function Canvas() {
     return engine && target === engine.canvas ? engineHit(local(event)) : domHit(target as HTMLElement);
   };
 
+  const selectObject = (hit: Extract<Hit, { kind: 'note' | 'title' }>): void => {
+    const view = useView.getState();
+    const objects = selectedObjects(view);
+    if (hit.kind === 'title') {
+      if (!objects.boards.includes(hit.board)) view.select({ kind: 'objects', boards: [hit.board], notes: [] });
+    } else if (!objects.notes.includes(hit.note)) {
+      const notes = expandNotesToGroups(groupItems(useDocument.getState().canvas), [hit.note], objects.notes);
+      view.select({ kind: 'objects', boards: [], notes });
+    }
+  };
+
   /** Right-click: what is under the pointer joins the selection before the menu opens. */
   const selectForMenu = (event: ReactPointerEvent<HTMLDivElement>, hit: Hit): void => {
     const view = useView.getState();
     const selection = view.selection;
     const objects = selectedObjects(view);
-    const note = hit.kind === 'note' ? hit.note : undefined;
-    const title = hit.kind === 'title' ? hit.board : undefined;
     setMenuPoint(null);
-    if (note || title) {
-      const has = note ? objects.notes.includes(note) : objects.boards.includes(title!);
-      const notes = note ? expandNotesToGroups(groupItems(useDocument.getState().canvas), [note], objects.notes) : [];
-      if (!has) view.select({ kind: 'objects', boards: title ? [title] : [], notes });
+    if (hit.kind === 'note' || hit.kind === 'title') {
+      selectObject(hit);
       return;
     }
     const board = hit.kind === 'board' ? hit.board : undefined;
@@ -488,12 +479,87 @@ export function Canvas() {
     if (!has) view.select({ kind: 'elements', board, items: [picked] });
   };
 
+  // Both renderers share touch navigation. Delay selection until release so a
+  // swipe or a second finger cannot start moving the element under the hand.
+  const startTouch = (event: ReactPointerEvent<HTMLDivElement>): boolean => {
+    if (event.pointerType !== 'touch') return false;
+    const target = event.target as HTMLElement;
+    const view = useView.getState();
+    const point = local(event);
+    const hit = hitOf(target, event);
+    if (!fingers.current.size) {
+      if (view.tool !== 'select' && view.tool !== 'hand') return false;
+      if (target.closest('button, a, input, textarea, [contenteditable="true"], [role="button"]')) return false;
+      if (drag.current || view.crop || view.playing || view.noteEdit) return false;
+      if (view.tool === 'select') {
+        const objects = selectedObjects(view);
+        if (hit.kind === 'handle' || activeEngine()?.hitHandle(point)) return false;
+        if (hit.kind === 'note' && objects.notes.includes(hit.note)) return false;
+        if ((hit.kind === 'title' || hit.kind === 'board') && objects.boards.includes(hit.board)) return false;
+      }
+      if (view.tool === 'select' && hit.kind === 'board' && view.selection.kind === 'elements' && view.selection.board === hit.board) {
+        const picked = pickElement(hit.board, worldOf(event), 'click');
+        if (picked && view.selection.items.some(item => sameElement(item, picked))) return false;
+      }
+      touchTap.current = { hit, target, ...point };
+    } else touchTap.current = null;
+    fingers.current.set(event.pointerId, point);
+    event.currentTarget.setPointerCapture(event.pointerId);
+    event.stopPropagation();
+    return true;
+  };
+
+  const moveTouch = (event: ReactPointerEvent<HTMLDivElement>): void => {
+    const points = fingers.current;
+    const previous = points.get(event.pointerId);
+    if (!previous) return;
+    event.stopPropagation();
+    const next = local(event);
+    const tap = touchTap.current;
+    if (tap && Math.hypot(next.x - tap.x, next.y - tap.y) < DRAG_THRESHOLD) return;
+    touchTap.current = null;
+    const pair = [...points.keys()].slice(0, 2);
+    points.set(event.pointerId, next);
+    if (!pair.includes(event.pointerId)) return;
+    const otherId = pair.find(id => id !== event.pointerId);
+    const other = otherId === undefined ? undefined : points.get(otherId);
+    let camera = useView.getState().camera;
+    if (other) {
+      const distance = Math.hypot(previous.x - other.x, previous.y - other.y);
+      if (distance < 1) return;
+      const ratio = Math.hypot(next.x - other.x, next.y - other.y) / distance;
+      camera = zoomAt(camera, camera.zoom * ratio, (previous.x + other.x) / 2, (previous.y + other.y) / 2);
+    }
+    const count = pair.length;
+    useView.getState().setCamera({ ...camera, x: camera.x + (next.x - previous.x) / count, y: camera.y + (next.y - previous.y) / count });
+  };
+
+  const endTouch = (event: ReactPointerEvent<HTMLDivElement>): void => {
+    if (!fingers.current.delete(event.pointerId)) return;
+    event.stopPropagation();
+    const tap = touchTap.current;
+    touchTap.current = null;
+    if (!tap || event.type !== 'pointerup' || useView.getState().tool !== 'select') return;
+    pressed.current = tap.target;
+    endTextEdit();
+    endNoteEdit(tap.hit);
+    const view = useView.getState();
+    if (tap.hit.kind === 'empty') view.select(NO_SELECTION);
+    if (tap.hit.kind === 'title' || tap.hit.kind === 'note') selectObject(tap.hit);
+    if (tap.hit.kind === 'board') {
+      const board = tap.hit.board;
+      const item = pickElement(board, worldOf(event), 'click');
+      view.select(item ? { kind: 'elements', board, items: [item] } : { kind: 'objects', boards: [board], notes: [] });
+    }
+  };
+
   /**
    * Presses on the engine's canvas, before it sees them: the engine runs the
    * ones it takes (with the selection a press makes in place first, so a
    * drag moves what was pressed); the others are stopped and handled here.
    */
   const onPointerDownCapture = (event: ReactPointerEvent<HTMLDivElement>): void => {
+    if (startTouch(event)) return;
     const engine = activeEngine();
     if (!engine || event.target !== engine.canvas) return;
     const point = local(event);
@@ -541,7 +607,7 @@ export function Canvas() {
     const camera = liveCamera();
     const world = toWorld(camera, point.x, point.y);
     try {
-      root.current!.setPointerCapture(event.pointerId);
+      event.currentTarget.setPointerCapture(event.pointerId);
     } catch {
       // Synthetic events carry no capturable pointer.
     }
@@ -963,7 +1029,12 @@ export function Canvas() {
     event.preventDefault();
     if (useDocument.getState().readOnly) return;
     const files = [...event.dataTransfer.files].filter((file) => file.type.startsWith('image/'));
-    if (files.length) void placeImages(files, worldOf(event));
+    const world = worldOf(event);
+    const hit = [...boards].reverse().find(path => {
+      const b = canvas.boards[path]!;
+      return world.x >= b.x && world.y >= b.y && world.x < b.x + b.w && world.y < b.y + b.h;
+    });
+    if (files.length) void placeImages(files, world, hit);
   };
 
   const cursor = spacePan || tool === 'hand' ? (drag.current?.kind === 'pan' ? 'grabbing' : 'grab') : tool === 'select' ? 'default' : 'crosshair';
@@ -979,6 +1050,10 @@ export function Canvas() {
       style={{ cursor }}
       onPointerDownCapture={onPointerDownCapture}
       onPointerDown={onPointerDown}
+      onPointerMoveCapture={moveTouch}
+      onPointerUpCapture={endTouch}
+      onPointerCancelCapture={endTouch}
+      onLostPointerCaptureCapture={endTouch}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
@@ -1012,7 +1087,7 @@ export function Canvas() {
       </CameraFollow>
       {boards.length === 0 && notes.length === 0 ? (
         <div className="pointer-events-none absolute inset-0 z-[3] flex items-center justify-center text-[13px] text-fg-subtle">
-          {readOnly ? 'This page is empty.' : 'Press B and drag to add an artboard, or ask your agent to design something.'}
+          {agentStatus.busy ? `${agentStatus.name} is working…` : readOnly ? 'This page is empty.' : 'Press B and drag to add an artboard, or ask your agent to design something.'}
         </div>
       ) : null}
     </div>
@@ -1020,9 +1095,21 @@ export function Canvas() {
   );
 }
 
+/** Follow prototype links on the canvas, including links across pages. */
+function playTarget(path: string): void {
+  const { canvas } = useDocument.getState();
+  const entry = canvas.boards[path];
+  if (!entry) { toast.add({ title: 'That artboard is not on the canvas', description: path }); return; }
+  const view = useView.getState();
+  view.setPage(pageOf(canvas, entry));
+  view.play(path);
+  zoomToBoards([path]);
+}
+
 /** The DOM canvas (`?open_artifact_engine=off`, or no WebGL2): the grid, artboards and notes in one camera-transformed layer. */
 function DomWorld({ boards, notes }: { boards: string[]; notes: string[] }) {
   const camera = useView((s) => s.camera);
+  const playing = useView(s => s.playing);
   const textEdit = useView((s) => s.textEdit);
   const frames = useView((s) => s.frames);
   const canvas = useDocument((s) => s.canvas);
@@ -1055,7 +1142,7 @@ function DomWorld({ boards, notes }: { boards: string[]; notes: string[] }) {
               {snapshot && !(shown && frames[path]?.booted) ? (
                 <img data-board-snapshot="" src={snapshot} alt="" draggable={false} className="pointer-events-none absolute left-0 top-0 block select-none" style={{ width: entry.w, height: entry.h }} />
               ) : null}
-              {shown ? <BoardFrame path={path} mode="edit" width={entry.w} height={entry.h} interactive={textEdit?.board === path} hideUntilBooted={Boolean(snapshot)} /> : null}
+              {shown ? <BoardFrame path={path} mode={playing === path ? 'play' : 'edit'} onNavigate={playTarget} width={entry.w} height={entry.h} interactive={textEdit?.board === path || playing === path} hideUntilBooted={Boolean(snapshot)} /> : null}
             </div>
           );
         })}
@@ -1074,6 +1161,7 @@ function DomWorld({ boards, notes }: { boards: string[]; notes: string[] }) {
  */
 function LiveBoards({ boards }: { boards: string[] }) {
   const live = useLive((s) => s.live);
+  const playing = useView(s => s.playing);
   const textEdit = useView((s) => s.textEdit);
   const entries = useDocument((s) => s.canvas.boards);
   return (
@@ -1081,13 +1169,13 @@ function LiveBoards({ boards }: { boards: string[] }) {
       {boards
         .filter((path) => isLive(path, live))
         .map((path) => (
-          <LiveBoard key={path} path={path} entry={entries[path]!} interactive={textEdit?.board === path} />
+          <LiveBoard key={path} path={path} entry={entries[path]!} playing={playing === path} interactive={textEdit?.board === path || playing === path} />
         ))}
     </div>
   );
 }
 
-function LiveBoard({ path, entry, interactive }: { path: string; entry: BoardEntry; interactive: boolean }) {
+function LiveBoard({ path, entry, interactive, playing }: { path: string; entry: BoardEntry; interactive: boolean; playing: boolean }) {
   const element = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => registerLiveBoard(path, element.current!), [path]);
   return (
@@ -1098,7 +1186,7 @@ function LiveBoard({ path, entry, interactive }: { path: string; entry: BoardEnt
       className="absolute left-0 top-0 origin-top-left overflow-hidden bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_2px_8px_rgba(0,0,0,0.06)]"
       style={{ width: entry.w, height: entry.h, borderRadius: entry.radius, visibility: 'hidden', ...(interactive ? { zIndex: 2, pointerEvents: 'auto' } : {}) }}
     >
-      <BoardFrame path={path} mode="edit" width={entry.w} height={entry.h} interactive={interactive} />
+      <BoardFrame path={path} mode={playing ? 'play' : 'edit'} onNavigate={playTarget} width={entry.w} height={entry.h} interactive={interactive} />
     </div>
   );
 }

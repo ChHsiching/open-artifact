@@ -50,6 +50,7 @@ export function startShellBridge(): void {
   shell.onFilesChanged(() => true);
   shell.onCommand((command) => {
     if (command.cmd === 'exports') return [];
+    if (command.cmd === 'export_format') return shell.exportState(command.request, 'unsupported');
     handleCollabCommand(command);
     return undefined;
   });

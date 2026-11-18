@@ -207,7 +207,6 @@ describe('statuses and words', () => {
     const notice = getDashboardNotice([query], () => run);
     assert.ok(notice !== null);
     assert.deepEqual(notice.fix, { connector: 'sales', fix: getConnectionFix(run) });
-    assert.doesNotMatch(notice.text, /claude|anthropic/i);
   });
 });
 

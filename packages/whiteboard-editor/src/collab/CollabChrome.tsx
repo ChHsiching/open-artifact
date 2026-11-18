@@ -60,7 +60,7 @@ function AskStatusList() {
 /** The "All comments" panel: the shared one (`@open-artifact/editor-kit`), under the board's top bar. */
 function CommentsPanel() {
   const agent = useAgentBadge();
-  return <AllComments comments={boardComments} agent={agent} top={60} hint="Press C, then click the board, or drag to comment on an area." />;
+  return <AllComments comments={boardComments} agent={agent} top={60} hint="Turn on Comments, then click the board or drag across an area." />;
 }
 
 /** "Following …" or "Follow me is on", with a Stop button. */

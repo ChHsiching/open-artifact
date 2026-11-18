@@ -168,6 +168,7 @@ export function isAllowedImageSource(src: string): boolean {
 /** The storable form of an image source, or `undefined` when it is not allowed. */
 export function normalizeImageSource(src: unknown): string | undefined {
   const normalized = typeof src === 'string' ? (svgTextToBase64DataUrl(src) ?? src) : '';
+  if (isUploadedBlobSource(normalized)) return normalized.startsWith('/') ? normalized : '/' + normalized;
   return isAllowedImageSource(normalized) ? normalized : undefined;
 }
 

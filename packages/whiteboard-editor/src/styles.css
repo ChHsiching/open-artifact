@@ -872,3 +872,21 @@ html[data-frame-capture] :is(.wb-foot, .wb-pill, .wb-grid, .wb-timer-glow) {
 html[data-frame-capture] :is(.wb-history-panel, .wb-history-preview) {
   display: none;
 }
+
+.wb-recovery {
+  position: absolute;
+  z-index: 40;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: min(520px, 75vw);
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--wb-paper);
+  box-shadow: 0 2px 8px #0002;
+  font-size: 13px;
+}
+.wb-recovery button { margin-inline-start: 8px; text-decoration: underline; }
+.wb-paused-media { display: grid; place-items: center; border: 1px dashed currentColor; opacity: .7; }
+.wb-corner-zoom { position: absolute; z-index: 30; right: 12px; bottom: 12px; padding: 4px; }
+.wb-pill:empty { display: none; }

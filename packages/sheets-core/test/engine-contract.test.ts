@@ -125,8 +125,26 @@ test('a synced session queues, sends, confirms, calculates and reads through the
     const undone = expectKind(client.request({ kind: 'queueNextUndo', opId: 'op-undo' }), 'editQueued');
     assert.equal(typeof undone.stepReversed, 'string');
     state = sendAll(client, undone.syncState, revision);
+    const duplicate = expectKind(client.request({ kind: 'queueNextRedo', opId: 'op-paste' }), 'refused');
+    assert.equal(duplicate.refusal, 'opIdInUse');
     const after = expectKind(client.request({ kind: 'readCells', sheetId, cells: [at(2, 2)] }), 'cellsContents');
     assert.deepEqual(after.cells, []);
+
+    // The formula bar shows references before a newly entered formula has a value.
+    const pending = expectKind(client.request({
+      kind: 'queueEdit', opId: 'pending', newIdCode: 'eaaaaaaaaa',
+      edit: { kind: 'enter', sheetId, cell: at(1, 0), entry: { kind: 'text', text: '=SUM(A10:A13)' } },
+    }), 'editQueued');
+    sendAll(client, pending.syncState, revision);
+    const inserted = expectKind(client.request({
+      kind: 'queueEdit', opId: 'insert', newIdCode: 'faaaaaaaaa',
+      edit: { kind: 'insertRows', sheetId, afterRow: rows[4]!, count: 1 },
+    }), 'editQueued');
+    const changes = inserted.syncState.changes;
+    assert.equal(changes.kind, 'inSheets');
+    assert.ok(changes.sheets.find(s => s.sheetId === sheetId)?.cells.some(cell => cell.r === rows[1] && cell.c === columns[0]));
+    const updated = expectKind(client.request({ kind: 'readCells', sheetId, cells: [at(1, 0)] }), 'cellsContents');
+    assert.equal(updated.cells[0]?.formulaText, '=SUM(A11:A14)');
   } finally {
     client.free();
   }

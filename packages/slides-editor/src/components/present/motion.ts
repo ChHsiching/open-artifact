@@ -11,18 +11,8 @@ import { useLayoutEffect, useMemo, type RefObject } from 'react';
 import type { Slide, SlideNode } from '@open-artifact/slides-core';
 import { currentSourceDeck } from '../../state/deck.ts';
 import { BUILD_MS } from '../../render/css.ts';
-import {
-  animationText,
-  countText,
-  countUpOf,
-  easeOut,
-  findNumber,
-  guardAnimations,
-  parseAnimations,
-  readMotionRules,
-  startingEntrance,
-  type Animation,
-} from '../../services/motion.ts';
+import { elementMotion, readMotionRules } from '../../services/motion.ts';
+import { countUp } from '../../services/count-player.ts';
 import { prefersReducedMotion } from './transitions.ts';
 
 const DECK_STYLE_ID = 'open-artifact-deck-motion';
@@ -65,35 +55,6 @@ function elementsByOrigin(box: HTMLElement, slide: Slide): Map<number, { element
   return out;
 }
 
-/** Counts the first number in an element's text up from `from`. Returns a stop function. */
-function countUp(element: HTMLElement, count: { from: number; duration: number; delay: number }): () => void {
-  const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
-  let text: Text | null = null;
-  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-    if (findNumber((node as Text).data)) {
-      text = node as Text;
-      break;
-    }
-  }
-  if (!text) return () => undefined;
-  const target = text;
-  const original = target.data;
-  const to = findNumber(original)!.value;
-  const start = performance.now() + count.delay;
-  let frame = 0;
-  const tick = (now: number): void => {
-    const t = count.duration > 0 ? (now - start) / count.duration : 1;
-    target.data = t >= 1 ? original : countText(original, count.from + (to - count.from) * easeOut(t));
-    if (t < 1) frame = requestAnimationFrame(tick);
-  };
-  target.data = countText(original, count.from);
-  frame = requestAnimationFrame(tick);
-  return () => {
-    cancelAnimationFrame(frame);
-    target.data = original;
-  };
-}
-
 /**
  * Plays `slide`'s motion inside `box` (the shown slide) while `play`, and
  * keeps its in-flow fragments not yet stepped to hidden.
@@ -105,7 +66,7 @@ export function useSlideMotion(box: RefObject<HTMLElement | null>, slide: Slide,
   useLayoutEffect(() => {
     const container = box.current;
     if (!play || !motion || !container || prefersReducedMotion()) return;
-    const { keyframes, properties } = deckMotion();
+    const rules = deckMotion();
     const elements = elementsByOrigin(container, slide);
     const stops: Array<() => void> = [];
     let entranceCss = '';
@@ -117,15 +78,11 @@ export function useSlideMotion(box: RefObject<HTMLElement | null>, slide: Slide,
       // Builds draw their own animation.
       if (found.node?.buildIn || found.node?.buildOut) continue;
       const declarations = motion.elements[origin] ?? {};
-      const animations: Animation[] = guardAnimations(parseAnimations(declarations), keyframes);
-      const starting = motion.starting[origin];
-      const entrance = starting ? startingEntrance(`${prefix}-${origin}`, starting, declarations) : null;
-      if (entrance) entranceCss += entrance.keyframes;
-      const all = [...animations, ...(entrance?.animations ?? [])];
-      if (all.length === 0) continue;
+      const { animation, keyframes, count } = elementMotion(declarations, motion.starting[origin], rules, `${prefix}-${origin}`);
+      if (!animation) continue;
+      entranceCss += keyframes;
       const element = found.element;
-      element.style.animation = all.map(animationText).join(', ');
-      const count = countUpOf(animations, keyframes, properties);
+      element.style.animation = animation;
       const stopCount = count ? countUp(element, count) : undefined;
       stops.push(() => {
         element.style.animation = '';

@@ -24,7 +24,7 @@ import { MenuItem, MenuSeparator, toast } from '@open-artifact/ui';
 import { useView } from '../../state/view.ts';
 import { hasMemory, pasteFromMemory } from '../../services/clipboard.ts';
 import { replaceImage, pickFiles } from '../../services/assets.ts';
-import { canComment, elementAnchor, useComments } from '../../services/comments.ts';
+import { canComment, elementAnchor, requestAnchoredComment } from '../../services/comments.ts';
 import {
   copyStyle,
   currentSlide,
@@ -74,7 +74,7 @@ export function StageMenuItems(): ReactNode {
           Select all
         </MenuItem>
         {canComment() ? (
-          <MenuItem icon={<MessageCircle className="size-4" />} onSelect={() => useComments.getState().setDraft(elementAnchor(slide, null))}>
+          <MenuItem icon={<MessageCircle className="size-4" />} onSelect={() => requestAnchoredComment(elementAnchor(slide, null))}>
             Comment on slide
           </MenuItem>
         ) : null}
@@ -172,7 +172,7 @@ export function StageMenuItems(): ReactNode {
       {canComment() && single ? (
         <>
           <MenuSeparator />
-          <MenuItem icon={<MessageCircle className="size-4" />} onSelect={() => useComments.getState().setDraft(elementAnchor(slide, single))}>
+          <MenuItem icon={<MessageCircle className="size-4" />} onSelect={() => requestAnchoredComment(elementAnchor(slide, single))}>
             Comment
           </MenuItem>
         </>

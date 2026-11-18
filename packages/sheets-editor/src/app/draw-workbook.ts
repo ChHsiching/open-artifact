@@ -304,6 +304,9 @@ export function mountSheetsApp(
             ...(shell.chartsWrittenByAgent !== undefined && {
               chartsWrittenByAgent: shell.chartsWrittenByAgent,
             }),
+            ...(shell.filesForAgent !== undefined && {
+              filesForAgent: shell.filesForAgent,
+            }),
             gridZoom: zoom,
             isAgentWorkingNow: () => shell.agentActivity.isWorking(),
           }),

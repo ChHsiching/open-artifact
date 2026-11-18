@@ -19,6 +19,7 @@ import { docClient } from '../app/doc-client.ts';
 import { session } from '../app/session.ts';
 import { getDocs, useDocs } from '../app/store.ts';
 import { useEditor } from '../editor/format.ts';
+import { publishViewContext } from './view-context.ts';
 import { startAgentPresence } from './agent-presence.ts';
 import { type DocsPresence, PRESENCE_KEY, type PeerSelection, parseDocsPresence, selectionPlaces } from './places.ts';
 
@@ -135,8 +136,10 @@ export async function startPresence(): Promise<() => void> {
     if (next && next !== useSelf.getState().name) useSelf.setState({ name: next });
   });
   const stopAgent = startAgentPresence(current.doc, current.agent);
+  const stopContext = current.room ? publishViewContext(current.room) : () => {};
   const stopRoom = await docsPresence.start({ room: current.room });
   return () => {
+    stopContext();
     stopRoom();
     stopAgent();
     stopName();

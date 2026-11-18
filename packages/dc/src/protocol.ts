@@ -207,6 +207,7 @@ export interface BoardApi {
 declare global {
   interface Window {
     __dc?: BoardApi;
+    __dcExport?: { path: string; source: string; files: Record<string, string> };
   }
   interface HTMLIFrameElement {
     __dcBoot?: BoardBoot;

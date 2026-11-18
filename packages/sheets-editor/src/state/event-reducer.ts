@@ -1211,7 +1211,7 @@ export interface FileToImportRead {
 }
 export interface FileToImportNotRead {
   kind: 'fileToImportNotRead';
-  why: 'tooLarge' | 'notText' | 'notRead';
+  why: 'tooLarge' | 'notText' | 'notRead' | 'excelFileDropped';
 }
 export interface SheetDuplicateChosen {
   kind: 'sheetDuplicateChosen';

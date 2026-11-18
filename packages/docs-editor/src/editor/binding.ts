@@ -6,6 +6,7 @@
  * Nothing is diffed or patched while an input method is composing; it waits for the composition to end.
  */
 import type { Block, DocState } from '@open-artifact/docs-core';
+import { isHistoryTransaction } from 'prosemirror-history';
 import type { Node as PMNode } from 'prosemirror-model';
 import { Selection, TextSelection, type Transaction } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
@@ -152,6 +153,8 @@ export class TabBinding {
   private shown: DocState;
   private waitingShadow: DocState | null = null;
   private dirty = false;
+  /** An undo or redo changed the doc since the last flush. */
+  private undoing = false;
   private writable: boolean;
   private events: BindingEvents;
 
@@ -189,6 +192,8 @@ export class TabBinding {
   afterTransaction(tr: Transaction): void {
     if (!tr.docChanged) return;
     if (isSyncedTransaction(tr) && this.view?.state.doc === this.synced) return;
+    // An undo or redo: if what it writes is lost, the page offers to restore the tab rather than lose it.
+    if (isHistoryTransaction(tr)) this.undoing = true;
     this.flush();
   }
 
@@ -232,6 +237,8 @@ export class TabBinding {
       return;
     }
     this.dirty = false;
+    const undo = this.undoing;
+    this.undoing = false;
     const doc = view.state.doc;
     const range = changedTop(this.synced, doc);
     if (!range) {
@@ -247,7 +254,7 @@ export class TabBinding {
     const window: TopWindow = { from: range.from, to: range.to, nodes };
     let fixes: IdFix[];
     try {
-      const diff = this.sync.edit(window);
+      const diff = this.sync.edit(window, { undo });
       fixes = diff.fixes;
       this.shown = diff.shadow;
     } catch (error) {

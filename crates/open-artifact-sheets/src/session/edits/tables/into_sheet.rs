@@ -385,6 +385,11 @@ pub fn plan(workbook: &Workbook, table: &TableIntoSheet, code: &str) -> Result<P
             let at = (r, c);
             let old = sheet.cells.get(&at).map(|cell| &cell.input);
             let dropdown = dropdown_of(target_sheet, at).and_then(|id| target_sheet.dropdowns.get(id));
+            // A dropdown can contain ordinary text imported from a file. Reimporting the
+            // same text leaves that cell alone, even if it is not a valid option label.
+            if dropdown.is_some() && matches!(old, Some(Input::Text { value }) if value == t) {
+                continue;
+            }
             let new = match dropdown {
                 Some((dropdown_id, options)) => {
                     let trimmed = t.trim_matches(SPACES);

@@ -229,7 +229,7 @@ export async function startEngine(canvas: HTMLCanvasElement, surface: HTMLElemen
     if (!snapshot?.url || !entry) return undefined;
     const small = smallSnapshot(entry, engine.camera.zoom, dpr());
     const key = `snap:${small ? 's' : 'l'}:${snapshot.key}:${path}`;
-    if (!sources.has(key)) sources.set(key, { url: snapshot.url, path, ...(small ? { width: Math.min(SMALL_SNAPSHOT_WIDTH, entry.w) } : {}) });
+    if (sources.get(key)?.url !== snapshot.url) sources.set(key, { url: snapshot.url, path, ...(small ? { width: Math.min(SMALL_SNAPSHOT_WIDTH, entry.w) } : {}) });
     return key;
   };
 
@@ -246,7 +246,7 @@ export async function startEngine(canvas: HTMLCanvasElement, surface: HTMLElemen
       const id = boardItemId(path);
       seen.add(id);
       const texture = shown.get(path) ?? wantedTexture(path);
-      const editing = view.textEdit?.board === path;
+      const editing = view.textEdit?.board === path || view.playing === path;
       // A booted frame shows through, except while the camera zooms and a snapshot can stand in for it
       // (a pan only moves the frame, which stays sharp; a snapshot is a fraction of its resolution).
       const hole = isLive(path, live) && Boolean(view.frames[path]?.booted) && (editing || !zooming || !shown.has(path));
@@ -288,7 +288,7 @@ export async function startEngine(canvas: HTMLCanvasElement, surface: HTMLElemen
   /** Loads a texture key into the engine; resolves to whether it is there. */
   const load = async (key: string): Promise<boolean> => {
     const source = sources.get(key);
-    if (!source || loading.has(key)) return false;
+    if (!source || loading.has(key) || (source.path && useLive.getState().snapshots[source.path]?.url !== source.url)) return false;
     loading.add(key);
     try {
       const blob = await (await fetch(source.url)).blob();
@@ -434,7 +434,7 @@ export async function startEngine(canvas: HTMLCanvasElement, surface: HTMLElemen
     if (state.camera !== prev.camera && !echo) engine.setCamera(toEngineCamera(state.camera));
     if (state.tool !== prev.tool || state.spacePan !== prev.spacePan) engine.setTool(engineTool(state.tool, state.spacePan));
     if (state.selection !== prev.selection) engine.setSelection(selectionIds(state.selection));
-    if (state.page !== prev.page || state.frames !== prev.frames || state.textEdit !== prev.textEdit) queueSync();
+    if (state.page !== prev.page || state.frames !== prev.frames || state.textEdit !== prev.textEdit || state.playing !== prev.playing) queueSync();
   });
   const unsubscribeDocument = useDocument.subscribe((state, prev) => {
     if (state.canvas !== prev.canvas || state.readOnly !== prev.readOnly) queueSync();

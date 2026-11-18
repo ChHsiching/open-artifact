@@ -1,9 +1,14 @@
-/** The top bar’s More menu: rename, the comments list and margin, version history and the keyboard shortcuts. */
+/**
+ * The top bar’s More menu: rename, the comments list and margin, version history, locking the doc (owners) and the
+ * keyboard shortcuts.
+ */
 import { ChromeButton, ChromeMenu, ChromeMenuItem, ChromeMenuSeparator, ALT, MOD } from '@open-artifact/editor-kit/react';
-import { History, Keyboard, MessageSquareOff, MessagesSquare, MoreHorizontal, Pencil } from 'lucide-react';
+import { History, Keyboard, Lock, LockOpen, MessageSquareOff, MessagesSquare, MoreHorizontal, Pencil } from 'lucide-react';
 import { type ReactNode } from 'react';
 import { maybeSession } from '../app/session.ts';
 import { setDocs, useDocs } from '../app/store.ts';
+import { mayLock, setLocked } from '../saving/lock.ts';
+import { LOCK_MENU_WORDS } from '../saving/words.ts';
 import { toggleShortcuts } from './ShortcutsDialog.tsx';
 import { setTopBar } from './store.ts';
 
@@ -14,6 +19,7 @@ export function MoreMenu(): ReactNode {
   const writable = useDocs(state => state.writable);
   const comments = useDocs(state => state.comments);
   const history = useDocs(state => state.history);
+  const locked = useDocs(state => !!state.project?.locked);
   if (!ready) return null;
   const hasComments = !!maybeSession()?.comments;
   return (
@@ -52,6 +58,14 @@ export function MoreMenu(): ReactNode {
       <ChromeMenuItem icon={<History className={ICON} strokeWidth={1.5} />} checked={history} onSelect={() => setDocs({ history: !history })}>
         Version history
       </ChromeMenuItem>
+      {mayLock() ? (
+        <ChromeMenuItem
+          icon={locked ? <LockOpen className={ICON} strokeWidth={1.5} /> : <Lock className={ICON} strokeWidth={1.5} />}
+          onSelect={() => void setLocked(!locked)}
+        >
+          {locked ? LOCK_MENU_WORDS.unlock : LOCK_MENU_WORDS.lock}
+        </ChromeMenuItem>
+      ) : null}
       <ChromeMenuSeparator />
       <ChromeMenuItem icon={<Keyboard className={ICON} strokeWidth={1.5} />} shortcut={`${MOD}/`} onSelect={() => toggleShortcuts()}>
         Keyboard shortcuts

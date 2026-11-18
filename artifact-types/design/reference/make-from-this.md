@@ -15,9 +15,9 @@ the new artifact the same way from its source folder. Leave the artboards as the
 one for this.
 
 Then hand it over on the canvas: add one entry to `notes` in `project/canvas.json`, under a key not already there,
-`"deck1":{"kind":"link","x":0,"y":680,"href":"<the new artifact's link>","text":"Spring menu deck"}`: `href` is the
-new artifact's link verbatim (its page's url, or its folder path when it has none), `text` its name (without it the
-card shows the bare link). It draws a card 280 px wide that opens the artifact. Put it on bare canvas under what it
+`"deck1":{"kind":"link","x":0,"y":680,"href":"<the new artifact's link>","title":"Spring menu deck"}`: `href` is the
+new artifact's link verbatim (its page's url, or its folder path when it has none), `title` its name (without it the
+card shows the bare link). It draws a card 640 × 112 px that opens the artifact. Put it on bare canvas under what it
 was made from: 120 px under that artboard, left edges level (made from a whole row: under the row's first
 artboard). If something stands there or a row below leaves it no room, go down its column to the first bare
 ground, 120 px under the last artboard there. Never right of the rightmost artboard: that is where the next
@@ -29,13 +29,16 @@ what was asked, so do it without being asked.
 
 ## Another design tool
 
-- **Figma**: the person opens the artboard (focused view) and picks **Export › HTML for Figma**: one HTML page, no
-  frames or scripts, every style inline, ready for Figma's HTML capture plugin. Tell them the steps; you cannot
-  run the export or the plugin yourself. Layers arrive as flat boxes and text; components and props do not.
-- **Canva and other tools that import files**: **Export › PDF** (or every artboard of the page) or **PNG** for a
+Open **Share › Export** in the global frame shell to choose the file format and artboards.
+
+- For **Figma**, select an artboard and choose its **HTML** option for Figma's capture extension. Open the exported HTML in Chrome,
+  choose **Capture design** in the Figma extension, then paste onto a Figma Design page. A loopback HTTP
+  preview also works for capture. The import contains editable text and visual layers. Component logic and
+  props stay in the source project. [Figma Chrome extension](https://help.figma.com/hc/en-us/articles/9067379354135-Figma-Chrome-extension)
+- **Canva and other tools that import files**: **PDF** (or every artboard of the page) or **PNG** for a
   picture. Canva imports a PDF as pages it can edit, swapping fonts it lacks. Never hand an import tool the
   canvas's local url: it is on this machine only.
-- An artboard's HTML (**Export › HTML (.zip)** or **single file**) is what to give a developer or another page.
+- An artboard's HTML (**HTML (.zip)** or **single file**) is what to give a developer or another page.
 
 ## A page at another width
 

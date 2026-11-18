@@ -58,6 +58,9 @@ export const systemComments = createComments<CommentTarget>({
     useCommentScope.setState({ scope: target.anchor });
   },
   canComment: () => maybeSession()?.viewer.role !== 'viewer',
+  onModeChange(on) {
+    if (!on) closeComments();
+  },
   canSendToAgent: () => {
     const s = maybeSession();
     return Boolean(s?.isOwner && s.agent);

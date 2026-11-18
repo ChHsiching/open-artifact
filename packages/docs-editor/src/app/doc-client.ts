@@ -7,6 +7,7 @@ import type { DocCapability } from '@open-artifact/runtime';
 import type { DocCallAnswer, DocEnum, DocFile, DocFrame, DocMember, DocProject, DocSessionResponse } from '@open-artifact/runtime/doc-api';
 import { TabBinding } from '../editor/binding.ts';
 import { type DocTransport, type ShadowCause, TabSync } from '../sync/tab-sync.ts';
+import { learnNames } from './people.ts';
 import { getDocs, orderedTabs, setDocs, useDocs } from './store.ts';
 
 type Json = Record<string, unknown>;
@@ -32,6 +33,8 @@ export class DocClient {
   private stopFrames: () => void = () => undefined;
   private calls = 0;
   private renewing: Promise<boolean> | null = null;
+  /** The session may write; the doc's lock may still keep it from writing. */
+  private mayWrite = false;
 
   private constructor(doc: DocCapability, started: DocSessionResponse) {
     this.doc = doc;
@@ -121,7 +124,10 @@ export class DocClient {
             for (const listener of this.shadowListeners) listener(id, doc, cause);
           },
           status: status => setDocs(state => ({ saving: { ...state.saving, [id]: status } })),
-          suggestions: suggestions => setDocs(state => ({ suggestions: { ...state.suggestions, [id]: suggestions } })),
+          suggestions: suggestions => {
+            learnNames(Object.fromEntries(suggestions.flatMap(suggestion => (suggestion.name ? [[suggestion.by, suggestion.name]] : []))));
+            setDocs(state => ({ suggestions: { ...state.suggestions, [id]: suggestions } }));
+          },
           answered: (answer, ops) => {
             for (const listener of this.answerListeners) listener(id, answer, ops);
           },
@@ -180,9 +186,17 @@ export class DocClient {
   }
 
   private adopt(answer: DocSessionResponse): void {
-    setDocs({ me: answer.me, writable: answer.writable && answer.sess !== null, commentable: answer.commentable });
-    for (const tab of this.open.values()) tab.binding.setWritable(answer.writable && answer.sess !== null);
+    learnNames(answer.people);
+    this.mayWrite = answer.writable && answer.sess !== null;
+    setDocs({ me: answer.me, commentable: answer.commentable });
     this.setProject(answer.project);
+  }
+
+  /** Writable while the session may write and no owner locked the doc. */
+  private applyWritable(): void {
+    const writable = this.mayWrite && !getDocs().project?.locked;
+    if (getDocs().writable !== writable) setDocs({ writable });
+    for (const tab of this.open.values()) tab.binding.setWritable(writable);
   }
 
   private setProject(project: DocProject): void {
@@ -191,7 +205,14 @@ export class DocClient {
     const active = getDocs().activeTab;
     const files = orderedTabs(next.files);
     const stillThere = active && files.some(file => file.id === active);
-    setDocs({ project: next, ...(stillThere ? {} : { activeTab: files[0]?.id ?? null }) });
+    const live = new Set(files.map(file => file.id));
+    setDocs(state => ({
+      project: next,
+      saving: Object.fromEntries(Object.entries(state.saving).filter(([tab]) => live.has(tab))),
+      suggestions: Object.fromEntries(Object.entries(state.suggestions).filter(([tab]) => live.has(tab))),
+      ...(stillThere ? {} : { activeTab: files[0]?.id ?? null }),
+    }));
+    this.applyWritable();
     for (const [id, tab] of this.open) {
       if (files.some(file => file.id === id)) continue;
       tab.sync.stop();

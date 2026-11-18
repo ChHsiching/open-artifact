@@ -7,7 +7,7 @@ import { Button } from '../../kit/button.tsx';
 import type { Dynamic } from '../../dynamic.ts';
 import * as React from 'react';
 import { jsx, jsxs } from 'react/jsx-runtime';
-import { FILE_UPLOAD_ICON } from '../../import/file-sources.ts';
+import { FILE_UPLOAD_ICON, IMPORT_FILE_SOURCES, type ImportFileSource } from '../../import/file-sources.ts';
 import { sheetMessages } from '../../i18n/sheet-messages.ts';
 import { importFileChoices } from '../../import/csv-file.ts';
 import { AGENT_ASK_PRESSED_MS } from './ways-in-state.ts';
@@ -21,18 +21,41 @@ import { translateMessage } from '../../i18n/messages.ts';
 export interface WaysInImportChoice {
   icon: React.ReactNode;
   name: string;
-  onChosen: () => void;
+  /** `'awaited'`: a way the agent offered before, kept in place (drawn disabled) while the offer is away for a moment. */
+  onChosen: (() => void) | 'awaited';
 }
-export function waysInImportChoices({ onImportChosen }: { onImportChosen: (choices: typeof importFileChoices) => void }): WaysInImportChoice[] {
+export interface WaysInImportProps {
+  onImportChosen: (choices: typeof importFileChoices) => void;
+  filesForAgent?: readonly ImportFileSource[];
+  onFileForAgentChosen?: (source: ImportFileSource) => void;
+}
+export function waysInImportChoices(
+  kinds: readonly ImportFileSource[],
+  { onImportChosen, filesForAgent = NO_FILES_FOR_AGENT, onFileForAgentChosen }: WaysInImportProps,
+): WaysInImportChoice[] {
+  let importIcon = jsx(Icon, {
+    name: FILE_UPLOAD_ICON,
+    size: 'sm',
+  });
+  if (kinds.length === 0)
+    return [
+      {
+        icon: importIcon,
+        name: sheetMessages.importFile(),
+        onChosen: (): void => onImportChosen(importFileChoices),
+      },
+    ];
   return [
-    {
-      icon: jsx(Icon, {
-        name: FILE_UPLOAD_ICON,
-        size: 'sm',
-      }),
-      name: sheetMessages.importFile(),
-      onChosen: (): void => onImportChosen(importFileChoices),
-    },
+    ...importFileChoices.map((importKind) => ({
+      icon: importIcon,
+      name: importKind.inMenu(),
+      onChosen: (): void => onImportChosen([importKind]),
+    })),
+    ...kinds.map((kind) => ({
+      icon: IMPORT_FILE_SOURCES[kind].mark,
+      name: IMPORT_FILE_SOURCES[kind].name(),
+      onChosen: filesForAgent.includes(kind) ? (): void => onFileForAgentChosen?.(kind) : ('awaited' as const),
+    })),
   ];
 }
 export function createFreshPaintClickGuard() {
@@ -124,7 +147,10 @@ export function WaysInToolbar({
     },
     [ref, rovingRef],
   );
-  let importChoices = waysInImportChoices(addChoiceProps);
+  let [keptKinds, setKeptKinds] = React.useState<readonly ImportFileSource[] | null>(null);
+  let kinds = keptFilesForAgent(keptKinds, addChoiceProps.filesForAgent ?? NO_FILES_FOR_AGENT);
+  if (kinds !== keptKinds) setKeptKinds(kinds);
+  let importChoices = waysInImportChoices(kinds, addChoiceProps);
   let isImportFolded = useWaysInOverflow(toolbarElement) && importChoices.length > 1;
   let drawnKey = [
     onAskAgent !== null,
@@ -275,6 +301,13 @@ export const waysInF6Hint = (canAskAgent?: Dynamic) =>
         defaultMessage: 'Press F6 to import a file.',
         id: 'Bsw9ujQHVi',
       });
+const NO_FILES_FOR_AGENT: readonly ImportFileSource[] = [];
+/** The agent's file ways stay put once drawn while they're offered again soon (drawn as awaited meanwhile). */
+export const keptFilesForAgent = (
+  keptKinds: readonly ImportFileSource[] | null,
+  filesForAgent: readonly ImportFileSource[],
+): readonly ImportFileSource[] =>
+  keptKinds !== null && (keptKinds.length > 0 || filesForAgent.length === 0) ? keptKinds : filesForAgent;
 export const WAYS_IN_FRESH_PAINT_MS = 400;
 export const cssPixels = (style?: Dynamic, property?: Dynamic) => {
   let pixels = Number.parseFloat(style.getPropertyValue(property));

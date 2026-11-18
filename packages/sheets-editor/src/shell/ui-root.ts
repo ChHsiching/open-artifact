@@ -57,7 +57,7 @@ export const preventMiddleClick = (event?: Dynamic) => {
 };
 export const renderInSheetsRoot = (children?: Dynamic) =>
   jsx(UiRoot, {
-    density: 'compact',
+    density: 'comfortable',
     className: 'contents',
     locale: MESSAGE_LOCALE,
     children: jsx('div', {
@@ -72,9 +72,9 @@ export const renderInSheetsRoot = (children?: Dynamic) =>
       }),
     }),
   });
-export const renderInCompactRoot = (children?: Dynamic) =>
+export const renderInPlaceholderRoot = (children?: Dynamic) =>
   jsx(UiRoot, {
-    density: 'compact',
+    density: 'comfortable',
     className: 'contents',
     children: children,
   });

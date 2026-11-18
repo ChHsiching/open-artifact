@@ -45,6 +45,7 @@ export interface HistoryEntry {
 
 /** A file both sides changed. */
 export interface Conflict {
+  recovered?: boolean;
   path: string;
   /** Our working copy (shown form). */
   mine: string | null;
@@ -91,7 +92,7 @@ export interface FilesState {
   title: string;
   readOnly: boolean;
   /** Why the page is read-only, when it is for a reason other than the viewer's role. */
-  readOnlyReason: 'off' | 'code' | null;
+  readOnlyReason: 'off' | 'code' | 'index' | null;
   listing: Record<string, ListedFile>;
   server: Record<string, string>;
   texts: Record<string, string | null>;

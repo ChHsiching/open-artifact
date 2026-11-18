@@ -31,6 +31,7 @@ import {
   blockXml,
   blocksToMarkdown,
   committed,
+  docToDisk,
   findBlock,
   findChar,
   githubSlug,
@@ -45,7 +46,8 @@ import {
   versionAt,
   walk,
 } from '@open-artifact/docs-core';
-import { DocStore, type EnumDef, FIRST_TAB_NAME, MANIFEST_FILE, SESSIONS_FILE, StoreError, TABS_DIR } from './store.ts';
+import { CommentStore } from '@open-artifact/server-sdk/comments';
+import { type DeletedTabInfo, DocStore, type EnumDef, FIRST_TAB_NAME, LOCKED_WORDS, MANIFEST_FILE, RESTORED_TAB_NAME, SESSIONS_FILE, StoreError, TABS_DIR, type UndeleteResult } from './store.ts';
 
 /** Who a call is made by: the owner (and the agent acting for them) or a guest. */
 export interface DocPerson {
@@ -156,11 +158,14 @@ const authorOf = (version: Version): Json => ({ by: version.by, ...(version.by =
 const viewXml = (doc: DocState, blocks: Block[], me: string) =>
   `<doc rev='${doc.rev}' complete='1'>\n${blocks.map(block => blockXml(block, { hashes: true, form: 'agent' })).join('\n')}${suggestionsXml(doc, proposalIds(blocks), me)}\n</doc>`;
 
-/** The open suggestions a read shows: who made each and when, `via='agent'` for an agent's, `mine='1'` for this user's, and `asOf`. */
+/**
+ * The open suggestions a read shows: who made each and when, `via='agent'` for an agent's, `mine='1'` for this agent's
+ * own (the person's own, made in Suggesting mode under the same user, are theirs, not the agent's), and `asOf`.
+ */
 function suggestionList(doc: DocState, ids: string[], me: string): Json[] {
   return ids.map(id => {
     const info: SuggestionInfo | undefined = doc.suggestions?.[id];
-    return { id, ...(info?.by ? { by: info.by } : {}), ...(info?.at ? { at: info.at } : {}), ...(info?.via ? { via: info.via } : {}), ...(info?.by === me ? { mine: true } : {}), asOf: suggestionAsOf(doc.blocks, id) };
+    return { id, ...(info?.by ? { by: info.by } : {}), ...(info?.at ? { at: info.at } : {}), ...(info?.via ? { via: info.via } : {}), ...(info?.via === 'agent' && info.by === me ? { mine: true } : {}), asOf: suggestionAsOf(doc.blocks, id) };
   });
 }
 
@@ -217,14 +222,21 @@ class Runner {
 
   /** Agent writes need hash guards on what they change; the page's own writes do not. */
   private guards: boolean;
+  /** The call is the page's (it reads tabs in the file format), not the agent's (markdown). */
+  private fromPage: boolean;
   /** Who the versions this call makes are by: a page session is a person, the CLI's is the agent (one version a call). */
   private writer: Writer;
+  /** The caller may lock and unlock the doc: an owner, or the agent acting for one. */
+  private mayLock: boolean;
 
-  constructor(store: DocStore, user: DocPerson, session: Session, guards = true) {
+  constructor(store: DocStore, user: DocPerson, session: Session, guards = true, mayLock = true) {
     this.store = store;
     this.user = user;
     this.session = session;
     this.guards = guards;
+    this.mayLock = mayLock;
+    // Only the page's calls go without guards.
+    this.fromPage = !guards;
     this.writer =
       store.sessionKind(session.sess) === 'page'
         ? { by: 'human', user: user.id, sess: session.sess }
@@ -265,10 +277,14 @@ class Runner {
     const id = ref && isId(ref.id) ? ref.id : '';
     const payload = isRecord(member.payload) ? member.payload : {};
     const verb = String(member.verb ?? '');
+    // A locked doc takes no change but its own unlock (or a new note on its lock); reads go on.
+    const lock = this.store.manifest.locked;
+    if (lock && verb !== 'read' && !(verb === 'update' && object === 'project' && isLockPatch(payload)))
+      throw new CallRefusal('locked', LOCKED_WORDS, { lockedBy: lock.by, lockedAt: lock.at, ...(lock.note ? { note: lock.note } : {}) });
     let ack: MemberAck;
     switch (`${verb} ${object}`) {
       case 'read project':
-        ack = { value: this.projectValue() };
+        ack = { value: payload.kind === 'deleted' ? (payload.id === undefined ? { deleted: this.store.deletedTabs() as unknown as Json[] } : this.deletedTab(payload.id)) : this.projectValue() };
         break;
       case 'read file':
         ack = { value: this.fileValue(this.tabId(id)) };
@@ -301,7 +317,7 @@ class Runner {
         ack = this.updateNode(id, payload);
         break;
       case 'delete file':
-        ack = this.deleteFile(this.tabId(id));
+        ack = this.deleteFile(this.tabId(id), payload);
         break;
       case 'delete node':
         if (this.store.tabOfNode(id)) throw new CallRefusal('tab_body', 'this is the body a tab shows; delete the tab (its file) instead');
@@ -318,6 +334,8 @@ class Runner {
 
   projectValue(): Json {
     const { manifest } = this.store;
+    // How many deleted tabs a restore can bring back (`read project` with payload {kind: 'deleted'} lists them).
+    const deleted = this.store.deletedTabs({ lines: false }).length;
     return {
       id: this.store.id,
       name: manifest.name,
@@ -326,6 +344,8 @@ class Runner {
       files: this.store.tabIds().map(id => this.fileValue(id)),
       ...(Object.keys(manifest.enums).length ? { enums: Object.entries(manifest.enums).map(([id, def]) => ({ id, name: def.name, options: def.options.map(option => option.name) })) } : {}),
       ...(manifest.display ? { display: manifest.display } : {}),
+      ...(deleted ? { deletedTabs: deleted } : {}),
+      ...(manifest.locked ? { locked: manifest.locked } : {}),
     };
   }
 
@@ -457,6 +477,25 @@ class Runner {
     return { enums, names: { [this.user.id]: this.user.name }, refs };
   }
 
+  /**
+   * A deleted tab's content, read-only (`read project` with payload `{kind: 'deleted', id}`): the page gets the tab as it
+   * was deleted (`doc`, in the file format, open suggestions left out), the agent its markdown.
+   */
+  deletedTab(id: unknown): Json {
+    if (!isId(id)) throw new CallRefusal('bad_ref', 'id names a deleted tab (read the project with payload {kind: "deleted"} for the list)', {}, 400);
+    let doc: DocState;
+    try {
+      doc = committed(this.store.deletedSnapshot(id));
+    } catch (error) {
+      if (error instanceof StoreError && error.code === 'NOT_DELETED') throw new CallRefusal('absent', `no deleted tab ${id}; read the project with payload {kind: "deleted"} for the list`, {}, 404);
+      if (error instanceof StoreError && error.code === 'BAD_TAB') throw new CallRefusal('unreadable', `the deleted tab ${id} can't be read`, {}, 500);
+      throw error;
+    }
+    const name = this.store.manifest.deleted?.[id]?.name ?? null;
+    const content: Json = this.fromPage ? { doc: docToDisk(doc) as unknown as Json } : { markdown: blocksToMarkdown(doc.blocks, this.markdownContext()) };
+    return { id, name, rev: doc.rev, ...content };
+  }
+
   markdown(tabId: string): string {
     // Markdown is the tab as it reads now: an open suggestion's words are not in it until the person accepts them.
     return blocksToMarkdown(committed(this.store.doc(tabId)).blocks, this.markdownContext());
@@ -518,6 +557,8 @@ class Runner {
   }
 
   createFile(payload: Json): Json {
+    if (payload.undelete !== undefined) return this.undeleteFile(payload.undelete);
+    if (payload.copyOf !== undefined) return this.copyDeletedFile(payload.copyOf);
     const value = isRecord(payload.value) ? payload.value : payload;
     const birthName = value.birthName ?? value.name;
     if (typeof birthName !== 'string' || !BIRTH_NAME.test(birthName) || birthName.trim() !== birthName)
@@ -593,6 +634,11 @@ class Runner {
       if (!isRecord(raw) || !Array.isArray(raw.path)) throw new CallRefusal('bad_patch', `patch ${index} needs op and path`, { patch: index }, 400);
       const [head, tabKey, field, ...rest] = raw.path.map(String);
       const op = raw.op;
+      // The lock: set locks the doc (value {note?}), delete unlocks it. Only an owner (or the agent for one) may.
+      if (head === 'locked' && raw.path.length === 1) {
+        this.setLock(op, raw.value, index);
+        continue;
+      }
       if (head === 'name' && raw.path.length === 1 && op === 'set') {
         this.rename(raw.value);
         continue;
@@ -641,6 +687,19 @@ class Runner {
     return {};
   }
 
+  private setLock(op: unknown, value: unknown, index: number): void {
+    if (op !== 'set' && op !== 'delete') throw new CallRefusal('bad_patch', `patch ${index}: locked takes set (lock, value {note?}) or delete (unlock)`, { patch: index }, 400);
+    if (!this.mayLock) throw new CallRefusal('not_owner', 'only an owner can lock or unlock this document', { patch: index }, 403);
+    if (op === 'delete') {
+      if (this.store.unlock()) this.changedProject = true;
+      return;
+    }
+    if (value !== undefined && value !== null && !isRecord(value)) throw new CallRefusal('bad_patch', `patch ${index}: a lock's value is {note?}`, { patch: index }, 400);
+    const note = isRecord(value) && typeof value.note === 'string' ? value.note.trim().slice(0, 1024) : '';
+    this.store.lock({ id: this.user.id, name: this.user.name }, note || undefined);
+    this.changedProject = true;
+  }
+
   private rename(name: unknown): void {
     if (typeof name !== 'string' || !name.trim()) throw new CallRefusal('bad_patch', 'the doc name is a non-empty string', {}, 400);
     this.store.rename(name.trim());
@@ -655,9 +714,76 @@ class Runner {
     return { noop: true };
   }
 
-  deleteFile(tabId: string): Json {
+  /**
+   * A deleted tab back (`{undelete: <tab id>}`, an id from a `read project` of kind `deleted`): with its name, body,
+   * history and the comments on it, at its old place or after the last tab; the subtabs deleted with it come too.
+   */
+  undeleteFile(id: unknown): Json {
+    if (!isId(id)) throw new CallRefusal('bad_ref', 'undelete names a deleted tab by its id (read the project with payload {kind: "deleted"} for the list)', {}, 400);
+    let result: UndeleteResult;
     try {
-      this.store.deleteTab(tabId);
+      result = this.store.undeleteTab(id);
+    } catch (error) {
+      if (error instanceof StoreError && error.code === 'TAB_EXISTS') throw new CallRefusal('already_restored', 'That tab has already been restored.', { minted: id });
+      if (error instanceof StoreError && error.code === 'NOT_DELETED') throw new CallRefusal('absent', `no deleted tab ${id}; read the project with payload {kind: "deleted"} for the list`, {}, 404);
+      if (error instanceof StoreError) throw new CallRefusal('unreadable', error.message, {}, 409);
+      throw error;
+    }
+    this.changedProject = true;
+    return { minted: result.id, body: this.store.tab(result.id).node, name: result.name, returnedTo: result.returnedTo, restored: result.restored };
+  }
+
+  /**
+   * A deleted tab's content as a new tab (`{copyOf: <tab id>}`), for when it can't come back itself: named as it was,
+   * after the last tab, its words as they read (open suggestions left out), with new block ids. Its comments and history
+   * stay with the deleted tab, which is still in the list.
+   */
+  copyDeletedFile(id: unknown): Json {
+    if (!isId(id)) throw new CallRefusal('bad_ref', 'copyOf names a deleted tab by its id (read the project with payload {kind: "deleted"} for the list)', {}, 400);
+    let doc: DocState;
+    try {
+      doc = this.store.deletedSnapshot(id);
+    } catch (error) {
+      if (error instanceof StoreError && error.code === 'NOT_DELETED') throw new CallRefusal('absent', `no deleted tab ${id}; read the project with payload {kind: "deleted"} for the list`, {}, 404);
+      if (error instanceof StoreError) throw new CallRefusal('unreadable', error.message, {}, 409);
+      throw error;
+    }
+    const name = this.store.deletedTabs({ lines: false }).flatMap(function flat(tab): DeletedTabInfo[] { return [tab, ...tab.subtabs.flatMap(flat)]; }).find(tab => tab.id === id)?.name ?? RESTORED_TAB_NAME;
+    const renew = (block: Block): Block => ({ ...block, id: this.take(), ...(block.children ? { children: block.children.map(renew) } : {}) });
+    const blocks = committed(doc).blocks.map(renew);
+    const tabId = this.store.addTab(name, blocks.length ? blocks : [this.emptyParagraph()]);
+    this.changedProject = true;
+    return { minted: tabId, body: this.store.tab(tabId).node, name };
+  }
+
+  /** The open comment threads on a tab (in the artifact's comments.json, beside the doc's folder). */
+  private threadsOn(tabId: string): string[] {
+    const threads = new CommentStore(path.dirname(this.store.root)).threads();
+    return threads
+      .filter(thread => {
+        try {
+          const anchor = JSON.parse(thread.anchor) as unknown;
+          return isRecord(anchor) && anchor.tab === tabId;
+        } catch {
+          return false;
+        }
+      })
+      .map(thread => thread.id);
+  }
+
+  deleteFile(tabId: string, payload: Json = {}): Json {
+    // The agent is told first when comments hang on the tab: they lose their place until it is restored.
+    if (this.guards && payload.allowDetach !== true) {
+      const threads = this.threadsOn(tabId);
+      if (threads.length)
+        throw new CallRefusal(
+          'anchors_affected',
+          `${threads.length} open comment thread${threads.length === 1 ? '' : 's'} hang${threads.length === 1 ? 's' : ''} on this tab and would be detached; send payload {allowDetach: true} to delete it anyway (a restore of the tab reattaches them)`,
+          { threads },
+        );
+    }
+    try {
+      this.store.deleteTab(tabId, { id: this.user.id, name: this.user.name, ...(this.writer.by === 'agent' ? { agent: true as const } : {}) });
     } catch (error) {
       if (error instanceof StoreError && error.code === 'LAST_TAB') throw new CallRefusal('last_tab', 'a doc keeps at least one tab; replace its contents instead');
       throw error;
@@ -748,7 +874,7 @@ const refusalBody = (error: CallRefusal, at?: number): Json => ({
 
 function asRefusal(error: unknown): CallRefusal {
   if (error instanceof CallRefusal) return error;
-  if (error instanceof StoreError) return new CallRefusal(error.code.toLowerCase(), error.message, {}, error.code === 'NO_TAB' ? 404 : 409);
+  if (error instanceof StoreError) return new CallRefusal(error.code.toLowerCase(), error.message, { ...error.data }, error.code === 'NO_TAB' ? 404 : 409);
   throw error;
 }
 
@@ -827,6 +953,11 @@ export function runCall(store: DocStore, call: unknown, user: DocPerson): CallOu
 
 const toolOf = (call: unknown) => (isRecord(call) ? call.tool : undefined);
 
+/** A doc update that only locks or unlocks it: every patch names `["locked"]`. */
+export function isLockPatch(payload: Json): boolean {
+  return payload.kind === 'patch' && Array.isArray(payload.patch) && payload.patch.length > 0 && payload.patch.every(raw => isRecord(raw) && Array.isArray(raw.path) && raw.path.length === 1 && raw.path[0] === 'locked');
+}
+
 /** A dropdown list from a call: `{name, options: [{name, order?, disabled?, color?} | "name", …]}`, up to 1000 options (as many as the page reads). */
 function enumDef(value: Json): EnumDef {
   const name = typeof value.name === 'string' ? value.name.trim().slice(0, 120) : '';
@@ -846,8 +977,8 @@ function enumDef(value: Json): EnumDef {
 }
 
 /** A page's call on tabs, dropdown lists or the doc (not its prose: the doc host writes that itself). */
-export function runPageMember(store: DocStore, member: Json, user: DocPerson, session: Session): CallOutcome {
-  const runner = new Runner(store, user, session, false);
+export function runPageMember(store: DocStore, member: Json, user: DocPerson, session: Session, options: { owner?: boolean } = {}): CallOutcome {
+  const runner = new Runner(store, user, session, false, options.owner === true);
   runner.lids.set('p', store.id);
   try {
     const { acks } = runMembers(store, runner, [member]);
@@ -863,8 +994,8 @@ export function runPageMember(store: DocStore, member: Json, user: DocPerson, se
  * The page's own batch, `{batch: [members]}`: a new tab is a file, its body node, the file pointing at that node and
  * the doc's tab entry, with `$lid` aliases between them. One transaction; each ack carries its verdict.
  */
-export function runPageBatch(store: DocStore, members: unknown[], user: DocPerson, session: Session): CallOutcome {
-  const runner = new Runner(store, user, session, false);
+export function runPageBatch(store: DocStore, members: unknown[], user: DocPerson, session: Session, options: { owner?: boolean } = {}): CallOutcome {
+  const runner = new Runner(store, user, session, false, options.owner === true);
   runner.lids.set('p', store.id);
   try {
     const { acks } = runMembers(store, runner, members);

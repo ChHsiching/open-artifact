@@ -13,3 +13,8 @@ import './comments/index.ts';
 import './tables/index.ts';
 import './code/index.ts';
 import './suggest/index.ts';
+import './layouts/index.ts';
+import './callout/index.ts';
+import './paste/index.ts';
+import './saving/index.ts';
+import './ask/index.ts';

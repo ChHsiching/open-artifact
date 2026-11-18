@@ -15,11 +15,12 @@
  *   handled like a conflict.
  */
 
-import { fileRole, generateSystemFiles } from '@open-artifact/design-system-core';
+import { hasMarker, fileRole, generateSystemFiles } from '@open-artifact/design-system-core';
 import { isArtifactError, type ConflictPath, type PublishBatch } from '@open-artifact/runtime';
 import { toast } from '@open-artifact/ui';
 import { dirtyPaths, fromDisk, isDirty, toDisk, useFiles, type AckFile, type FilesState, type ListedFile } from '../state/files.ts';
 import { deriveModel } from '../state/model.ts';
+import { startRecovery } from './recovery.ts';
 import { autoMerge } from '../lib/merge.ts';
 import { artifactPath, projectPath, session } from './session.ts';
 
@@ -30,8 +31,7 @@ const MAX_RETRIES = 4;
 const INDEX = 'design-system.json';
 
 let timer: ReturnType<typeof setTimeout> | null = null;
-let running = false;
-let again = false;
+let saving: Promise<void> | null = null;
 let offlineDelay = 2_000;
 
 /** Files the page writes itself; agents never do. */
@@ -61,7 +61,7 @@ export async function loadSystem(): Promise<void> {
     const listing: Record<string, ListedFile> = {};
     for (const [path, entry] of Object.entries(raw)) {
       const project = projectPath(path);
-      if (project) listing[project] = { hash: entry.sha256, size: entry.size };
+      if (project && !project.startsWith('_blobs/')) listing[project] = { hash: entry.sha256, size: entry.size };
     }
     const server: Record<string, string> = {};
     await Promise.all(
@@ -74,6 +74,7 @@ export async function loadSystem(): Promise<void> {
     const mode = editingMode(server[INDEX]);
     store.load({ title, readOnly: !canEdit || mode !== null, listing, server });
     useFiles.setState({ readOnlyReason: canEdit ? mode : null });
+    await startRecovery();
   } catch (error) {
     store.fail(error instanceof Error ? error.message : String(error));
     return;
@@ -93,12 +94,14 @@ export async function loadSystem(): Promise<void> {
 }
 
 /** `editing` of an index text: `"off"` and `"code"` make the page read-only. */
-function editingMode(indexText: string | undefined): 'off' | 'code' | null {
+function editingMode(indexText: string | undefined): FilesState['readOnlyReason'] {
   try {
-    const editing = (JSON.parse(indexText ?? '{}') as { editing?: unknown }).editing;
+    const index = JSON.parse(indexText ?? '{}');
+    if (!hasMarker(index) || typeof index.v !== 'number' || index.v < 3 || index.layout !== 'files') return 'index';
+    const editing = index.editing;
     return editing === 'off' || editing === 'code' ? editing : null;
   } catch {
-    return null;
+    return 'index';
   }
 }
 
@@ -195,54 +198,49 @@ function generatedFiles(indexText: string | undefined): Record<string, string | 
 /** Saves now (coalescing with a save already running). */
 export async function flush(): Promise<void> {
   if (useFiles.getState().readOnly) return;
-  if (running) {
-    again = true;
-    return;
-  }
-  running = true;
-  try {
-    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-      const { batch, sent } = collect();
-      if (Object.keys(batch).length === 0) break;
-      useFiles.getState().setSave('saving');
-      try {
-        const result = await session().artifact.publish(batch);
-        const ack: Record<string, AckFile> = {};
-        for (const [path, hash] of Object.entries(result.hashes)) {
-          const project = projectPath(path);
-          if (!project || !sent[project]) continue;
-          const { shown, disk } = sent[project];
-          // The working copy follows what we wrote unless the viewer typed since.
-          const adopt = useFiles.getState().texts[project] === shown;
-          ack[project] = disk === null ? { hash: null, adopt } : { text: disk, hash: hash ?? '', adopt };
-        }
-        useFiles.getState().acknowledge(ack);
-        offlineDelay = 2_000;
-        break;
-      } catch (error) {
-        if (isArtifactError(error, 'conflict') && attempt < MAX_RETRIES) {
-          await resolveConflicts(error.paths ?? []);
-          continue;
-        }
-        if (isArtifactError(error, 'not_writer')) {
-          useFiles.setState({ readOnly: true, save: 'readonly' });
-          toast.add({ title: 'You can no longer edit this design system', description: 'Your changes since the last save were not saved.' });
-          return;
-        }
-        useFiles.getState().setSave('offline');
-        offlineDelay = Math.min(offlineDelay * 2, 30_000);
-        schedule(offlineDelay);
+  while (saving) await saving;
+  if (useFiles.getState().readOnly) return;
+  saving = saveBatch().finally(() => { saving = null; });
+  await saving;
+}
+
+async function saveBatch(): Promise<void> {
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const { batch, sent } = collect();
+    if (Object.keys(batch).length === 0) break;
+    useFiles.getState().setSave('saving');
+    try {
+      const result = await session().artifact.publish(batch);
+      const ack: Record<string, AckFile> = {};
+      for (const [path, hash] of Object.entries(result.hashes)) {
+        const project = projectPath(path);
+        if (!project || !sent[project]) continue;
+        const { shown, disk } = sent[project];
+        // The working copy follows what we wrote unless the viewer typed since.
+        const adopt = useFiles.getState().texts[project] === shown;
+        ack[project] = disk === null ? { hash: null, adopt } : { text: disk, hash: hash ?? '', adopt };
+      }
+      useFiles.getState().acknowledge(ack);
+      offlineDelay = 2_000;
+      break;
+    } catch (error) {
+      if (isArtifactError(error, 'conflict') && attempt < MAX_RETRIES) {
+        await resolveConflicts(error.paths ?? []);
+        continue;
+      }
+      if (isArtifactError(error, 'not_writer')) {
+        useFiles.setState({ readOnly: true, save: 'readonly' });
+        toast.add({ title: 'You can no longer edit this design system', description: 'Your changes since the last save were not saved.' });
         return;
       }
+      useFiles.getState().setSave('offline');
+      offlineDelay = Math.min(offlineDelay * 2, 30_000);
+      schedule(offlineDelay);
+      return;
     }
-  } finally {
-    running = false;
   }
   const state = useFiles.getState();
-  if (again) {
-    again = false;
-    schedule(0);
-  } else if (isDirty(state) && dirtyPaths(state).some((path) => !state.conflicts.some((c) => c.path === path))) {
+  if (isDirty(state) && dirtyPaths(state).some((path) => !state.conflicts.some((c) => c.path === path))) {
     schedule();
   } else {
     state.setSave(isDirty(state) ? 'dirty' : 'saved');
@@ -269,7 +267,7 @@ export async function applyRemote(changes: Record<string, string | null>, option
   }
   for (const [path, hash] of Object.entries(changes)) {
     const project = projectPath(path);
-    if (!project) continue;
+    if (!project || project.startsWith('_blobs/')) continue;
     const state = useFiles.getState();
     if (!options.force && state.listing[project]?.hash === hash) continue;
     const dirty = dirtyPaths(state).includes(project) && !isGenerated(project);
@@ -441,12 +439,44 @@ export async function writeFiles(files: { path: string; data: Blob }[]): Promise
     const ack: Record<string, AckFile> = {};
     for (const file of files) {
       const hash = result.hashes[artifactPath(file.path)];
-      if (hash) ack[file.path] = { hash, size: file.data.size };
+      if (hash) ack[file.path] = { hash, size: file.data.size, ...(isTextPath(file.path) ? { text: await file.data.text() } : {}) };
     }
     useFiles.getState().acknowledge(ack);
     return true;
   } catch (error) {
     toast.add({ title: 'Upload failed', description: error instanceof Error ? error.message : String(error) });
+    return false;
+  }
+}
+
+/** Apply folder moves and their index metadata in one publish, so a failed move leaves the group intact. */
+export async function publishAssetMove(moves: Map<string, string>, index: Record<string, unknown>): Promise<boolean> {
+  const state = useFiles.getState();
+  if (state.readOnly || isDirty(state)) return false;
+  const indexText = JSON.stringify(index, null, 2) + '\n';
+  const batch: PublishBatch = { [artifactPath(INDEX)]: { content: indexText, ifMatch: state.listing[INDEX]!.hash } };
+  try {
+    for (const [from, to] of moves) {
+      if (!state.listing[from] || state.listing[to]) throw new Error(`Cannot move ${from} to ${to}.`);
+      const bytes = await session().artifact.readBytes(artifactPath(from));
+      batch[artifactPath(to)] = { content: toBase64(bytes), encoding: 'base64', ifMatch: null };
+      batch[artifactPath(from)] = null;
+    }
+    const latest = useFiles.getState();
+    if (latest.readOnly || isDirty(latest) || [...moves.keys()].some((from) => latest.listing[from]?.hash !== state.listing[from]?.hash)) {
+      throw new Error('Files changed during the move. Try again after they sync.');
+    }
+    const { hashes } = await session().artifact.publish(batch);
+    const ack: Record<string, AckFile> = { [INDEX]: { text: indexText, hash: hashes[artifactPath(INDEX)]! } };
+    for (const [from, to] of moves) {
+      const text = state.server[from];
+      ack[from] = { hash: null };
+      ack[to] = { hash: hashes[artifactPath(to)]!, size: state.listing[from]!.size, ...(text === undefined ? {} : { text }) };
+    }
+    useFiles.getState().acknowledge(ack);
+    return true;
+  } catch (error) {
+    toast.add({ title: 'Could not move the assets', description: error instanceof Error ? error.message : String(error) });
     return false;
   }
 }

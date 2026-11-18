@@ -60,7 +60,7 @@ export function findMatches(canvas: Canvas, template: (path: string) => Template
       .map((id) => [id, canvas.notes[id]!] as const)
       .sort(([, a], [, b]) => a.y - b.y || a.x - b.x);
     for (const [id, note] of notes) {
-      const text = `${note.text ?? ''}`;
+      const text = note.kind === 'link' ? note.title || note.text || note.href || '' : note.text ?? '';
       occurrences(text, needle).forEach((at, occurrence) => out.push({ kind: 'note', page, note: id, occurrence, text: excerpt(text, at, needle.length) }));
     }
   }

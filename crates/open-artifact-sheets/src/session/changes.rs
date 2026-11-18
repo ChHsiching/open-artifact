@@ -73,6 +73,10 @@ impl Changes {
         sheet.are_lines_changed = true;
     }
 
+    pub fn lines_changed(&self) -> bool {
+        self.sheets.values().any(|sheet| sheet.are_lines_changed)
+    }
+
     /// What the sheet's conditional formats give may have changed, whatever cells changed.
     pub fn formats_given(&mut self, sheet_id: &str) {
         self.sheet(sheet_id).are_formats_given_changed = true;

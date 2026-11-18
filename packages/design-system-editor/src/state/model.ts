@@ -5,6 +5,8 @@
  */
 
 import {
+  indexedUploads,
+  type AssetRecord,
   listAssets,
   listComponents,
   listSections,
@@ -25,6 +27,7 @@ import { fileMap, useFiles, type FilesState } from './files.ts';
 /** Everything the views read. */
 export interface SystemModel {
   files: Map<string, string>;
+  uploads: Map<string, AssetRecord>;
   index: SystemIndex;
   /** The index could not be parsed. */
   indexError: string | null;
@@ -69,7 +72,10 @@ export function deriveModel(state: Pick<FilesState, 'texts' | 'listing' | 'title
   const { readme, sections } = listSections(files);
   const assets = listAssets(index, files.keys());
   const components = all.filter((component) => component.name !== COVER);
+  const uploads = indexedUploads(index);
+  for (const path of files.keys()) uploads.delete(path);
   const model: SystemModel = {
+    uploads,
     files,
     index,
     indexError,
@@ -86,7 +92,13 @@ export function deriveModel(state: Pick<FilesState, 'texts' | 'listing' | 'title
       !tokens.colors.length &&
       !tokens.groups.length &&
       !tokens.spacing.length &&
-      !components.length &&
+      !tokens.radius.length &&
+      !tokens.shadows.length &&
+      !tokens.extras.some((family) => family.tokens.length) &&
+      !tokens.fonts.length &&
+      !sections.length &&
+      ![...files.keys()].some((path) => path.startsWith('fonts/')) &&
+      !all.length &&
       !assets.some((group) => group.items.length) &&
       !(readme && (files.get(readme.path) ?? '').trim()),
   };

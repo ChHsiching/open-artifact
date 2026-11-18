@@ -10,7 +10,7 @@ import type { EditQueuedOutcome, EditsDropped } from '../store/workbook-sync.ts'
 import type { ChartNodesCopiedFor, PageEvent } from './event-reducer.ts';
 import type { PageEffect, PageTransition } from './transitions.ts';
 import type { CauseOfWorkbookChange, OpenedWorkbook } from '../engine/worker-workbook.ts';
-import type { askToDescribeChartsForXlsx } from '../export/xlsx-chart-descriptions.ts';
+import type { askToDescribeChartsForXlsx, ChartsForXlsx } from '../export/xlsx-chart-descriptions.ts';
 import type { createAgentSampler } from '../agent/sampling.ts';
 import type { ColorPickerChoices, PageView, ViewOnlyBecause } from '../view/page-view.ts';
 import { findSheetById, layoutOfView } from '../grid/layout.ts';
@@ -2307,6 +2307,8 @@ export interface ChartDescribers {
   agent: AgentAskedByPage<ReturnType<typeof askToDescribeChartsForXlsx>['asked'], Awaited<ReturnType<ReturnType<typeof createAgentSampler>['ask']>>>;
   viewerAllowsAgent(): Promise<boolean>;
   codeOfChart(nodeId: string): Promise<string | null>;
+  /** The charts the server can describe for an Excel file itself, by view id. */
+  chartsForXlsx?: ChartsForXlsx;
 }
 /** An act told with an event, known by its kind. */
 interface ActWithKind {

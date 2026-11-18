@@ -36,8 +36,10 @@ export function normalizeHttpUrl(href: unknown, maxChars = MAX_IMAGE_HREF_CHARS)
 /** The canonical `open-artifact://artifact/<id>` form of an artifact address, if it is one. */
 export function normalizeArtifactAddress(href: unknown): string | undefined {
   if (typeof href !== 'string') return undefined;
-  const match = /^open-artifact:\/\/artifact\/([^/?#\s]+)$/.exec(href.trim());
-  return match !== null && ARTIFACT_ID.test(match[1]!) ? `open-artifact://artifact/${match[1]}` : undefined;
+  const text = href.trim();
+  if (text.length > MAX_LINK_HREF_CHARS || /[\s\p{Cc}]/u.test(text)) return undefined;
+  const match = /^open-artifact:\/\/artifact\/([^/?#]+)$/.exec(text);
+  return match !== null && ARTIFACT_ID.test(match[1]!) ? text : undefined;
 }
 
 /** A link card's address: an artifact address or a web URL. */
@@ -47,7 +49,7 @@ export function normalizeLinkHref(href: unknown): string | undefined {
 
 /** True when the card points at another artifact. */
 export function isArtifactLink(href: string): boolean {
-  return href.startsWith('open-artifact://artifact/');
+  return normalizeArtifactAddress(href) !== undefined;
 }
 
 /** A card title: whitespace collapsed, invisible characters dropped, capped. */

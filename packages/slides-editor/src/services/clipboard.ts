@@ -155,12 +155,12 @@ function pasteText(text: string): void {
 /** Installs the document copy / cut / paste handlers. Returns the uninstaller. */
 export function installClipboard(): () => void {
   const onCopy = (event: ClipboardEvent): void => {
-    if (inTextField(event.target) || useView.getState().presenting) return;
+    if (document.querySelector('[aria-modal="true"]') || inTextField(event.target) || useView.getState().presenting) return;
     const current = currentPayload();
     if (current) write(event, current.payload, current.text);
   };
   const onCut = (event: ClipboardEvent): void => {
-    if (inTextField(event.target) || useView.getState().presenting || !canChange()) return;
+    if (document.querySelector('[aria-modal="true"]') || inTextField(event.target) || useView.getState().presenting || !canChange()) return;
     const current = currentPayload();
     if (!current) return;
     write(event, current.payload, current.text);
@@ -168,7 +168,7 @@ export function installClipboard(): () => void {
     else deleteSelection();
   };
   const onPaste = (event: ClipboardEvent): void => {
-    if (inTextField(event.target) || useView.getState().presenting || !canChange()) return;
+    if (document.querySelector('[aria-modal="true"]') || inTextField(event.target) || useView.getState().presenting || !canChange()) return;
     const data = event.clipboardData;
     if (!data) return;
     const files = Array.from(data.files);

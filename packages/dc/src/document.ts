@@ -10,6 +10,12 @@ import { parseProps, type PropsSpec } from './props.ts';
 /** The line every artboard's `<head>` must carry; the editor swaps it for the runtime. */
 export const SUPPORT_SCRIPT_TAG = '<script src="./support.js"></script>';
 
+/** Finds the runtime tag in the head. Nested boards can address the project root. */
+export function supportScriptTag(source: string): string | null {
+  const head = /<head(?:\s[^>]*)?>([\s\S]*?)<\/head>/i.exec(source)?.[1];
+  return head?.match(/<script src="(?:\.\/|(?:\.\.\/)+)support\.js"><\/script>/)?.[0] ?? null;
+}
+
 /** A range of the source. */
 export interface SourceRange {
   start: number;
@@ -120,7 +126,7 @@ export function parseDcDocument(source: string): DcDocument {
     propsError,
     title: titleMatch ? decodeEntities(titleMatch[1]!.trim()) : null,
     lang: langMatch ? langMatch[1]! : null,
-    hasSupportScript: source.includes(SUPPORT_SCRIPT_TAG),
+    hasSupportScript: supportScriptTag(source) !== null,
     head,
   };
 }

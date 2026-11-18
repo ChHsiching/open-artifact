@@ -20,7 +20,7 @@ import { stageScale, useView } from '../state/view.ts';
 import { isPlaceable, pickFiles, placeFiles, replaceImage } from '../services/assets.ts';
 import { setClipboardRegion } from '../services/clipboard.ts';
 import { canChange, editableEntry } from '../services/commands.ts';
-import { canComment, elementAnchor, useComments } from '../services/comments.ts';
+import { useComments } from '../services/comments.ts';
 import { highlightMatches, useFind } from '../services/find.ts';
 import { resolveSrc } from '../services/session.ts';
 import { ContextMenu } from './ContextMenu.tsx';
@@ -143,13 +143,7 @@ export function Stage(): ReactNode {
     if (view.textEdit) view.endTextEdit();
     if (view.cropping) view.setCropping(null);
 
-    if (useComments.getState().on) {
-      if (!canComment()) return;
-      const path = pickAt(ctx, stored, event.clientX, event.clientY, []);
-      const point = toSlidePoint(ctx.root, event.clientX, event.clientY, ctx.scale);
-      useComments.getState().setDraft(elementAnchor(stored, path, point));
-      return;
-    }
+    if (useComments.getState().on) return;
     if (view.tool !== 'select') {
       startDraw(ctx, event, view.tool);
       return;

@@ -1,13 +1,12 @@
 /**
  * Rendering Markdown files, and editing them in place: the rendered text
- * turns into its source on double-click (or the Edit button) and commits on
- * blur or ⌘Enter. Links do not navigate: the page never opens addresses
- * written by others; the target shows on hover.
+ * saves as you type and can also be edited as source. Links open project files or web pages.
  */
 
 import { Bold, Check, Code, Heading1, Heading2, Heading3, Italic, Link, List, ListChecks, ListOrdered, Pencil, Quote, Strikethrough } from 'lucide-react';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Button, IconButton, cn } from '@open-artifact/ui';
+import { markdownOf } from '../lib/markdown-dom.ts';
 import { parseMarkdown, type Block, type Inline } from '../lib/markdown.ts';
 import { resolveProjectLink } from '../lib/color.ts';
 import { MOD } from '@open-artifact/editor-kit';
@@ -41,6 +40,8 @@ function InlineView({ runs, from }: { runs: readonly Inline[]; from: string }): 
             <InlineView runs={run.children} from={from} />
           </strong>
         );
+      case 'strike':
+        return <del key={index}><InlineView runs={run.children} from={from} /></del>;
       case 'em':
         return (
           <em key={index}>
@@ -53,16 +54,15 @@ function InlineView({ runs, from }: { runs: readonly Inline[]; from: string }): 
             {run.text}
           </code>
         );
-      case 'link':
-        return (
-          <span key={index} title={run.href} className="text-accent underline decoration-accent/40 underline-offset-2">
-            <InlineView runs={run.children} from={from} />
-          </span>
-        );
+      case 'link': {
+        const href = /^https?:\/\//i.test(run.href) ? run.href : resolveProjectLink(run.href, from);
+        const label = <InlineView runs={run.children} from={from} />;
+        return href ? <a key={index} data-target={run.href} href={href} target="_blank" rel="noopener noreferrer" className="text-accent underline">{label}</a> : <span key={index}>{label}</span>;
+      }
       case 'image': {
-        const src = resolveProjectLink(run.src, from);
+        const src = /^data:image\/(?:png|jpeg|gif|webp|avif);base64,/i.test(run.src) ? run.src : resolveProjectLink(run.src, from);
         return src ? (
-          <img key={index} src={src} alt={run.alt} className="my-2 inline-block max-h-64 max-w-full rounded" />
+          <img key={index} data-target={run.src} src={src} alt={run.alt} className="my-2 inline-block max-h-64 max-w-full rounded" />
         ) : (
           <span key={index} title={run.src} className="rounded border border-dashed border-line px-1 text-fg-subtle">
             {run.alt || 'image'}
@@ -80,7 +80,7 @@ function BlockView({ block, from }: { block: Block; from: string }): ReactNode {
     case 'heading': {
       const Tag = `h${Math.min(block.level + 1, 6)}` as 'h2';
       return (
-        <Tag className={cn('mt-6 mb-2 text-fg first:mt-0', HEADING[block.level - 1])}>
+        <Tag data-level={block.level} className={cn('mt-6 mb-2 text-fg first:mt-0', HEADING[block.level - 1])}>
           <InlineView runs={block.children} from={from} />
         </Tag>
       );
@@ -96,7 +96,8 @@ function BlockView({ block, from }: { block: Block; from: string }): ReactNode {
       return (
         <Tag className={cn('my-2 flex flex-col gap-1 pl-5', block.ordered ? 'list-decimal' : 'list-disc')}>
           {block.items.map((item, index) => (
-            <li key={index} className="leading-relaxed">
+            <li key={index} className={cn("leading-relaxed", item.checked !== undefined && "list-none")}>
+              {item.checked !== undefined && <input type="checkbox" checked={item.checked} disabled className="mr-1.5" />}
               <InlineView runs={item.children} from={from} />
               {item.sub ? <BlockView block={item.sub} from={from} /> : null}
             </li>
@@ -113,7 +114,7 @@ function BlockView({ block, from }: { block: Block; from: string }): ReactNode {
         </blockquote>
       );
     case 'code':
-      return <pre className="my-3 overflow-x-auto rounded-lg bg-surface-2 p-3 font-mono text-[12px] leading-relaxed text-fg">{block.text}</pre>;
+      return <pre data-lang={block.lang} className="my-3 overflow-x-auto rounded-lg bg-surface-2 p-3 font-mono text-[12px] leading-relaxed text-fg">{block.text}</pre>;
     case 'table':
       return (
         <div className="my-3 overflow-x-auto">
@@ -165,6 +166,63 @@ export interface EditableMarkdownProps {
   /** Shown when the source is empty. */
   placeholder?: string;
   className?: string;
+}
+
+/** Keep untouched blocks byte-for-byte when editing the rendered text. */
+function RichMarkdown({ source, from, onCommit, placeholder }: EditableMarkdownProps) {
+  const box = useRef<HTMLDivElement>(null);
+  const [focused, setFocused] = useState(false);
+  const [revision, setRevision] = useState(0);
+  const base = useRef(source);
+  const original = useRef(new Map<Node, { html: string; source: string }>());
+  const leading = useRef('');
+  const shown = focused ? base.current : source;
+  const { content, starts } = useMemo(() => {
+    const starts: number[] = [];
+    const blocks = parseMarkdown(shown, starts);
+    return { starts, content: blocks.map((block, i) => <div key={i}><BlockView block={block} from={from} /></div>) };
+  }, [from, shown]);
+  const save = () => {
+    if (!box.current) return;
+    const parts = Array.from(box.current.childNodes, (node) => {
+      const before = original.current.get(node);
+      if (node instanceof HTMLElement && before?.html === node.innerHTML) return before.source;
+      const suffix = before?.source.match(/\s*$/)?.[0] ?? '\n\n';
+      return markdownOf(node).trimEnd() + suffix;
+    });
+    onCommit(leading.current + parts.join(''));
+  };
+  return <div>
+    {focused && <div role="toolbar" aria-label="Format selection" className="mb-1 flex flex-wrap gap-1">
+      {([['Bold', 'bold', Bold], ['Italic', 'italic', Italic], ['Strikethrough', 'strikeThrough', Strikethrough],
+        ['Bulleted list', 'insertUnorderedList', List], ['Numbered list', 'insertOrderedList', ListOrdered]] as const).map(([label, command, Icon]) =>
+        <IconButton size="sm" key={command} label={label} icon={<Icon className="size-3.5" />}
+          onMouseDown={(event) => event.preventDefault()} onClick={() => document.execCommand(command)} />)}
+    </div>}
+    <div key={revision} ref={box} role="textbox" aria-label={from} aria-multiline contentEditable suppressContentEditableWarning
+      data-placeholder={placeholder} className="min-h-6 text-[14px] text-fg-muted outline-none empty:before:text-fg-subtle empty:before:content-[attr(data-placeholder)]"
+      onFocus={() => {
+        if (focused || !box.current) return;
+        base.current = source;
+        const lines = source.split(/\r?\n/);
+        const newline = source.includes('\r\n') ? '\r\n' : '\n';
+        const slice = (start: number, end: number) => lines.slice(start, end).join(newline) + (end < lines.length ? newline : '');
+        leading.current = slice(0, starts[0] ?? lines.length);
+        original.current.clear();
+        Array.from(box.current.children).forEach((node, i) => {
+          original.current.set(node, { html: node.innerHTML, source: slice(starts[i]!, starts[i + 1] ?? lines.length) });
+        });
+        setFocused(true);
+      }}
+      onInput={save}
+      onPaste={(event) => { event.preventDefault(); document.execCommand('insertText', false, event.clipboardData.getData('text/plain')); }}
+      onKeyDown={(event) => {
+        if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') event.currentTarget.blur();
+      }}
+      onBlur={() => { setFocused(false); setRevision((current) => current + 1); }}>
+      {content}
+    </div>
+  </div>;
 }
 
 /** A Markdown file that turns into its source for editing. */
@@ -267,11 +325,11 @@ export function EditableMarkdown({ source, from, readOnly, onCommit, placeholder
   }
 
   return (
-    <div className={cn('group relative', className)} onDoubleClick={start}>
-      {source.trim() ? <MarkdownView source={source} from={from} /> : <p className="text-[14px] italic text-fg-subtle">{placeholder}</p>}
+    <div className={cn('group relative', className)}>
+      {!readOnly ? <RichMarkdown source={source} from={from} readOnly={false} onCommit={onCommit} placeholder={placeholder} /> : source.trim() ? <MarkdownView source={source} from={from} /> : <p className="text-[14px] italic text-fg-subtle">{placeholder}</p>}
       {readOnly ? null : (
         <div className="absolute -top-1 right-0 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-          <IconButton size="sm" label="Edit" icon={<Pencil className="size-3.5" />} onClick={start} />
+          <IconButton size="sm" label="Edit Markdown source" icon={<Pencil className="size-3.5" />} onClick={start} />
         </div>
       )}
     </div>

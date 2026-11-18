@@ -11,6 +11,7 @@
  * existing item (a press there selects it).
  */
 
+import { ShapeFace } from '../elements/ShapeFace.tsx';
 import { useEffect, useRef, type ReactNode } from 'react';
 import {
   DEFAULT_STICKER_SIZE,
@@ -21,11 +22,7 @@ import {
   defaultShapeSize,
   inkColorOnFill,
   noteColorForAuthor,
-  roundedPolygonPathData,
   screenToBoard,
-  shapeFillPaint,
-  shapeOutlineColor,
-  shapeStrokePaint,
   type ShapeElement,
   type ShapeKind,
 } from '@open-artifact/whiteboard-core';
@@ -164,14 +161,9 @@ function BlockGhost({ ghost }: { ghost: Exclude<Ghost, { kind: 'sticker' }> }): 
   }
   const { w, h } = defaultShapeSize(ghost.shape);
   const element: ShapeElement = { type: 'shape', id: '', kind: ghost.shape, x: -w / 2, y: -h / 2, w, h, color: useTool.getState().shapeColor, size: 'body', text: '' };
-  const fill = shapeFillPaint(element);
-  const stroke = shapeStrokePaint(element, scheme);
-  const outline = stroke === 'none' && fill !== 'none' ? shapeOutlineColor(element) : stroke;
   return (
     <div className="wb-el wb-shape" style={{ left: -w / 2, top: -h / 2, width: w, height: h }}>
-      <svg className="wb-shape-svg" width={w} height={h} viewBox={`0 0 ${w} ${h}`}>
-        <path d={roundedPolygonPathData(ghost.shape, w, h, true)} fill={fill} stroke={outline} strokeWidth={outline === 'none' ? 0 : 1.5} />
-      </svg>
+      <ShapeFace element={element} scheme={scheme} />
     </div>
   );
 }

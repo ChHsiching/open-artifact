@@ -10,6 +10,7 @@
  * path disagree) is dropped instead of landing on the wrong element.
  */
 
+import { lookSplices, type ThemeLook } from './theme-look.ts';
 import {
   applySplices,
   duplicateElements,
@@ -59,6 +60,7 @@ export interface Address {
 export type BoardOp =
   | { kind: 'style'; targets: Address[]; patch: StylePatch }
   /** A different style patch per element, as one edit (nudging, pasting properties). */
+  | { kind: 'look'; look: ThemeLook }
   | { kind: 'styles'; edits: { target: Address; patch: StylePatch }[] }
   | { kind: 'attr'; target: Address; name: string; value: string | null }
   | { kind: 'text'; target: Address; text: string }
@@ -209,6 +211,9 @@ export function applyOp(source: string, op: BoardOp): OpResult | null {
   let splices: Splice[];
   try {
     switch (op.kind) {
+      case 'look':
+        splices = lookSplices(model, op.look);
+        break;
       case 'style': {
         const elements = resolveAll(model, op.targets);
         if (!elements) return null;

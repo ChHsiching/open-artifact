@@ -28,6 +28,19 @@ function decorations(doc: PMNode, folded: ReadonlySet<string>): DecorationSet {
     if (level) {
       const isFolded = !!node.attrs.bid && folded.has(node.attrs.bid);
       decos.push(Decoration.node(pos, pos + node.nodeSize, { class: isFolded ? 'doc-heading doc-heading-folded' : 'doc-heading' }));
+      if (node.attrs.bid) {
+        const label = (isFolded ? 'Expand section, ' : 'Collapse section, ') + node.textContent;
+        decos.push(Decoration.widget(pos + 1, view => {
+          const button = view.dom.ownerDocument.createElement('button');
+          button.type = 'button';
+          button.className = 'doc-fold-button';
+          button.setAttribute('aria-label', label);
+          button.setAttribute('aria-expanded', String(!isFolded));
+          button.onmousedown = event => event.preventDefault();
+          button.onclick = () => toggleFold(node.attrs.bid)(view.state, view.dispatch);
+          return button;
+        }, { side: -1, key: node.attrs.bid + ':' + label, stopEvent: () => true, ignoreSelection: true }));
+      }
       if (isFolded) hiding = level;
     }
   });
@@ -35,6 +48,9 @@ function decorations(doc: PMNode, folded: ReadonlySet<string>): DecorationSet {
 }
 
 export function foldPlugin(): Plugin<ReadonlySet<string>> {
+  let cachedDoc: PMNode | undefined;
+  let cachedIds: ReadonlySet<string> | undefined;
+  let cached = DecorationSet.empty;
   return new Plugin<ReadonlySet<string>>({
     key: foldKey,
     state: {
@@ -49,7 +65,15 @@ export function foldPlugin(): Plugin<ReadonlySet<string>> {
       },
     },
     props: {
-      decorations: state => decorations(state.doc, foldedIds(state)),
+      decorations(state) {
+        const ids = foldedIds(state);
+        if (state.doc !== cachedDoc || ids !== cachedIds) {
+          cachedDoc = state.doc;
+          cachedIds = ids;
+          cached = decorations(state.doc, ids);
+        }
+        return cached;
+      },
     },
   });
 }

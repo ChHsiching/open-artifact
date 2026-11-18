@@ -3,6 +3,7 @@
  * fitting content, and which artboards are on screen.
  */
 
+import { noteBounds } from '../lib/notes.ts';
 import { nextZoomStep, ZOOM_PRESETS } from '@open-artifact/canvas-engine/camera';
 import { boardsOnPage, notesOnPage, unionRect, type Canvas, type Rect } from '@open-artifact/design-core';
 import { useDocument } from '../state/document.ts';
@@ -42,28 +43,30 @@ export function zoomTo(zoom: number): void {
   view.setCamera(zoomAt(view.camera, zoom, viewportSize.width / 2, viewportSize.height / 2));
 }
 
-/** World rects of everything on a page. */
+const BOARD_HEADER_HEIGHT = 40;
+
+/** World rects of everything on a page, including the artboard title bars. */
 export function pageRects(canvas: Canvas, page: string | null): Rect[] {
   const rects: Rect[] = boardsOnPage(canvas, page).map((path) => {
     const entry = canvas.boards[path]!;
-    return { x: entry.x, y: entry.y - 28, w: entry.w, h: entry.h + 28 };
+    return { x: entry.x, y: entry.y - BOARD_HEADER_HEIGHT, w: entry.w, h: entry.h + BOARD_HEADER_HEIGHT };
   });
   for (const id of notesOnPage(canvas, page)) {
     const note = canvas.notes[id]!;
-    rects.push({ x: note.x, y: note.y, w: note.w ?? 240, h: note.h ?? 80 });
+    rects.push(noteBounds(note));
   }
   return rects;
 }
 
 /** Fits a world rect in the viewport with a margin. */
-export function fitRect(rect: Rect, margin = 64, maxZoom = 1): Camera {
+export function fitRect(rect: Rect, margin = 64, maxZoom = 1, top = 0): Camera {
   const width = Math.max(1, viewportSize.width - margin * 2);
-  const height = Math.max(1, viewportSize.height - margin * 2);
-  const zoom = Math.min(maxZoom, width / Math.max(1, rect.w), height / Math.max(1, rect.h));
+  const height = Math.max(1, viewportSize.height - top - margin * 2);
+  const zoom = Math.max(MIN_ZOOM, Math.min(maxZoom, width / Math.max(1, rect.w), height / Math.max(1, rect.h)));
   return {
     zoom,
     x: viewportSize.width / 2 - (rect.x + rect.w / 2) * zoom,
-    y: viewportSize.height / 2 - (rect.y + rect.h / 2) * zoom,
+    y: (viewportSize.height + top) / 2 - (rect.y + rect.h / 2) * zoom,
   };
 }
 
@@ -72,7 +75,7 @@ export function zoomToFit(): void {
   const { canvas } = useDocument.getState();
   const view = useView.getState();
   const rect = unionRect(pageRects(canvas, view.page));
-  if (rect) view.setCamera(fitRect(rect));
+  if (rect) view.setCamera(fitRect(rect, 48, 2, Math.min(56, viewportSize.height / 4)));
   else view.setCamera({ x: viewportSize.width / 2, y: viewportSize.height / 2, zoom: 1 });
 }
 

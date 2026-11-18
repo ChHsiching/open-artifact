@@ -24,6 +24,10 @@
  * their role (`sharing.ts`).
  */
 
+import type { ShellBoot } from '@open-artifact/protocol';
+import { groupUploadRecord, prepareSystemUpload, systemUploadLimit } from './design-system-upload.ts';
+import type { StoredBlob } from './store.ts';
+import { syncSystems } from './ds-sync.ts';
 import { randomBytes } from 'node:crypto';
 import { watch, type FSWatcher } from 'node:fs';
 import { mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
@@ -61,6 +65,7 @@ import { DbHost, threadRequestText, toHttpError } from './db-host.ts';
 import { HISTORY_AGENT, HistoryHost, personOf } from './history-host.ts';
 import { findChrome, snapshotPage } from './snapshot.ts';
 import { LanSharing, assertRoleMay, withShim, type ShareChange } from './sharing.ts';
+import { indexedUploads, normalizeSystemIndex } from '@open-artifact/design-system-core';
 import { sendArchive } from './archive.ts';
 import { ConnectorsHost } from './connectors.ts';
 import { McpError } from './mcp-client.ts';
@@ -116,7 +121,7 @@ export const SERVER_ACTIONS = [
     name: 'upload',
     title: 'Store a file as an upload (args.file: an absolute path); returns its /_blob/<id> url',
     effect: 'write',
-    schema: { type: 'object', properties: { file: { type: 'string', description: 'Absolute path of the file, at most 25 MB.' } }, required: ['file'] },
+    schema: { type: 'object', properties: { file: { type: 'string', description: 'Absolute path of the file, at most 25 MB.' }, group: { type: 'string', description: 'Required asset group for a design system.' } }, required: ['file'] },
   },
   {
     name: 'context',
@@ -207,6 +212,8 @@ interface Client {
   send(name: ServerEventName, payload: unknown): void;
   end(): void;
 }
+
+const FRAME_SHARE_PATH = '_api/frame/share';
 
 /** What a viewer hears of the agent: only the owner's page can send to it. */
 const agentFor = (viewer: Viewer, status: AgentStatus): AgentStatus => (viewer.role === 'owner' ? status : { ...status, available: false });
@@ -398,9 +405,9 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
           if (title) artifact.title = title;
         });
       },
-      sendThread: async (thread) => {
+      sendThread: async (thread, how) => {
         const request = normalizeRequest(
-          { text: threadRequestText(thread), title: `Comment: ${thread.label}`.slice(0, 80), context: { comment: { id: thread.id, where: thread.label, location: thread.location, messages: thread.messages.map((m) => ({ from: m.author?.kind ?? 'user', name: m.author?.name ?? '', text: m.text })) } } },
+          { text: threadRequestText(thread, how), title: `Comment: ${thread.label}`.slice(0, 80), context: { comment: { id: thread.id, where: thread.label, location: thread.location, messages: thread.messages.map((m) => ({ from: m.author?.kind ?? 'user', name: m.author?.name ?? '', text: m.text })) } } },
           'send',
         );
         const result = await sendToAgent({ root: artifact.root, artifactId: artifact.id, request, daemon });
@@ -422,11 +429,10 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
       title: artifact.title,
       ownerId: viewer.id,
       ownerName: viewer.name,
-      sendToAgent: (request) => {
-        void sendToAgent({ root: artifact.root, artifactId: artifact.id, request: normalizeRequest(request, 'send'), daemon })
-          .then((result) => log(`${artifact.id}: request "${request.title}" → ${result.status}`))
-          .catch((error: unknown) => log(`${artifact.id}: request "${request.title}" failed: ${error instanceof Error ? error.message : String(error)}`));
-        return true;
+      sendToAgent: async (request) => {
+        if (!(await refreshStatus(artifact)).available) return false;
+        const result = await sendToAgent({ root: artifact.root, artifactId: artifact.id, request: normalizeRequest(request, 'send'), daemon });
+        return result.status === 'delivered' || result.status === 'queued';
       },
       log: (line) => log(`${artifact.id}: ${line}`),
     });
@@ -438,7 +444,10 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
       owner: { id: viewer.id, name: viewer.name },
       emit: (frame, except) => {
         emit(artifact, 'doc', frame, except);
-        if (frame.kind === 'project') artifact.title = frame.project.name;
+        if (frame.kind === 'project' && artifact.title !== frame.project.name) {
+          artifact.title = frame.project.name;
+          void reportTouch(daemon, artifact.id, '', ['doc/doc.json'], artifact.title);
+        }
         if (frame.kind === 'tab') void reportTouch(daemon, artifact.id, frame.by === 'agent' ? 'agent' : 'owner', [`doc/tabs/${frame.tab}.json`]);
       },
       log: (line) => log(`${artifact.id}: ${line}`),
@@ -732,7 +741,7 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
       default: {
         const bytes = await readBody(req, MAX_UPLOAD);
         try {
-          return sendJson(res, 200, sheet.importFile(url.searchParams.get('name') ?? '', bytes));
+          return sendJson(res, 200, await sheet.importFile(url.searchParams.get('name') ?? '', bytes));
         } catch (error) {
           if (error instanceof SheetRefusalError) throw new HttpError(400, 'invalid', error.message, { ...error.body });
           throw error;
@@ -747,6 +756,8 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
     if (!doc) throw new HttpError(404, 'not_found', 'This artifact is not a doc.');
     try {
       if (route === DOC_API.exportFile) {
+        if (who.role !== 'owner') throw new HttpError(403, 'not_granted', 'Only the owner can export this document.');
+        if (req.method !== 'GET') throw new HttpError(405, 'invalid', 'GET required.');
         const file = await exportDocFile(doc.store, { id: viewer.id, name: viewer.name }, url.searchParams);
         return send(res, 200, file.bytes, file.mime, {
           'content-disposition': `attachment; filename="${file.name.replace(/[^\x20-\x7e]|"/g, '_')}"; filename*=UTF-8''${encodeURIComponent(file.name)}`,
@@ -819,6 +830,17 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
     const author = who.role === 'owner' ? 'owner' : `guest:${who.name}`;
 
     switch (route) {
+      case API.systemCopy: {
+        if (artifact.type !== 'design' || who.role !== 'owner') throw new HttpError(403, 'not_granted', 'Only the design owner can sync an installed system.');
+        if (method !== 'POST') throw new HttpError(405, 'invalid', 'POST required.');
+        const { namespace, action } = await readJson<{ namespace?: unknown; action?: unknown }>(req, 1024);
+        if (typeof namespace !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(namespace) || (action !== 'sync' && action !== 'status')) throw new HttpError(400, 'invalid', 'Invalid system copy request.');
+        const [diff] = await artifact.run(async () => syncSystems(artifact.root, 'design', { namespace, check: action === 'status' }));
+        const changed = (diff?.changed.length ?? 0) - (diff?.copied.length ?? 0);
+        const removed = diff?.removed.length ?? 0;
+        const state = !diff || diff.skipped ? 'unavailable' : diff.missing ? 'missing' : changed || removed ? 'behind' : 'current';
+        return sendJson(res, 200, { state, changed, removed });
+      }
       case API.session: {
         const agent = agentFor(who, await refreshStatus(artifact));
         const body: SessionResponse = {
@@ -826,6 +848,7 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
           viewer: who,
           agent,
           stores: {
+            ...(artifact.type === 'design' && who.role === 'owner' ? { systemCopy: true } : {}),
             ...(artifact.db ? { db: artifact.db.documents, comments: TYPES[artifact.type].comments === true } : {}),
             ...(artifact.history ? { history: true } : {}),
             ...(artifact.sheet ? { sheet: true } : {}),
@@ -871,11 +894,11 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
 
       case API.assets: {
         if (method !== 'POST') throw new HttpError(405, 'invalid', 'POST only.');
-        const bytes = await readBody(req, MAX_UPLOAD);
-        if (bytes.length === 0) throw new HttpError(400, 'invalid', 'Empty upload.');
         const name = url.searchParams.get('name') ?? '';
         const declared = String(req.headers['content-type'] ?? '');
         const type = declared && declared !== 'application/octet-stream' ? declared : mimeOf(name);
+        const bytes = await readBody(req, artifact.type === 'design-system' ? systemUploadLimit(name, type) : MAX_UPLOAD);
+        if (!bytes.length) throw new HttpError(400, 'invalid', 'Empty upload.');
         const blob = await artifact.store.putBlob(bytes, type);
         return sendJson(res, 200, { id: blob.id, url: `${BLOB_PREFIX}${blob.id}`, sizeBytes: blob.size, contentType: blob.contentType });
       }
@@ -1089,7 +1112,11 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
     snapshotTokens.add(token);
     let png: Buffer;
     try {
-      png = await snapshotPage(chrome, { url: new URL(`${artifact.type}/${token}/`, baseUrl).href, width, height });
+      const sheets = artifact.sheet?.agentRead({ kind: 'readSheets' }, artifact.sheet.revision).sheets;
+      png = await snapshotPage(chrome, {
+        url: new URL(`${artifact.type}/${token}/`, baseUrl).href, width, height,
+        ...(Array.isArray(sheets) && sheets.length > 0 && { ready: "document.querySelector('[role=gridcell]') !== null" }),
+      });
     } catch (error) {
       throw new HttpError(500, 'failed', `snapshot: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
@@ -1211,6 +1238,18 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
       throw new HttpError(404, 'not_found', `upload: cannot read ${file}.`);
     }
     if (bytes.length === 0 || bytes.length > MAX_UPLOAD) throw new HttpError(400, 'invalid_argument', 'upload: the file is empty or larger than 25 MB.');
+    if (type === 'design-system') {
+      const name = basename(file);
+      const group = args.group;
+      let key: string;
+      try {
+        key = await prepareSystemUpload(root, group, name, bytes.length);
+      } catch (error) {
+        throw new HttpError(400, 'invalid_argument', error instanceof Error ? error.message : String(error));
+      }
+      const blob = await store.putBlob(bytes, mimeOf(file));
+      return sendJson(res, 200, { upload: { ...groupUploadRecord(String(group), key, name, blob), size: blob.size, name } });
+    }
     const blob = await store.putBlob(bytes, mimeOf(file));
     return sendJson(res, 200, {
       upload: { url: `${BLOB_PREFIX}${blob.id}`, contentType: blob.contentType, size: blob.size, name: basename(file) },
@@ -1276,6 +1315,9 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
     const url = new URL(req.url ?? '/', baseUrl);
     const segments = url.pathname.split('/').slice(1).map((s) => decodeURIComponent(s));
 
+    if (url.pathname.startsWith('/_open-artifact/shell/assets/')) {
+      return serveFile(res, inside(resolve(options.assetsDir, 'shell/assets'), segments.slice(3).join('/')));
+    }
     if (segments[0] === '__open-artifact') return handleOpenArtifact(segments.slice(1).join('/'), req, res);
 
     // A share link: the name form, then the guest's cookie (`sharing.ts`).
@@ -1283,12 +1325,31 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
 
     if (url.pathname.startsWith(BLOB_PREFIX)) {
       const id = segments[1] ?? '';
-      for (const artifact of byId.values()) {
+      // Imported files sometimes keep their original id after the bytes were edited.
+      // Prefer the referring design. Some webviews omit the referrer; an unambiguous legacy id still resolves.
+      const ref = req.headers.referer;
+      const source = ref && URL.canParse(ref) ? byToken.get(new URL(ref).pathname.split('/')[2] ?? '') : undefined;
+      const artifacts = source ? [source, ...[...byId.values()].filter(a => a !== source)] : byId.values();
+      const legacy: StoredBlob[] = [];
+      const serveAsset = (asset: StoredBlob) => serveFile(res, asset.file, { 'content-security-policy': 'sandbox', 'x-content-type-options': 'nosniff', 'cache-control': 'private, no-store', vary: 'Referer, Cookie' }, req);
+      for (const artifact of artifacts) {
         // A guest reaches the uploads of what is shared with them only.
         if (!sharing.viewerOf(artifact, req, viewer)) continue;
         const blob = await artifact.store.findBlob(id);
-        if (blob) return serveFile(res, blob.file, { 'cache-control': 'public, max-age=31536000, immutable' }, req);
+        if (blob) return serveFile(res, blob.file, { 'content-type': blob.contentType, 'cache-control': 'public, max-age=31536000, immutable' }, req);
+        if (artifact.type === 'design-system') {
+          const imported = await new ArtifactStore(artifact.store.resolve(PROJECT_DIR)).findBlob(id);
+          if (imported) return serveAsset(imported);
+        }
+        if (artifact.type === 'design') {
+          const asset = await artifact.store.designAsset(id);
+          if (asset) {
+            if (artifact === source || asset.sha256.startsWith(id)) return serveAsset(asset);
+            legacy.push(asset);
+          }
+        }
       }
+      if (legacy.length === 1) return serveAsset(legacy[0]!);
       throw new HttpError(404, 'not_found', 'No such upload.');
     }
 
@@ -1312,15 +1373,52 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
 
     // A page loaded for a snapshot must not change anything (its view context is not the person's).
     if (rel.startsWith('_api/') && snapshotTokens.has(token!) && req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'OPTIONS') {
+      // The sheet reads both its workbook and chart projections with POST. Widget writes are refused for a viewer.
+      if (req.method === 'POST' && [SHEET_API.read, SHEET_API.widget, DOC_API.session, DOC_API.read, DOC_API.history, DOC_API.version].some(route => route === rel))
+        return handleApi(artifact, rel, req, res, url, { ...who, role: 'viewer' });
       req.resume();
       return sendJson(res, 200, { ok: true });
+    }
+    const canManageFrameShare = (artifact.type === 'docs' || artifact.type === 'sheets' || artifact.type === 'slides')
+      && who.role === 'owner' && sharing.isLocal(req) && !snapshotTokens.has(token!);
+    if (artifact.doc && (rel === '_api/frame/duplicate' || rel === '_api/frame/archive')) {
+      if (!canManageFrameShare) throw new HttpError(403, 'not_granted', 'Only the local owner can copy this document.');
+      if (rel.endsWith('/archive')) return sendArchive(req, res, artifact.root);
+      if (req.method !== 'POST') throw new HttpError(405, 'invalid', 'POST required.');
+      assertSameOrigin(artifact, req);
+      const args = await readJson<Record<string, unknown>>(req, 2048);
+      const answer = await artifact.run(() => runDocAction('duplicate', args, { root: artifact.root, owner: viewer, host: artifact.doc! }));
+      if (answer.status !== 201) return sendJson(res, answer.status, answer.body);
+      const copy = await open({ root: String(answer.body.root), type: 'docs', title: String(answer.body.name) });
+      return sendJson(res, 201, { url: copy.pageUrl });
+    }
+    if (rel === FRAME_SHARE_PATH) {
+      if (!canManageFrameShare)
+        throw new HttpError(403, 'not_granted', 'Only the local owner can manage sharing.');
+      if (req.method === 'GET') return sendJson(res, 200, sharing.view(artifact.id));
+      if (req.method !== 'POST') throw new HttpError(405, 'invalid', 'GET or POST required.');
+      // This is a same-origin Shell control. Embedded editors use the separate capability broker.
+      if ((req.headers.origin && req.headers.origin !== 'http://' + req.headers.host) || req.headers['sec-fetch-site'] === 'cross-site') {
+        throw new HttpError(403, 'not_granted', 'Sharing settings must be changed from the local frame.');
+      }
+      const change = await readJson<ShareChange>(req);
+      return sendJson(res, 200, await artifact.run(() => sharing.change(artifact.id, change)));
     }
     if (rel.startsWith('_api/')) return handleApi(artifact, rel, req, res, url, who);
 
     if (rest[rest.length - 1] === 'support.js') return serveFile(res, resolve(options.assetsDir, 'support.js'));
 
     if (rest[0] === PROJECT_DIR) {
-      const { bytes, sha256: hash } = await artifact.store.read(rel);
+      const { bytes, sha256: hash } = await artifact.store.read(rel).catch(async (error: unknown) => {
+        if (artifact.type !== 'design-system' || !(error instanceof HttpError) || error.status !== 404 || !/^project\/(?:fonts|assets)\//.test(rel)) throw error;
+        const { bytes: json } = await artifact.store.read('project/design-system.json');
+        const record = indexedUploads(normalizeSystemIndex(JSON.parse(json.toString()))).get(rest.slice(1).join('/'));
+        if (!record) throw error;
+        const blob = await artifact.store.findBlob(record.blob) ?? await new ArtifactStore(artifact.store.resolve(PROJECT_DIR)).findBlob(record.blob);
+        if (!blob) throw error;
+        const bytes = await readFile(blob.file);
+        return { bytes, sha256: sha256(bytes) };
+      });
       const type = mimeOf(rel);
       // Artifact HTML opened directly runs in an opaque origin, away from the page API.
       const headers: Record<string, string> = { [SHA_HEADER]: hash };
@@ -1332,6 +1430,22 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
       return send(res, 200, bytes, type, headers);
     }
 
+    // The public canvas or deck URL and LAN invites land in the same frame Shell as /a/<id>.
+    // Daemon frames, explicit editor pages and internal snapshots load the editor directly.
+    if ((artifact.type === 'docs' || artifact.type === 'slides' || artifact.type === 'design' || artifact.type === 'sheets') && !rel && !url.searchParams.has('open_artifact_shell') && !snapshotTokens.has(token!)) {
+      const template = await readFile(resolve(options.assetsDir, 'shell/index.html'), 'utf8');
+      const page = new URL('./index.html', 'http://' + req.headers.host + url.pathname).href;
+      const roleLink = who.role === 'owner' ? undefined : sharing.view(artifact.id).links[who.role]?.url;
+      const invite = roleLink && new URL(new URL(roleLink).pathname, page).href;
+      const boot: ShellBoot = {
+        id: artifact.id, type: artifact.type, typeTitle: TYPES[artifact.type].title, title: artifact.title, root: '', page, pageUrl: page,
+        url: 'open-artifact://artifact/' + artifact.id, pageKind: null, problem: null, empty: false, prompt: null,
+        owner: null, userName: who.role === 'owner' ? who.name : '', agentName: 'Agent', version: SERVER_VERSION,
+        typeServer: { role: who.role, invite, ...(canManageFrameShare && { sharePath: FRAME_SHARE_PATH }) },
+      };
+      const html = template.replace('/*__OPEN_ARTIFACT_BOOT__*/null', () => JSON.stringify(boot).replace(/</g, '\\u003c'));
+      return send(res, 200, who.role === 'owner' ? html : withShim(html), mimeOf('index.html'), { 'cache-control': 'private, no-store', vary: 'Cookie' });
+    }
     const file = rel === '' || rel === 'index.html' ? 'index.html' : rel;
     const dir = editorDir(artifact.type);
     const pageHeaders: Record<string, string> = file === 'index.html' ? { 'content-security-policy': "frame-ancestors *; object-src 'none'" } : {};
@@ -1339,7 +1453,7 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
     if (file === 'index.html' && who.role !== 'owner') {
       const html = await readFile(inside(dir, file), 'utf8').catch(() => null);
       if (html === null) throw new HttpError(404, 'not_found', 'Not found.');
-      return send(res, 200, withShim(html), mimeOf(file), pageHeaders);
+      return send(res, 200, withShim(html), mimeOf(file), { ...pageHeaders, 'cache-control': 'private, no-store', vary: 'Cookie' });
     }
     return serveFile(res, inside(dir, file), pageHeaders);
   };

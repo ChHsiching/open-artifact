@@ -188,6 +188,8 @@ export const LIBRARY_ROUTES = {
  * object. The Shell reads it from `window.__OPEN_ARTIFACT_BOOT__`.
  */
 export interface ShellBoot {
+  /** The same Shell served by a type server for CLI and LAN visits, without the daemon library. */
+  typeServer?: { role: 'owner' | 'editor' | 'commenter' | 'viewer'; invite?: string; sharePath?: string };
   id: string;
   url: string;
   title: string;

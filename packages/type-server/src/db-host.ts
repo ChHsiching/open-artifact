@@ -72,8 +72,8 @@ export interface DbHostOptions {
   onExternal?(paths: string[]): void;
   /** A page wrote these document paths. */
   onWrite?(paths: string[], client: string): void;
-  /** Hands a thread to the agent; resolves whether it was delivered now. */
-  sendThread?(thread: Thread): Promise<'delivered' | 'queued' | 'failed'>;
+  /** Hands a thread to the agent (`unasked`: a reply that does not ask it); resolves whether it was delivered now. */
+  sendThread?(thread: Thread, how?: SendHow): Promise<'delivered' | 'queued' | 'failed'>;
   log?(message: string): void;
   /**
    * False for a type that keeps comments but no document store (its files
@@ -186,6 +186,7 @@ export function pageThread(thread: Thread): CommentThread {
     location: (isPlain(thread.location) ? thread.location : {}) as JsonRecord,
     status: thread.status === 'resolved' ? 'resolved' : 'open',
     ...(thread.agent ? { agent: { status: thread.agent.status } } : {}),
+    ...(thread.status === 'resolved' && thread.resolvedBy ? { resolvedBy: pageAuthor(thread.resolvedBy) } : {}),
     messages: thread.messages.map((message) => ({
       id: message.id,
       author: pageAuthor(message.author),
@@ -194,6 +195,7 @@ export function pageThread(thread: Thread): CommentThread {
       ...(message.editedAt ? { editedAt: message.editedAt } : {}),
       ...(message.to?.length ? { to: [...message.to] } : {}),
       ...(message.reactions?.length ? { reactions: pageReactions(message.reactions) } : {}),
+      ...(message.joined ? { joined: true } : {}),
     })),
   };
 }
@@ -213,8 +215,16 @@ function pageReactions(reactions: readonly MessageReaction[]): CommentReaction[]
   return [...byEmoji].map(([emoji, authors]) => ({ emoji, authors }));
 }
 
+/** How a thread goes to the agent: `unasked`, a reply that does not @mention it, in a thread it took part in. */
+export interface SendHow {
+  unasked?: boolean;
+}
+
 /** The text of the request that hands a thread to the agent (the thread itself travels as data). */
-export function threadRequestText(thread: Thread): string {
+export function threadRequestText(thread: Thread, how: SendHow = {}): string {
+  if (how.unasked) {
+    return `A new reply in the comment thread on "${thread.label}", which you took part in, was sent to you without being addressed to you (it does not @mention you). Read the thread (ArtifactComments read, or the context below) and decide whether the reply is for you. If it is, do what it asks and answer briefly in the thread; if it is a note for the writer or for someone else, leave it: no reply is needed.`;
+  }
   return `A comment thread on "${thread.label}" was sent to you. Read it (ArtifactComments read, or the context below), act on it, and reply in the thread.`;
 }
 
@@ -479,13 +489,17 @@ export class DbHost {
     return guarded(() => this.comments.find(this.comments.load(), id));
   }
 
-  /** `send`: marks the thread for the agent and hands it over. */
-  async sendThread(threadId: string): Promise<Thread> {
-    let thread = guarded(() => this.comments.markSent(threadId));
+  /**
+   * `send`: marks the thread for the agent and hands it over. `unasked` (a reply that does not ask the agent, in a
+   * thread it took part in) keeps the thread's status: the agent may leave it.
+   */
+  async sendThread(threadId: string, how: SendHow = {}): Promise<Thread> {
+    const unasked = how.unasked === true;
+    let thread = guarded(() => this.comments.markSent(threadId, { unasked }));
     this.commentsChanged();
-    const outcome = this.options.sendThread ? await this.options.sendThread(thread) : 'queued';
+    const outcome = this.options.sendThread ? await this.options.sendThread(thread, unasked ? { unasked } : {}) : 'queued';
     if (outcome === 'failed') throw new HttpError(503, 'unavailable', 'The agent could not be reached; the thread stays marked for it.');
-    if (outcome === 'delivered') {
+    if (outcome === 'delivered' && !unasked) {
       thread = guarded(() => this.comments.markDelivered(thread.id, 'hook'));
       this.commentsChanged();
     }
@@ -569,7 +583,7 @@ export class DbHost {
       case API.commentsResolve: {
         postOnly();
         const body = await readJson<Partial<CommentResolveRequest>>(req, MAX_COMMENT_BODY);
-        const thread = guarded(() => this.comments.setResolved(body.threadId, body.resolved !== false));
+        const thread = guarded(() => this.comments.setResolved(body.threadId, body.resolved !== false, this.viewer(as?.name)));
         this.commentsChanged();
         sendJson(res, 200, { thread: pageThread(thread) } satisfies CommentThreadResponse);
         return true;
@@ -596,7 +610,7 @@ export class DbHost {
         const body = await readJson<Partial<CommentSendRequest>>(req, MAX_COMMENT_BODY);
         if (typeof body.threadId !== 'string') throw new HttpError(400, 'invalid', 'threadId is required.');
         this.threadById(body.threadId);
-        const thread = await this.sendThread(body.threadId);
+        const thread = await this.sendThread(body.threadId, { unasked: body.unasked === true });
         sendJson(res, 200, { thread: pageThread(thread) } satisfies CommentThreadResponse);
         return true;
       }
@@ -656,7 +670,7 @@ export class DbHost {
         return { thread: agentView(thread) };
       }
       case 'open-artifact.comments.resolve': {
-        const thread = guarded(() => this.comments.setResolved(args.thread_id, !args.reopen));
+        const thread = guarded(() => this.comments.setResolved(args.thread_id, !args.reopen, { ...AGENT_AUTHOR }));
         this.commentsChanged();
         return { thread: agentView(thread) };
       }

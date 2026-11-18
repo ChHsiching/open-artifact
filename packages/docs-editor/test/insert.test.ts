@@ -319,6 +319,7 @@ describe('mentions', () => {
   it('matches any word of a name', () => {
     assert.deepEqual(labels(mentionOptions('qu', world)), ['Mara Quinn']);
     assert.deepEqual(labels(mentionOptions('ag', world)), ['Agent']);
+    assert.deepEqual(labels(mentionOptions('ag', { ...world, askAgent: () => {} })), ['Ask Agent']);
     assert.deepEqual(labels(mentionOptions('no', world)), ['Notes']);
   });
 

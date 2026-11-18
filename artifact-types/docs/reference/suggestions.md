@@ -20,7 +20,8 @@ suggestions", "so I can review"); otherwise write directly.
   `ifHash` or `force` (`bad_op`); `ifRev` is its only guard.
 - The view marks its words `<del s='sg_…'>` and `<ins s='sg_…'>`, and a block it adds or deletes carries
   `suggest='ins'` or `'del'` and `s='sg_…'`. Both end with `<suggestions>`: each open one with `by`, `at`,
-  `via='agent'` for an agent's, `mine='1'` for yours, and `asOf`. `read <root> <tab> --suggestions` lists the same
+  `via='agent'` for an agent's, `mine='1'` for yours, and `asOf`. One without `via` is the person's, made in
+  Suggesting mode in the page: leave it to them, and write around it as around any open suggestion. `read <root> <tab> --suggestions` lists the same
   as JSON.
 - Until the person accepts it, it is not in the doc as it reads: `--markdown` and `export` keep the struck words and
   leave out the added ones.

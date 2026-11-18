@@ -5,6 +5,7 @@ import type { DocFile, DocMember } from '@open-artifact/runtime/doc-api';
 import { toast } from '@open-artifact/ui';
 import { CallDenied, docClient } from '../app/doc-client.ts';
 import { session } from '../app/session.ts';
+import { docLinkBase } from '../selbar/navigate.ts';
 import { showTab } from '../app/start.ts';
 import { getDocs } from '../app/store.ts';
 import { deleteMembers, duplicateMembers, mintedTab, moveMember, newTabMembers, renameMember } from './members.ts';
@@ -134,9 +135,9 @@ export async function dropTabAtEnd(id: string): Promise<void> {
 
 /** This page's address, opening on tab `id`. */
 export function tabLink(id: string): string {
-  const url = new URL(location.href);
-  url.hash = '';
-  url.searchParams.set('tab', id);
+  const url = docLinkBase();
+  url.searchParams.delete('tab');
+  url.hash = id;
   return url.toString();
 }
 

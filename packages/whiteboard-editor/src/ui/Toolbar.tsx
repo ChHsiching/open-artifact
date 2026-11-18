@@ -2,7 +2,7 @@
  * The tool bar at the foot of the board and its trays.
  *
  * Left to right: Select, Hand, then (for editors) Text, Section, Sticky,
- * Draw, Shapes, Stickers; the comment toggle; and pinned at the right end,
+ * Draw, Shapes, Stickers; the standalone comment toggle; and pinned at the right end,
  * past a divider, the "Ask <agent>" pill. A viewer gets Select and Hand only.
  *
  * Draw and Shapes remember their last pick; while one of their tools is on,
@@ -35,7 +35,7 @@ import { StickerPicker } from './StickerPicker.tsx';
 import { Card, ChromeButton, ChromeDivider, ChromePopover, SwatchRow, Tip, TipGroup, ToolButton, type Swatch } from './chrome.tsx';
 
 /** File types the picture picker accepts. */
-export const PICTURE_ACCEPT = 'image/png,image/jpeg,image/gif,image/webp,image/svg+xml,video/mp4,video/webm,video/quicktime';
+export const PICTURE_ACCEPT = 'image/png,image/jpeg,image/gif,image/webp,image/svg+xml,image/avif,image/bmp,video/mp4,video/webm,video/quicktime';
 
 /** Picks a tool from a toolbar button: the active tool again goes back to Select. */
 function pickFromButton(next: ToolPick): void {
@@ -77,7 +77,7 @@ function BoardToolbar({ touch }: { touch: boolean }) {
   const agent = useAgent();
   const session = maybeSession();
   const canEdit = session?.canEdit ?? false;
-  const canComment = Boolean(session?.comments) && (session?.canComment ?? false);
+  const standaloneComment = !session?.shell && session?.comments && session.canComment;
   const shown: ToolName = handOverride ? 'hand' : tool;
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -147,7 +147,7 @@ function BoardToolbar({ touch }: { touch: boolean }) {
           <StickerButton keysOn={keysOn} onUpload={() => fileInput.current?.click()} />
         </>
       ) : null}
-      {canComment ? (
+      {standaloneComment ? (
         <ToolButton
           label="Comment"
           tip={commentMode ? 'Comment mode is on: click the board to comment' : 'Comment'}

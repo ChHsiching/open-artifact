@@ -1,7 +1,7 @@
-/** The open tab's name in the page bar; it opens the tab list, with new tab, import and where the tabs show. */
+/** The open tab's name in the page bar; it opens the tab list, with new tab, import, deleted tabs and where the tabs show. */
 import { ChromeButton, ChromeDivider, ChromePopover, PanelEdge, usePanelWidth } from '@open-artifact/editor-kit/react';
 import { cn, SwitchInput } from '@open-artifact/ui';
-import { ChevronDown, FileUp, Plus } from 'lucide-react';
+import { ArchiveRestore, ChevronDown, FileUp, Plus } from 'lucide-react';
 import { type ReactNode, useId, useMemo } from 'react';
 import { useDisplay, useDocs } from '../app/store.ts';
 import { writeDisplay } from '../page/display.ts';
@@ -64,6 +64,14 @@ export function TabPicker(): ReactNode {
           >
             <FileUp className="size-4" strokeWidth={1.75} />
             Import file…
+          </ChromeButton>
+          <ChromeButton
+            className="w-full justify-start gap-2 px-2 text-chrome-muted"
+            data-testid="tabs-deleted-row"
+            onClick={() => setTabsUi({ pickerOpen: false, renaming: null, deletedOpen: true })}
+          >
+            <ArchiveRestore className="size-4" strokeWidth={1.75} />
+            Deleted tabs
           </ChromeButton>
           <ChromeDivider vertical={false} />
           <ShowOnPageRow />

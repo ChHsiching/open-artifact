@@ -72,6 +72,8 @@ export interface ViewState {
   mode: 'canvas' | 'focused';
   /** The artboard shown in the focused view. */
   focused: string | null;
+  focusedExportWidth: number | null;
+  playing: string | null;
   /** Right panel. */
   panel: 'properties' | 'code' | 'tweaks' | 'theme';
   panelOpen: boolean;
@@ -115,6 +117,7 @@ export interface ViewActions {
   patchTextEdit(patch: Partial<TextEditState>): void;
   setNoteEdit(id: string | null): void;
   focus(path: string | null): void;
+  play(path: string | null): void;
   setPanel(panel: ViewState['panel'], open?: boolean): void;
   togglePanel(): void;
   frame(path: string, patch: Partial<FrameInfo>): void;
@@ -136,9 +139,9 @@ const TOOLBAR_KEY = 'mc-toolbar/top';
 
 function storedToolbarTop(): boolean {
   try {
-    return typeof localStorage !== 'undefined' && localStorage.getItem(TOOLBAR_KEY) === '1';
+    return typeof localStorage === 'undefined' || localStorage.getItem(TOOLBAR_KEY) !== '0';
   } catch {
-    return false;
+    return true;
   }
 }
 
@@ -153,6 +156,8 @@ export const useView = create<ViewState & ViewActions>()((set, get) => ({
   noteEdit: null,
   mode: 'canvas',
   focused: null,
+  focusedExportWidth: null,
+  playing: null,
   panel: 'properties',
   panelOpen: false,
   frames: {},
@@ -170,13 +175,13 @@ export const useView = create<ViewState & ViewActions>()((set, get) => ({
     set({ camera: { ...camera, zoom } });
   },
   setPage(page) {
-    if (get().page !== page) set({ page, selection: NO_SELECTION, hover: null, peek: null, crop: null });
+    if (get().page !== page) set({ page, playing: null, selection: NO_SELECTION, hover: null, peek: null, crop: null });
   },
   setTool(tool) {
-    set({ tool });
+    set({ tool, playing: null });
   },
   select(selection) {
-    set({ selection, noteEdit: null, ...(get().crop ? { crop: null } : {}) });
+    set({ selection, playing: null, noteEdit: null, ...(get().crop ? { crop: null } : {}) });
   },
   setHover(hover) {
     const current = get().hover;
@@ -197,7 +202,10 @@ export const useView = create<ViewState & ViewActions>()((set, get) => ({
     set({ noteEdit });
   },
   focus(path) {
-    set(path ? { mode: 'focused', focused: path, hover: null } : { mode: 'canvas', focused: null });
+    set(path ? { mode: 'focused', focused: path, playing: null, hover: null } : { mode: 'canvas', focused: null });
+  },
+  play(path) {
+    set({ playing: path, hover: null, selection: NO_SELECTION, tool: 'select', noteEdit: null, textEdit: null });
   },
   setPanel(panel, open = true) {
     set({ panel, panelOpen: open });

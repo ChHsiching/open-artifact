@@ -97,26 +97,26 @@ export function emptySystemIndex(title: string, now = new Date()): SystemIndex {
 
 /** A JS identifier from a title (`"Acme UI"` → `AcmeUI`). */
 export function toNamespace(title: string): string {
-  const id = title.replace(/[^A-Za-z0-9_$]+/g, '');
-  return /^[A-Za-z_$]/.test(id) ? id : `DS${id}`;
+  const id = title.replace(/[^A-Za-z0-9_$]+/g, '').slice(0, 64);
+  return COMPONENT_NAME.test(id) ? id : `DS${id}`.slice(0, 64);
 }
 
 /** True when the parsed index carries the marker (`createdOnFiles` or `convertedFrom`). */
 export function hasMarker(index: unknown): boolean {
   const raw = index as Record<string, unknown> | null;
-  return Boolean(raw && typeof raw === 'object' && (raw.createdOnFiles || raw.convertedFrom));
+  return !!raw && [raw.createdOnFiles, raw.convertedFrom].some((marker) => marker !== null && typeof marker === 'object' && !Array.isArray(marker));
 }
 
 /** Normalizes a parsed index, keeping unknown keys. */
 export function normalizeSystemIndex(input: unknown): SystemIndex {
   const raw = (input && typeof input === 'object' && !Array.isArray(input) ? input : {}) as Record<string, unknown>;
-  const assetGroups: Record<string, AssetGroup> = {};
+  const assetGroups: Record<string, AssetGroup> = Object.create(null);
   if (raw.assetGroups && typeof raw.assetGroups === 'object') {
     for (const [key, group] of Object.entries(raw.assetGroups as Record<string, Partial<AssetGroup>>)) {
       if (!group || typeof group !== 'object') continue;
       assetGroups[key] = {
         ...group,
-        name: typeof group.name === 'string' ? group.name : key,
+        name: typeof group.name === 'string' ? group.name : decodeAssetKey(key),
         order: Array.isArray(group.order) ? group.order.filter((name): name is string => typeof name === 'string') : [],
         files: group.files && typeof group.files === 'object' ? group.files : {},
       };
@@ -138,6 +138,12 @@ export function normalizeSystemIndex(input: unknown): SystemIndex {
   };
 }
 
+/** Display names that can form one asset folder and one index entry. */
+export function isAssetGroupName(name: unknown): name is string {
+  return typeof name === 'string' && name.length > 0 && name.length <= 80 && name.trim() === name &&
+    !/[/\\\u0000-\u001f\u007f]/.test(name) && !name.startsWith('.') && !Object.hasOwn(Object.prototype, name) && name !== 'prototype';
+}
+
 /** The record key of an asset name: bytes outside `[A-Za-z0-9_./-]` written `~` + two hex digits. */
 export function assetKey(name: string): string {
   let out = '';
@@ -146,6 +152,20 @@ export function assetKey(name: string): string {
     out += /[A-Za-z0-9_./-]/.test(ch) ? ch : `~${byte.toString(16).padStart(2, '0')}`;
   }
   return out;
+}
+
+/** Display name for an encoded index key in a system without an explicit name. */
+export function decodeAssetKey(key: string): string {
+  try {
+    return decodeURIComponent(key.replace(/%/g, '%25').replace(/~([0-9a-f]{2})/gi, '%$1'));
+  } catch {
+    return key;
+  }
+}
+
+/** Also recognizes older Open Artifact indexes that used literal group keys. */
+export function assetGroupKey(groups: Record<string, AssetGroup>, name: string): string {
+  return Object.keys(groups).find((key) => (groups[key]?.name ?? decodeAssetKey(key)) === name) ?? assetKey(name);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -175,7 +195,7 @@ export type FileRole =
   | 'other';
 
 /** Component folder names must be ASCII JS identifiers. */
-export const COMPONENT_NAME = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
+export const COMPONENT_NAME = /^(?!(?:__proto__|constructor|prototype)$)[A-Za-z_$][A-Za-z0-9_$]{0,63}$/;
 /** Most brand-book sections besides the README. */
 export const MAX_SECTIONS = 24;
 
@@ -402,6 +422,22 @@ export function assetGroupOf(path: string): { group: string; name: string } {
   return slash === -1 ? { group: 'Other', name: rest } : { group: rest.slice(0, slash), name: rest.slice(slash + 1) };
 }
 
+/** Uploads restored to their logical paths when an exported system has no physical copy. */
+export function indexedUploads(index: SystemIndex): Map<string, AssetRecord> {
+  const uploads = new Map<string, AssetRecord>();
+  const collect = (entries: Record<string, unknown>, prefix: string) => {
+    for (const value of Object.values(entries)) {
+      const record = value as AssetRecord | null;
+      if (!record || typeof record.name !== 'string' || !/^[0-9a-f]{32}$/.test(record.blob)) continue;
+      const path = prefix + record.name;
+      if (!pathProblem(path) && (path.startsWith('assets/') || path.startsWith('fonts/'))) uploads.set(path, record);
+    }
+  };
+  collect(index.blobs, '');
+  for (const group of Object.values(index.assetGroups)) collect(group.files, `assets/${group.name}/`);
+  return uploads;
+}
+
 /** Lists asset groups and their items: index records first (in `order`), then files. */
 export function listAssets(index: SystemIndex, paths: Iterable<string>): { name: string; tile: TileSize; items: AssetItem[] }[] {
   const groups = new Map<string, AssetItem[]>();
@@ -410,27 +446,38 @@ export function listAssets(index: SystemIndex, paths: Iterable<string>): { name:
     if (!list.some((existing) => existing.name === item.name)) list.push(item);
     groups.set(item.group, list);
   };
-  for (const [key, group] of Object.entries(index.assetGroups)) {
-    groups.set(key, groups.get(key) ?? []);
-    for (const record of Object.values(group.files)) add({ group: key, name: record.name, blob: record.blob, type: record.type, size: record.size });
-  }
+  // A folder exported with both a file and its old upload record uses the file.
   for (const path of paths) {
-    if (!path.startsWith('assets/') || /\/README\.md$/i.test(path)) continue;
-    add({ group: assetGroupOf(path).group, name: assetGroupOf(path).name, path });
+    if (!path.startsWith('assets/')) continue;
+    const { group, name } = assetGroupOf(path);
+    if (name.toLowerCase() === 'readme.md') groups.set(group, groups.get(group) ?? []);
+    else add({ group, name, path });
   }
-  const order = [...index.groups, ...[...groups.keys()].filter((key) => !index.groups.includes(key)).sort()];
-  return order
-    .filter((key) => groups.has(key))
-    .map((key) => {
-      const items = groups.get(key)!;
-      const tileOrder = index.assetGroups[key]?.order ?? [];
-      items.sort((a, b) => {
-        const ia = tileOrder.indexOf(a.name);
-        const ib = tileOrder.indexOf(b.name);
-        return (ia === -1 ? Infinity : ia) - (ib === -1 ? Infinity : ib) || a.name.localeCompare(b.name);
-      });
-      return { name: index.assetGroups[key]?.name ?? key, tile: index.assetGroups[key]?.tile ?? 'm', items };
+  const keys = [...new Set([...index.groups, ...Object.keys(index.assetGroups)])];
+  const orderedNames = new Set<string>();
+  for (const key of keys) {
+    const group = index.assetGroups[key];
+    const name = group?.name ?? decodeAssetKey(key);
+    orderedNames.add(name);
+    groups.set(name, groups.get(name) ?? []);
+    for (const record of Object.values(group?.files ?? {})) {
+      if (typeof record?.name === 'string' && typeof record.blob === 'string') {
+        add({ group: name, name: record.name, blob: record.blob, type: record.type, size: record.size });
+      }
+    }
+  }
+  const order = [...orderedNames, ...[...groups.keys()].filter((name) => !orderedNames.has(name)).sort()];
+  return order.map((name) => {
+    const items = groups.get(name)!;
+    const metadata = index.assetGroups[assetGroupKey(index.assetGroups, name)];
+    const tileOrder = metadata?.order ?? [];
+    items.sort((a, b) => {
+      const ia = tileOrder.indexOf(a.name);
+      const ib = tileOrder.indexOf(b.name);
+      return (ia === -1 ? Infinity : ia) - (ib === -1 ? Infinity : ib) || a.name.localeCompare(b.name);
     });
+    return { name, tile: metadata?.tile ?? 'm', items };
+  });
 }
 
 /* -------------------------------------------------------------------------- */
@@ -440,6 +487,7 @@ export function listAssets(index: SystemIndex, paths: Iterable<string>): { name:
 /** The generated manifest (v3). */
 export interface SystemManifest {
   manifestVersion: 3;
+  files: string[];
   name: string;
   namespace: string;
   libraries: Library[];
@@ -456,17 +504,22 @@ export function buildManifest(index: SystemIndex, files: ReadonlyMap<string, str
     manifestVersion: 3,
     name: index.title,
     namespace: index.namespace || parseBundleHeader(files.get('components/bundle.js') ?? '')?.namespace || toNamespace(index.title),
+    files: [...new Set([...files.keys()].filter((path) => {
+      const role = fileRole(path);
+      if (['bundle', 'bundle-css', 'types', 'component-readme', 'component-types', 'library', 'font', 'section'].includes(role)) return true;
+      return role === 'asset' && path.endsWith('/README.md');
+    }).concat(files.has('tokens.json') ? ['tokens.css'] : []))].sort(),
     libraries: index.libraries,
-    components: listComponents(files).map(({ name, group, summary, page }) => ({
+    components: listComponents(files).filter(({ name }) => name !== 'Cover').map(({ name, group, summary, page }) => ({
       name,
       ...(group ? { group } : {}),
       ...(summary ? { summary } : {}),
       ...(page ? { page } : {}),
     })),
-    assetGroups: listAssets(index, files.keys()).map((group) => {
-      const key = Object.keys(index.assetGroups).find((k) => (index.assetGroups[k]?.name ?? k) === group.name) ?? group.name;
+    assetGroups: listAssets(index, files.keys()).filter((group) => group.items.length || files.has(`assets/${group.name}/README.md`)).map((group) => {
+      const key = assetGroupKey(index.assetGroups, group.name);
       const record = index.assetGroups[key];
-      const uploads = group.items.filter((item) => item.blob).map((item) => ({ path: `assets/${key}/${item.name}`, id: item.blob! }));
+      const uploads = group.items.filter((item) => item.blob).map((item) => ({ path: `assets/${group.name}/${item.name}`, id: item.blob! }));
       return {
         name: group.name,
         ...(record?.tile ? { tile: record.tile } : {}),

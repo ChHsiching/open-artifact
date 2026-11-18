@@ -422,6 +422,11 @@ export const sheetMessages = {
       defaultMessage: 'Import CSV',
       id: 'Wj0xCCfet1',
     }),
+  importFromExcel: () =>
+    translateMessage({
+      defaultMessage: 'Import from Excel',
+      id: '1JcbLhlHrv',
+    }),
   importFile: () =>
     translateMessage({
       defaultMessage: 'Import file',

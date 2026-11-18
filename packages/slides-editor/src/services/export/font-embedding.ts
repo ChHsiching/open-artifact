@@ -30,9 +30,9 @@
 
 import { parseUnicodeRange } from '@open-artifact/export-kit';
 import { fontClass, fontFamilies } from './css.ts';
-import { fsTypeAllowsEmbedding, panoseHex, readFontTables, wrapEot, type FontTables } from './font-tables.ts';
+import { containsGlyph, fsTypeAllowsEmbedding, panoseHex, readFontTables, wrapEot, type FontTables } from './font-tables.ts';
 import type { ExportNotes } from './notes.ts';
-import type { PptxSlide, TextBody } from './ooxml.ts';
+import type { PptxSlide, TextBody, TextRun } from './ooxml.ts';
 
 /** The four faces PowerPoint embeds per family. */
 export type EmbeddedStyle = 'regular' | 'bold' | 'italic' | 'boldItalic';
@@ -44,6 +44,7 @@ export const EMBEDDED_STYLES: readonly EmbeddedStyle[] = ['regular', 'bold', 'it
 export interface EmbeddedFont {
   typeface: string;
   style: EmbeddedStyle;
+  covered?: ReadonlySet<number>;
   /** EOT-wrapped TrueType (`.fntdata`). */
   data: Uint8Array;
   panose?: string;
@@ -117,34 +118,55 @@ export const FONTSOURCE_CDN = 'https://cdn.jsdelivr.net/fontsource/fonts/';
 /* Use                                                                         */
 /* -------------------------------------------------------------------------- */
 
+function* textRuns(slides: readonly PptxSlide[]): Generator<TextRun> {
+  function* runs(body?: TextBody): Generator<TextRun> {
+    for (const paragraph of body?.paragraphs ?? []) yield* paragraph.runs;
+  }
+  for (const slide of slides) {
+    for (const element of slide.elements) {
+      if (element.type === 'shape') yield* runs(element.text);
+      if (element.type === 'table') {
+        for (const row of element.rows) for (const cell of row.cells) yield* runs(cell.text);
+      }
+    }
+  }
+}
+
 /** Every family the exported text is set in, with its characters and italic use. */
 export function collectFontUses(slides: readonly PptxSlide[]): Map<string, FontUse> {
   const uses = new Map<string, FontUse>();
-  const body = (text: TextBody | undefined): void => {
-    for (const paragraph of text?.paragraphs ?? []) {
-      for (const run of paragraph.runs) {
-        if (!run.font || run.lineBreak) continue;
-        const key = run.font.toLowerCase();
-        let use = uses.get(key);
-        if (!use) {
-          use = { family: run.font, codePoints: new Set(), italic: false, chars: 0 };
-          uses.set(key, use);
-        }
-        for (const char of run.text) {
-          use.codePoints.add(char.codePointAt(0)!);
-          use.chars++;
-        }
-        if (run.italic) use.italic = true;
-      }
+  for (const run of textRuns(slides)) {
+    if (!run.font || run.lineBreak) continue;
+    const key = run.font.toLowerCase();
+    let use = uses.get(key);
+    if (!use) {
+      use = { family: run.font, codePoints: new Set(), italic: false, chars: 0 };
+      uses.set(key, use);
     }
-  };
-  for (const slide of slides) {
-    for (const element of slide.elements) {
-      if (element.type === 'shape') body(element.text);
-      else if (element.type === 'table') for (const row of element.rows) for (const cell of row.cells) body(cell.text);
+    for (const char of run.text) {
+      use.codePoints.add(char.codePointAt(0)!);
+      use.chars++;
     }
+    if (run.italic) use.italic = true;
   }
   return uses;
+}
+
+/** PowerPoint has separate Latin and East Asian faces. Use the embedded face
+ * for CJK only if every cut carries the run's CJK characters. */
+export function setEastAsianFonts(slides: readonly PptxSlide[], fonts: readonly EmbeddedFont[]): void {
+  for (const run of textRuns(slides)) {
+    if (!run.font) continue;
+    const cjk = run.text.match(/[\p{Script=Han}\p{Script=Hangul}\p{Script=Katakana}\p{Script=Hiragana}]/gu);
+    if (!cjk) continue;
+    const cuts = fonts.filter(font => font.typeface.toLowerCase() === run.font!.toLowerCase());
+    const style = styleOf(run.bold ? 700 : 400, run.italic === true);
+    const cut = cuts.find(font => font.style === style) ?? cuts.find(font => font.style === 'regular');
+    if (cut && cjk.every(char => cut.covered?.has(char.codePointAt(0)!))) continue;
+    if (/[\p{Script=Hiragana}\p{Script=Katakana}]/u.test(run.text) || /\bJP\b/i.test(run.font)) run.eastAsianFont = 'Yu Gothic';
+    else if (/\p{Script=Hangul}/u.test(run.text) || /\bKR\b/i.test(run.font)) run.eastAsianFont = 'Malgun Gothic';
+    else run.eastAsianFont = /\b(TC|HK)\b/i.test(run.font) ? 'Microsoft JhengHei' : 'Microsoft YaHei';
+  }
 }
 
 /** The Fontsource id of a family: lower case, runs of other characters as `-`. */
@@ -385,6 +407,7 @@ export async function embedDeckFonts(uses: ReadonlyMap<string, FontUse>, faces: 
       result.fonts.push({
         typeface: use.family,
         style: attempt.style,
+        covered: new Set([...use.codePoints].filter(point => containsGlyph(attempt.info.cmap, point))),
         data: wrapEot(attempt.data, attempt.info),
         panose: panoseHex(attempt.info),
         pitchFamily: pitchFamilyOf(use.family),

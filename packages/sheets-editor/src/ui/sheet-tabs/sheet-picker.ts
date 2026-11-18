@@ -150,6 +150,8 @@ export const areSheetPickerPropsSame = (before?: Dynamic, after?: Dynamic) =>
   after.onKeyDown === before.onKeyDown &&
   after.isChosenForFormula === before.isChosenForFormula &&
   after.onImportChosen === before.onImportChosen &&
+  after.filesForAgent === before.filesForAgent &&
+  after.onFileForAgentChosen === before.onFileForAgentChosen &&
   after.lookOnceEventsAreFinished === before.lookOnceEventsAreFinished;
 export const sheetListPositionProps = (listedSheets?: Dynamic, index?: Dynamic) => ({
   'aria-posinset': index + 1,
@@ -304,6 +306,8 @@ export const SheetPicker = React.memo(function ({
   onKeyDown: onKeyDown,
   isChosenForFormula: isChosenForFormula,
   onImportChosen: onImportChosen,
+  filesForAgent: filesForAgent,
+  onFileForAgentChosen: onFileForAgentChosen,
   lookOnceEventsAreFinished: lookOnceEventsAreFinished,
   ...listProps
 }: Dynamic) {
@@ -330,6 +334,8 @@ export const SheetPicker = React.memo(function ({
   let addChoices = {
     onBlankChosen: blankSheetChooser(dispatchFromAddMenu),
     onImportChosen: onImportChosen,
+    filesForAgent: filesForAgent,
+    onFileForAgentChosen: onFileForAgentChosen,
   };
   let isAddingOff = isUnfinishedFormulaOpen || listedSheets.some(({ renaming: renaming }: Dynamic) => renaming !== null);
   let [isAddMenuOpen, setAddMenuOpen] = React.useState(false);
@@ -456,6 +462,7 @@ export const SheetPicker = React.memo(function ({
                   : {}),
                 children: jsx(MenuTriggerButton, {
                   ref: listButtonRef,
+                  className: 'sheet-list-trigger',
                   variant: 'ghost',
                   icon: 'ListBullet',
                   'aria-label': sheetMessages.allSheets(),
@@ -471,7 +478,7 @@ export const SheetPicker = React.memo(function ({
                 header: jsx(Fragment, {
                   children:
                     viewOnlyBecause === null &&
-                    (isAddSheetBlankOnly()
+                    (isAddSheetBlankOnly(filesForAgent)
                       ? jsx(Menu.Item, {
                           icon: 'Add',
                           disabled: isAddingOff,

@@ -38,7 +38,7 @@ import { panBy, type Point } from '../lib/camera.ts';
 import { alignShortcutOf, layerOrderShortcutOf, toolShortcutOf, zoomShortcutOf } from '../lib/tools.ts';
 import { embedEnterAction, enterEmbed, runEmbedAgain } from '../elements/embed-control.ts';
 import { toggleVideo } from '../elements/video-playback.ts';
-import { openBoardLink } from '../elements/links.ts';
+import { boardLinkTarget, openBoardLink } from '../elements/links.ts';
 import { describeElement } from '../elements/describe.ts';
 import { markShortcutOf } from '../elements/mark-across.ts';
 import { useContextMenu } from '../selection/menu-store.ts';
@@ -69,6 +69,7 @@ import {
 import { NOTHING_SELECTED_MESSAGE, announce, groupSelectedMessage, selectionCountMessage, toolNameMessage } from './announce.ts';
 import { redo, undo } from './commands.ts';
 import { toggleSelectionMark } from './text-marks.ts';
+import { maybeSession } from './session.ts';
 import { groupKeyStep } from './group-keys.ts';
 import { contentBounds, fitBoard, fitSelection, revealElements, viewCenter } from './navigation.ts';
 import { setCamera, zoomStep, zoomTo } from './viewport.ts';
@@ -343,7 +344,10 @@ function actOnSelection(enter: boolean): boolean {
   if (!element) return false;
   switch (itemKeyAction(element, enter, canEditBoard())) {
     case 'open':
-      if (element.type === 'link' && /^https?:/i.test(element.href)) openBoardLink(element.href);
+      if (element.type === 'link') {
+        const target = boardLinkTarget(element.href);
+        if (target) openBoardLink(target);
+      }
       return true;
     case 'play':
       toggleVideo(element.id);
@@ -612,10 +616,12 @@ export function installKeyboard(): () => void {
     }
 
     if (isCommentModeShortcut(event, keysOn)) {
-      if (!editable) return;
+      const session = maybeSession();
+      if (!session?.comments || !session.canComment) return;
       run();
       const tool = useTool.getState();
-      tool.setCommentMode(!tool.commentMode);
+      if (session.shell) session.shell.requestCommentMode(!tool.commentMode);
+      else tool.setCommentMode(!tool.commentMode);
       return;
     }
 

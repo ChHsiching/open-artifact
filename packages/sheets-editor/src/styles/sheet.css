@@ -8292,3 +8292,32 @@ div.is-only-said {
     transform: rotate(360deg);
   }
 }
+
+.sheet-peers-overlay {
+  position: absolute;
+  inset-inline-end: 8rem;
+  top: 2px;
+  z-index: 8;
+  display: flex;
+  gap: .5rem;
+  align-items: center;
+  background: var(--ui-page-bg);
+  color: var(--ui-text-primary);
+}
+.sheet-peers-overlay button, .sheet-peers-panel button {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  min-height: 28px;
+  border-radius: .4rem;
+  padding: .25rem .5rem;
+}
+.sheet-peers-overlay button:hover, .sheet-peers-panel button:hover { background: var(--ui-fill-ghost-hover); }
+.sheet-peers-panel button:disabled { opacity: .5; }
+@media (pointer: fine) {
+  .sheet-picker .sheet-list-trigger { padding-inline: .5625rem; }
+}
+@media (pointer: coarse) {
+  .sheet-picker { --ui-h-control: calc(2rem * var(--ui-rem-scale)); }
+  .sheet-picker .sheet-list-trigger { padding-inline: var(--ui-pad-md); }
+}

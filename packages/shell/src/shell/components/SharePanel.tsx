@@ -392,6 +392,13 @@ function LinkRow({ role, view }: { role: ShareRole; view: ShareView }) {
 function ShareTab() {
   const boot = useBoot();
   const { view, unsupported } = useShell((state) => state.share);
+  if (boot.typeServer && !boot.typeServer.sharePath) {
+    return <>
+      <Label>{t(boot.typeServer.role === 'owner' ? 'onlyThisComputer' : 'inviteLinks')}</Label>
+      {boot.typeServer.role === 'owner' && <p className="mb-2 text-xs text-fg-muted">{t('standaloneShare')}</p>}
+      <CopyButton which="page" url={shellLink()} />
+    </>;
+  }
   if (!view) {
     return (
       <>
@@ -483,9 +490,11 @@ function ExportRow({
 
 /** The page's rows, then the folder's zip. */
 function ExportRows() {
+  const standalone = useShell(state => state.boot?.typeServer);
   const report = useShell((state) => state.report);
   const exports = useShell((state) => state.share.exports);
   const agent = useAgentName();
+  const boot = useBoot();
   const entries = exportEntries(report);
   const v1 = !entries.length && !!report.exports;
   return (
@@ -518,7 +527,15 @@ function ExportRows() {
             />
           ))
         : null}
-      {offersArchive(report) ? (
+      {standalone?.role === 'owner' && boot.type === 'docs' ? (
+        <ExportRow kind="folder" label={t('archiveLabel')} description={t('archiveDescription')} onPick={() => {
+          const link = document.createElement('a');
+          link.href = new URL('_api/frame/archive', location.href).href;
+          link.download = '';
+          link.click();
+        }} />
+      ) : null}
+      {!standalone && offersArchive(report) ? (
         <ExportRow kind="folder" label={t('archiveLabel')} description={t('archiveDescription')} onPick={() => void downloadArchive()} />
       ) : null}
     </div>
@@ -584,6 +601,7 @@ async function loadExports(): Promise<void> {
 
 /** The Share panel's popover and its button: the share icon, "Share", and a green dot while it is shared on the network. */
 export function SharePanel() {
+  const boot = useBoot();
   const title = useTitle();
   const open = useShell((state) => state.shareOpen);
   const tab = useShell((state) => state.shareTab);
@@ -609,24 +627,26 @@ export function SharePanel() {
     ask: (spec) => setAsking(spec),
   }).current;
 
+  const standalone = useShell(state => state.boot?.typeServer);
   // While open: load, then poll every 4 s (guests come and go), unless the type cannot share.
   useEffect(() => {
     if (!open) {
       setAsking(null);
       return;
     }
+    if (standalone && !standalone.sharePath) return;
     void refreshShare();
     if (unsupported) return;
     const timer = setInterval(() => void refreshShare(), 4000);
     return () => clearInterval(timer);
-  }, [open, unsupported]);
+  }, [open, standalone, unsupported]);
 
   // A v1 page's downloads, once it reports it has some (a page with `formats` lists them in its report).
   const v1Exports = !!report.exports && !report.formats?.length;
   useEffect(() => {
     if (open && v1Exports) void loadExports();
   }, [open, v1Exports]);
-  const exportTab = hasExportTab(report);
+  const exportTab = standalone ? standalone.role === 'owner' && Boolean(report.formats?.length) : hasExportTab(report);
 
   const onOpenChange = (next: boolean, details: BasePopover.Root.ChangeEventDetails): void => {
     if (next) return store.openShare('share');
@@ -662,7 +682,7 @@ export function SharePanel() {
             className="gap-1.5 px-2 font-normal data-[popup-open]:bg-hover"
             icon={<Share2 className="size-4" />}
           >
-            <span className="max-sm:hidden">{t('share')}</span>
+            <span className={boot.type === 'docs' ? undefined : 'max-sm:hidden'}>{t('share')}</span>
             {shared ? <span aria-hidden data-share-dot="" className="size-1.5 shrink-0 rounded-full bg-success max-sm:absolute max-sm:right-1 max-sm:top-1" /> : null}
           </Button>
         }

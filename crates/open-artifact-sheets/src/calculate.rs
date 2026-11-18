@@ -98,8 +98,8 @@ pub(crate) struct FormulaCell {
     pub parsed: Rc<Result<Expr, ParseError>>,
     /// Where each of the formula's references points now; `None` when a row, column or sheet of it is gone.
     pub places: Vec<Option<Place>>,
-    /// Whether the formula calls SUBTOTAL anywhere: a SUBTOTAL whose range holds such a cell is #VALUE!.
-    pub calls_subtotal: bool,
+    /// Whether the formula contains a subtotal or aggregate, including inside a conditional branch.
+    pub contains_total: bool,
     /// The places whose cells the formula reads.
     pub reads: Vec<Place>,
     /// The formulas it reads, by index, sorted.
@@ -194,11 +194,13 @@ impl Calculation {
                         let parsed = cell.parsed.clone().expect("a formula is read when it is set");
                         let places: Vec<Option<Place>> =
                             formula.references.iter().map(|reference| resolve(workbook, reference)).collect();
-                        let (calls_subtotal, reads) = match &*parsed {
+                        let (contains_total, reads) = match &*parsed {
                             Ok(expr) => {
                                 let mut read = Vec::new();
                                 read_references(expr, &mut read);
-                                (calls(expr, "SUBTOTAL"), read.into_iter().filter_map(|i| places.get(i).copied().flatten()).collect())
+                                let contains_total = calls(expr, "SUBTOTAL") || calls(expr, "AGGREGATE");
+                                let places_read = read.into_iter().filter_map(|i| places.get(i).copied().flatten()).collect();
+                                (contains_total, places_read)
                             }
                             Err(_) => (false, Vec::new()),
                         };
@@ -208,7 +210,7 @@ impl Calculation {
                             column: c,
                             parsed,
                             places,
-                            calls_subtotal,
+                            contains_total,
                             reads,
                             reads_formulas: Vec::new(),
                             in_cycle: false,

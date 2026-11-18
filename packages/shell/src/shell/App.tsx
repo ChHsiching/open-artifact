@@ -29,8 +29,9 @@ function Shell() {
       const rest = addressWithout(location.href, SHELL_PARAMS.panel);
       if (rest) history.replaceState(history.state, '', rest);
     }
-    restoreSent();
     const stopBridge = startBridge();
+    if (store.boot?.typeServer) return stopBridge;
+    restoreSent();
     const stopEvents = startEvents();
     void refreshArtifact();
     void loadLibrary();

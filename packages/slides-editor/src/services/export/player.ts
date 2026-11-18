@@ -19,6 +19,21 @@
  * `{ buildMs, durations, slides: [{ transition, builds, steps }] }`.
  */
 
+import { createCountPlayer } from '../count-player.ts';
+
+/** Stacked slides for portrait screens and readers with scripting disabled. */
+export const READER_CSS = `
+@media screen {
+  html.open-artifact-reader, .open-artifact-reader body{overflow-x:hidden;overflow-y:auto;height:auto}
+  .open-artifact-reader .open-artifact-deck{position:static;width:100%;height:auto;transform:none!important;overflow:visible}
+  .open-artifact-reader .open-artifact-frame{position:relative;display:block;width:100%;height:auto;aspect-ratio:var(--slide-aspect);margin-bottom:12px}
+  .open-artifact-reader .open-artifact-frame:last-child{margin-bottom:max(0px,calc(100vh - var(--reader-slide-height,100vh)))}
+  .open-artifact-reader .open-artifact-slide{transform:scale(var(--page-scale));transform-origin:0 0}
+  .open-artifact-reader .open-artifact-build-hidden{visibility:visible!important}
+  .open-artifact-reader .open-artifact-build-out,.open-artifact-reader .open-artifact-build-in{animation:none!important}
+}
+`;
+
 /** Styles of the player page (on top of the slide stylesheet). */
 export const PLAYER_CSS = `
 html,body{margin:0;width:100%;height:100%;background:#000;overflow:hidden}
@@ -47,6 +62,7 @@ body.open-artifact-idle{cursor:none}
 export const PLAYER_SCRIPT = String.raw`
 (function () {
   'use strict';
+  var countPlayer = (${createCountPlayer.toString()})();
   var plan = JSON.parse(document.getElementById('open-artifact-plan').textContent);
   var W = 1920, H = 1080;
   var deck = document.querySelector('.open-artifact-deck');
@@ -56,8 +72,12 @@ export const PLAYER_SCRIPT = String.raw`
   var index = 0, done = 0, running = null, autoTimer = 0, scale = 1;
   if (!frames.length) return;
 
+  var portrait = window.matchMedia('(max-aspect-ratio: 1/1)');
   function fit() {
     scale = Math.min(window.innerWidth / W, window.innerHeight / H);
+    var width = document.documentElement.clientWidth;
+    document.documentElement.style.setProperty('--page-scale', width / W);
+    document.documentElement.style.setProperty('--reader-slide-height', width * H / W + 'px');
     deck.style.transform = 'translate(-50%,-50%) scale(' + scale + ')';
   }
   window.addEventListener('resize', fit);
@@ -82,12 +102,17 @@ export const PLAYER_SCRIPT = String.raw`
   /** Shows slide k as it is after n steps; the last step animates when asked. */
   function applySteps(k, n, animate) {
     var frame = frames[k], slide = plan.slides[k];
+    each(frame.querySelectorAll('[data-fragment]'), function (el) { el.classList.add('open-artifact-build-hidden'); });
     slide.builds.forEach(function (b) {
       var el = child(frame, b.child);
       if (el) setBuild(el, b.enters ? 'hidden' : 'shown');
     });
     slide.steps.slice(0, n).forEach(function (step, s) {
       var latest = animate && s === n - 1;
+      (step.reveal || []).forEach(function (origin) {
+        var el = frame.querySelector('[data-fragment="' + origin + '"]');
+        if (el) setBuild(el, latest && !reduced ? 'in' : 'shown', 'fade');
+      });
       step.enter.forEach(function (c) {
         var el = child(frame, c);
         if (el) setBuild(el, latest ? 'in' : 'shown', el.getAttribute('data-open-artifact-in'));
@@ -211,7 +236,18 @@ export const PLAYER_SCRIPT = String.raw`
   function show(frame) { frame.classList.add('open-artifact-on'); }
   function hide(frame) { frame.classList.remove('open-artifact-on'); frame.style.zIndex = ''; }
 
+  var stopMotion = [];
+  function clearMotion() {
+    stopMotion.forEach(function (stop) { stop(); });
+    stopMotion = [];
+  }
   function entered() {
+    if (portrait.matches) return;
+    if (!reduced) each(frames[index].querySelectorAll('[data-animation]'), function (el) {
+      el.style.animation = el.dataset.animation;
+      var stop = el.dataset.count && countPlayer.countUp(el, JSON.parse(el.dataset.count));
+      stopMotion.push(function () { el.style.animation = ''; if (stop) stop(); });
+    });
     enterMedia(frames[index]);
     scheduleAuto();
   }
@@ -222,15 +258,17 @@ export const PLAYER_SCRIPT = String.raw`
     clearTimeout(autoTimer);
     var from = frames[index], to = frames[k];
     var kind = instant ? null : (dir > 0 ? plan.slides[index].transition : plan.slides[k].transition);
+    clearMotion();
     leaveMedia(from);
     index = k;
     done = dir < 0 ? plan.slides[k].steps.length : 0;
+    if (portrait.matches) to.scrollIntoView({ block: 'start' });
     applySteps(k, done, false);
     show(to);
     updateHud(true);
     try { history.replaceState(null, '', '#' + (k + 1)); } catch (e) {}
     var ms = kind && plan.durations[kind];
-    if (!ms || reduced || !to.animate) {
+    if (!ms || reduced || portrait.matches || !to.animate) {
       hide(from);
       entered();
       return;
@@ -262,6 +300,7 @@ export const PLAYER_SCRIPT = String.raw`
   }
 
   function next() {
+    if (portrait.matches) { go(index + 1, 1, true); return; }
     finish();
     var steps = plan.slides[index].steps;
     if (done < steps.length) {
@@ -275,6 +314,7 @@ export const PLAYER_SCRIPT = String.raw`
   }
 
   function prev() {
+    if (portrait.matches) { go(index - 1, -1, true); return; }
     finish();
     clearTimeout(autoTimer);
     var lead = leadingAuto(index), steps = plan.slides[index].steps;
@@ -314,9 +354,24 @@ export const PLAYER_SCRIPT = String.raw`
   });
 
   document.addEventListener('click', function (event) {
-    if (event.button !== 0 || event.target.closest('a, button, iframe, .open-artifact-embed')) return;
-    next();
+    if (portrait.matches || event.button !== 0 || event.target.closest('a, button, iframe, video, .open-artifact-text, .open-artifact-embed') || String(window.getSelection())) return;
+    if (event.clientX < window.innerWidth / 2) prev(); else next();
   });
+
+  // Trackpad momentum should advance once per gesture.
+  var wheelDelta = 0, wheelUsed = false, wheelTimer = 0;
+  window.addEventListener('wheel', function (event) {
+    if (portrait.matches || event.ctrlKey || event.metaKey || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
+    event.preventDefault();
+    clearTimeout(wheelTimer);
+    wheelTimer = setTimeout(function () { wheelDelta = 0; wheelUsed = false; }, 250);
+    if (wheelUsed) return;
+    wheelDelta += event.deltaMode ? Math.sign(event.deltaY) * 60 : event.deltaY;
+    if (Math.abs(wheelDelta) >= 60) {
+      wheelUsed = true;
+      if (wheelDelta > 0) next(); else prev();
+    }
+  }, { passive: false });
 
   var touch = null;
   document.addEventListener('touchstart', function (event) {
@@ -324,7 +379,7 @@ export const PLAYER_SCRIPT = String.raw`
     touch = { x: t.clientX, y: t.clientY };
   }, { passive: true });
   document.addEventListener('touchend', function (event) {
-    if (!touch) return;
+    if (!touch || portrait.matches) return;
     var t = event.changedTouches[0], dx = t.clientX - touch.x, dy = t.clientY - touch.y;
     touch = null;
     if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) {
@@ -357,6 +412,40 @@ export const PLAYER_SCRIPT = String.raw`
   }
   window.addEventListener('hashchange', fromHash);
 
+  function layout() {
+    finish();
+    clearMotion();
+    clearTimeout(autoTimer);
+    document.documentElement.classList.toggle('open-artifact-reader', portrait.matches);
+    fit();
+    if (portrait.matches) {
+      leaveMedia(frames[index]);
+      frames[index].scrollIntoView({ block: 'start' });
+    } else {
+      window.scrollTo(0, 0);
+      applySteps(index, done, false);
+      entered();
+    }
+  }
+  var scrollTimer = 0;
+  window.addEventListener('scroll', function () {
+    if (!portrait.matches) return;
+    clearTimeout(scrollTimer);
+    scrollTimer = setTimeout(function () {
+      if (!portrait.matches) return;
+      var nearest = frames.reduce(function (best, frame, i) {
+        return Math.abs(frame.getBoundingClientRect().top) < Math.abs(frames[best].getBoundingClientRect().top) ? i : best;
+      }, 0);
+      if (nearest !== index) {
+        hide(frames[index]); leaveMedia(frames[index]);
+        index = nearest; done = 0; show(frames[index]);
+        history.replaceState(null, '', '#' + (index + 1));
+        updateHud(true);
+      }
+    }, 150);
+  }, { passive: true });
+  portrait.addEventListener('change', layout);
+  document.documentElement.classList.toggle('open-artifact-reader', portrait.matches);
   applySteps(0, 0, false);
   updateHud(false);
   if (!fromHash()) entered();

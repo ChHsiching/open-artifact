@@ -3,7 +3,7 @@
  * text element, and stays while it is typed into.
  *
  * It holds the text style, the color, bold / italic / underline, the link,
- * the alignment and the list kind, then Comment and Properties; a selected
+ * the alignment and the list kind, then Properties; a selected
  * table has its rows and columns instead.
  * the properties panel is closed. While typing with text selected, the marks, the color and the
  * link apply to the selected text (the browser's editing commands, read back
@@ -34,7 +34,6 @@ import {
   Link2,
   List,
   ListOrdered,
-  MessageCircle,
   Underline,
   Unlink,
 } from 'lucide-react';
@@ -43,7 +42,6 @@ import { Popover } from '@open-artifact/ui';
 import { useSelectedNodes } from '../state/selection.ts';
 import { useView } from '../state/view.ts';
 import { ALIGN_KEYS, alignRefusal, alignSelection, canChange, patchSelectionStyle, updateSelection, type AlignEdge } from '../services/commands.ts';
-import { canComment, elementAnchor, useComments } from '../services/comments.ts';
 import { placeFloatingLeft, placeFloatingToolbar } from '../lib/floating.ts';
 import { activeEditor, editorHasMark, editorSelectionCollapsed, focusEditor, formatEditor } from './TextEditor.tsx';
 import { useStageGesture } from './stage/store.ts';
@@ -249,16 +247,16 @@ export function FormatBar(): ReactNode {
       style={{ left, top, maxWidth: band.right - band.left - 16 }}
     >
       {nodes.length === 1 && nodes[0]!.kind === 'table' && !textEdit ? (
-        <TableStrip table={nodes[0] as TableNode} path={paths[0]!} commentAnchor={() => elementAnchor(slide, paths[0]!)} />
+        <TableStrip table={nodes[0] as TableNode} path={paths[0]!} />
       ) : (
-        <Strip nodes={nodes} paths={paths} commentAnchor={() => elementAnchor(slide, paths.length === 1 ? paths[0]! : null)} />
+        <Strip nodes={nodes} />
       )}
     </div>
   );
 }
 
 /** The controls. */
-function Strip({ nodes, paths, commentAnchor }: { nodes: SlideNode[]; paths: NodePath[]; commentAnchor: () => ReturnType<typeof elementAnchor> }): ReactNode {
+function Strip({ nodes }: { nodes: SlideNode[] }): ReactNode {
   useSelectionTick();
   const editing = useView((s) => s.textEdit !== null);
   const single = nodes.length === 1 ? nodes[0]! : null;
@@ -374,28 +372,19 @@ function Strip({ nodes, paths, commentAnchor }: { nodes: SlideNode[]; paths: Nod
         </ChromeMenu>
       ) : null}
       <ChromeDivider />
-      <SelectionActions comment={paths.length === 1 ? commentAnchor : null} />
+      <PropertiesButton />
     </Card>
   );
 }
 
-/** Comment on the element, and open the properties panel (the strip shows only while it is closed). */
-function SelectionActions({ comment }: { comment: (() => ReturnType<typeof elementAnchor>) | null }): ReactNode {
+/** The strip shows while the properties panel is closed. */
+function PropertiesButton(): ReactNode {
   return (
-    <>
-      {canComment() && comment ? (
-        <Tip label="Comment on this element">
-          <ChromeButton square aria-label="Comment" onClick={() => useComments.getState().setDraft(comment())}>
-            <MessageCircle {...ICON} />
-          </ChromeButton>
-        </Tip>
-      ) : null}
-      <Tip label="Open the Properties panel" shortcut={`${MOD}\\`}>
-        <ChromeButton square aria-label="Properties" onClick={() => useView.getState().toggle('showProperties', true)}>
-          <Ellipsis {...ICON} />
-        </ChromeButton>
-      </Tip>
-    </>
+    <Tip label="Open the Properties panel" shortcut={`${MOD}\\`}>
+      <ChromeButton square aria-label="Properties" onClick={() => useView.getState().toggle('showProperties', true)}>
+        <Ellipsis {...ICON} />
+      </ChromeButton>
+    </Tip>
   );
 }
 
@@ -418,7 +407,7 @@ function ColumnsIcon(): ReactNode {
 }
 
 /** A selected table (not a cell being typed into): its rows and columns, then the actions. */
-function TableStrip({ table, path, commentAnchor }: { table: TableNode; path: NodePath; commentAnchor: () => ReturnType<typeof elementAnchor> }): ReactNode {
+function TableStrip({ table, path }: { table: TableNode; path: NodePath }): ReactNode {
   const rows = table.rows.length;
   const cols = tableColumns(table);
   return (
@@ -444,7 +433,7 @@ function TableStrip({ table, path, commentAnchor }: { table: TableNode; path: No
         onCommit={(v) => v && v !== cols && updateTable(path, 'Table columns', (t) => resizeTable(t, t.rows.length, v))}
       />
       <ChromeDivider />
-      <SelectionActions comment={commentAnchor} />
+      <PropertiesButton />
     </Card>
   );
 }

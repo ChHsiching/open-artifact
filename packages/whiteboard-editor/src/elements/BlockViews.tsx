@@ -8,6 +8,7 @@
  * width) are measured and reported to the measures store.
  */
 
+import { ShapeFace } from '../elements/ShapeFace.tsx';
 import { memo, useEffect, useRef, type RefObject } from 'react';
 import { Lock } from 'lucide-react';
 import {
@@ -20,17 +21,13 @@ import {
   containerTitleScaleForZoom,
   containerTitleScaledGap,
   CONTAINER_TITLE_GAP_SCALED,
-  cylinderCapPathData,
   inkColorOnFill,
   noteAuthorBottomPadding,
-  roundedPolygonPathData,
   sectionFillColor,
   sectionInkColor,
   sectionLineColor,
   shapeFillPaint,
-  shapeOutlineColor,
   shapePathData,
-  shapeStrokePaint,
   shapeTextInsetStyle,
   textProfileForElement,
   type ContainerElement,
@@ -119,11 +116,8 @@ export const ShapeView = memo(function ShapeView({ element }: { element: ShapeEl
   const item = useItemProps(element);
   const editing = useEditing(element.id, 'element');
   const font = paperFont(element.size);
-  const { kind, w, h } = element;
+  const { w, h } = element;
   const fill = shapeFillPaint(element);
-  const stroke = shapeStrokePaint(element, scheme);
-  const outline = stroke === 'none' && fill !== 'none' ? shapeOutlineColor(element) : stroke;
-  const cap = cylinderCapPathData(kind, w, h);
   const style: ViewStyle = {
     left: element.x,
     top: element.y,
@@ -136,10 +130,7 @@ export const ShapeView = memo(function ShapeView({ element }: { element: ShapeEl
   const label: ViewStyle = { ...shapeTextInsetStyle(element), ...fontStyle(font), ...alignStyle(textAlignOf(element)) };
   return (
     <div {...item} className={element.hollow ? 'wb-el wb-shape wb-hollow' : 'wb-el wb-shape'} style={style}>
-      <svg className="wb-shape-svg" width={w} height={h} viewBox={`0 0 ${w} ${h}`} aria-hidden="true">
-        <path d={roundedPolygonPathData(kind, w, h, true)} fill={fill} stroke={outline} strokeWidth={outline === 'none' ? 0 : 1.5} />
-        {cap ? <path d={cap} fill="none" stroke={outline === 'none' ? 'rgba(0,0,0,.15)' : outline} strokeWidth={1.5} /> : null}
-      </svg>
+      <ShapeFace element={element} scheme={scheme} />
       <div className="wb-shape-label" style={label}>
         <div className="wb-shape-text">
           {editing ? (

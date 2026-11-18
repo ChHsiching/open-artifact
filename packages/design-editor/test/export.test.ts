@@ -16,7 +16,7 @@ describe('the Shell export formats', () => {
       formats.map((f) => f.format),
       ['png', 'jpeg', 'pdf', 'html'],
     );
-    assert.deepEqual(entries(formats), ['png:current', 'png:current2x', ...widths, 'png:all', 'jpeg:current', 'jpeg:current2x', 'pdf:current', 'pdf:all', 'html:current', 'html:single', 'html:figma', 'html:canvas']);
+    assert.deepEqual(entries(formats), ['png:current', 'png:current2x', ...widths, 'png:all', 'jpeg:current', 'jpeg:current2x', 'pdf:current', 'pdf:all', 'html:current', 'html:single', 'html:figma', 'html:standalone', 'html:figmapage', 'html:canvas']);
     assert.ok(formats.length <= 8);
     // What the Shell accepts: at most 8 formats, ids it parses, labels it shows.
     for (const f of formats) {
@@ -38,6 +38,8 @@ describe('the Shell export formats', () => {
       'html:current (off)',
       'html:single (off)',
       'html:figma (off)',
+      'html:standalone',
+      'html:figmapage',
       'html:canvas',
     ]);
     assert.deepEqual(entries(exportFormats(scene({ artboard: null, pageArtboards: 0 }))).filter((e) => !e.endsWith('(off)')), ['html:canvas']);

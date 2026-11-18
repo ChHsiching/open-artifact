@@ -14,6 +14,7 @@ import { useUi } from '../state/ui.ts';
 import { insertVideoLink } from '../services/assets.ts';
 import { addSlide, insertTable, scaleSelection } from '../services/commands.ts';
 import type { HtmlQuality, PdfQuality } from '../services/exports.ts';
+import { session } from '../services/session.ts';
 import { answerPartialExport, startExport, useExportUi } from '../services/shell.ts';
 import { SlideThumb } from './SlideThumb.tsx';
 import { MOD } from '@open-artifact/editor-kit';
@@ -350,7 +351,10 @@ function PdfDialog(): ReactNode {
   const pdf = useExportUi((s) => s.pdf);
   const [quality, setQuality] = useState<PdfQuality>('better');
   const [notes, setNotes] = useState(false);
-  const close = (): void => useExportUi.getState().closePdf();
+  const close = (): void => {
+    if (pdf) session().shell?.exportState(pdf.request, 'declined');
+    useExportUi.getState().closePdf();
+  };
   return (
     <Dialog
       open={pdf !== null}
@@ -365,8 +369,9 @@ function PdfDialog(): ReactNode {
           <Button
             variant="primary"
             onClick={() => {
-              const request = pdf?.request ?? null;
-              close();
+              if (!pdf) return;
+              const { request } = pdf;
+              useExportUi.getState().closePdf();
               void startExport({ format: 'pdf', quality, notes }, request);
             }}
           >
@@ -402,7 +407,10 @@ function PdfDialog(): ReactNode {
 function HtmlDialog(): ReactNode {
   const html = useExportUi((s) => s.html);
   const [quality, setQuality] = useState<HtmlQuality>('best');
-  const close = (): void => useExportUi.getState().closeHtml();
+  const close = (): void => {
+    if (html) session().shell?.exportState(html.request, 'declined');
+    useExportUi.getState().closeHtml();
+  };
   return (
     <Dialog
       open={html !== null}
@@ -417,8 +425,9 @@ function HtmlDialog(): ReactNode {
           <Button
             variant="primary"
             onClick={() => {
-              const request = html?.request ?? null;
-              close();
+              if (!html) return;
+              const { request } = html;
+              useExportUi.getState().closeHtml();
               void startExport({ format: 'html', quality }, request);
             }}
           >

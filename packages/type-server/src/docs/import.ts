@@ -211,6 +211,7 @@ export interface ImportAnswer {
  * into a new doc doesn't leave an empty tab in front of the file.
  */
 export function importIntoDoc(store: DocStore, imported: Imported, options: { tabName?: string | undefined; bytes: number }): { answer: ImportAnswer; changes: Changes } {
+  store.assertUnlocked();
   const session = store.cliSession();
   const ids: IdSource = { take: () => `${session.sess}.${session.next++}` };
   const tabs = makeTabs(imported, ids);

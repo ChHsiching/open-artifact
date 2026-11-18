@@ -7,7 +7,7 @@
  * never mutates its input, so the caller can keep the old one for undo.
  */
 
-import type { ThemedValue } from './tokens.ts';
+import { cleanName, storedTokenList, type ThemedValue } from './tokens.ts';
 
 /** A parsed `tokens.json` (any JSON object). */
 export type RawTokens = Record<string, unknown>;
@@ -45,29 +45,33 @@ const isObject = (value: unknown): value is Record<string, unknown> => Boolean(v
 /** The token list of a family (empty when absent or malformed). */
 export function familyEntries(raw: RawTokens, family: ListFamily): RawEntry[] {
   const node = raw[family];
-  if (!isObject(node) || !Array.isArray(node.tokens)) return [];
-  return node.tokens.filter((entry): entry is RawEntry => isObject(entry) && typeof entry.name === 'string');
+  return (storedTokenList(family, node) ?? []).filter((entry): entry is RawEntry => isObject(entry) && typeof entry.name === 'string');
 }
 
 /** Replaces a family's token list, keeping the family's other keys. */
 function withEntries(raw: RawTokens, family: ListFamily, update: (entries: unknown[]) => unknown[]): RawTokens {
   const node = isObject(raw[family]) ? (raw[family] as Record<string, unknown>) : {};
-  const entries = Array.isArray(node.tokens) ? node.tokens : [];
-  return { ...raw, [family]: { ...node, tokens: update(entries) } };
+  const entries = storedTokenList(family, node) ?? [];
+  const next = { ...node, tokens: update(entries) };
+  if (family === 'color' && Array.isArray(node.groups)) delete (next as Record<string, unknown>).groups;
+  return { ...raw, [family]: next };
 }
 
 /** The theme ids of the color family, first theme first. */
 export function themeIds(raw: RawTokens): string[] {
   const color = raw.color;
   if (!isObject(color) || !Array.isArray(color.themes)) return [];
-  return color.themes.filter(isObject).map((theme) => String(theme.id ?? '')).filter(Boolean);
+  return color.themes.flatMap((theme) => {
+    const id = cleanName(isObject(theme) ? theme.id : theme)?.toLowerCase();
+    return id ? [id] : [];
+  });
 }
 
 /** Merges fields into one entry. A field set to `undefined` is removed. */
 export function updateEntry(raw: RawTokens, family: ListFamily, name: string, fields: Partial<RawEntry>): RawTokens {
   return withEntries(raw, family, (entries) =>
     entries.map((entry) => {
-      if (!isObject(entry) || entry.name !== name) return entry;
+      if (!isObject(entry) || cleanName(entry.name) !== name) return entry;
       const next: Record<string, unknown> = { ...entry, ...fields };
       for (const [key, value] of Object.entries(fields)) if (value === undefined) delete next[key];
       return next;
@@ -81,7 +85,7 @@ export function updateEntry(raw: RawTokens, family: ListFamily, name: string, fi
  * theme's), and a map whose themes all agree collapses back to one value.
  */
 export function setThemedValue(raw: RawTokens, family: 'color' | 'shadow', name: string, value: string, theme: string | null): RawTokens {
-  const entry = familyEntries(raw, family).find((candidate) => candidate.name === name);
+  const entry = familyEntries(raw, family).find((candidate) => cleanName(candidate.name) === name);
   if (!entry) return raw;
   const themes = themeIds(raw);
   if (!theme || themes.length < 2) return updateEntry(raw, family, name, { value });
@@ -94,6 +98,18 @@ export function setThemedValue(raw: RawTokens, family: 'color' | 'shadow', name:
   return updateEntry(raw, family, name, { value: collapsed ? values[0] : map });
 }
 
+/** Restores inheritance for one secondary theme, keeping all other overrides. */
+export function clearThemeOverride(raw: RawTokens, family: string, name: string, theme: string): RawTokens {
+  const themes = themeIds(raw);
+  const value = familyEntries(raw, family).find((entry) => cleanName(entry.name) === name)?.value;
+  if (!isObject(value) || !themes.includes(theme) || theme === themes[0] || !Object.hasOwn(value, theme)) return raw;
+  const copy = { ...value };
+  // A later-only value was borrowed by the first theme on read.
+  copy[themes[0]!] ??= themes.map((id) => copy[id]).find((v) => v !== undefined);
+  delete copy[theme];
+  return updateEntry(raw, family, name, { value: Object.keys(copy).length === 1 ? copy[themes[0]!] : copy });
+}
+
 /** Adds a token at the end of a family (creating the family if needed). */
 export function addEntry(raw: RawTokens, family: ListFamily, entry: RawEntry): RawTokens {
   let next = raw;
@@ -103,7 +119,7 @@ export function addEntry(raw: RawTokens, family: ListFamily, entry: RawEntry): R
 
 /** Removes a token. */
 export function removeEntry(raw: RawTokens, family: ListFamily, name: string): RawTokens {
-  return withEntries(raw, family, (entries) => entries.filter((entry) => !isObject(entry) || entry.name !== name));
+  return withEntries(raw, family, (entries) => entries.filter((entry) => !isObject(entry) || cleanName(entry.name) !== name));
 }
 
 /** Renames a token; color and shadow aliases (`{old}`) follow it. */
@@ -111,7 +127,7 @@ export function renameEntry(raw: RawTokens, family: ListFamily, from: string, to
   let next = updateEntry(raw, family, from, { name: to });
   if (family !== 'color' && family !== 'shadow') return next;
   const rewrite = (value: unknown): unknown => {
-    if (value === `{${from}}`) return `{${to}}`;
+    if (value === `{${from}}` || value === `{--${from}}`) return `{${to}}`;
     if (isObject(value)) return Object.fromEntries(Object.entries(value).map(([key, v]) => [key, rewrite(v)]));
     return value;
   };
@@ -125,7 +141,7 @@ export function renameEntry(raw: RawTokens, family: ListFamily, from: string, to
 /** Moves a token to `index` within its family. */
 export function moveEntry(raw: RawTokens, family: ListFamily, name: string, index: number): RawTokens {
   return withEntries(raw, family, (entries) => {
-    const from = entries.findIndex((entry) => isObject(entry) && entry.name === name);
+    const from = entries.findIndex((entry) => isObject(entry) && cleanName(entry.name) === name);
     if (from < 0) return entries;
     const list = [...entries];
     const [moved] = list.splice(from, 1);
@@ -167,7 +183,8 @@ export function setFamilyNote(raw: RawTokens, family: ListFamily, note: string):
 
 /** A token name not yet used in `family`, built from `stem`. */
 export function freeTokenName(raw: RawTokens, family: ListFamily, stem: string): string {
-  const taken = new Set(familyEntries(raw, family).map((entry) => entry.name));
+  const families = new Set([family, ...Object.keys(raw).filter((key) => key !== 'type')]);
+  const taken = new Set([...families].flatMap((key) => familyEntries(raw, key).map((entry) => cleanName(entry.name))));
   for (let n = 1; ; n++) {
     const name = n === 1 ? stem : `${stem}-${n}`;
     if (!taken.has(name)) return name;

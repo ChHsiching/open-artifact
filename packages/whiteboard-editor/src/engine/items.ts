@@ -10,10 +10,9 @@
  *   link cards, tables). It is a textured image while the DOM does not
  *   draw the element, a hole (the DOM view under the canvas shows through)
  *   while it does, and absent when text is too small to read.
- * - `#k`, a cylinder's cap line; `#a`, `#b`, an arrow's circle heads.
+ * - `#k`, a shape's ink outline or cylinder cap; `#a`, `#b`, an arrow's circle heads.
  *
- * Live elements (embeds, the timer, what is being typed in) are holes: the
- * DOM draws them above the canvas.
+ * Live elements have transparent hit boxes; their interactive DOM views draw above the canvas.
  *
  * Draw order follows the DOM: sections on layer 0, everything else on
  * layer 1, each in board order (z = order × 4 + companion slot).
@@ -50,6 +49,8 @@ import {
   roundedRoutePath,
   sectionFillColor,
   sectionLineColor,
+  handDrawnShapeOutline,
+  shapeEdgeOverlay,
   shapeFillPaint,
   shapeOutlineColor,
   shapePathData,
@@ -65,7 +66,7 @@ import {
   type ElementMeasures,
   type ElementsById,
 } from '@open-artifact/whiteboard-core';
-import { MAX_CUTS, type CanvasItem, type ItemFlags, type PathItem } from '@open-artifact/canvas-engine';
+import { MAX_CUTS, type CanvasItem, type ItemFlags } from '@open-artifact/canvas-engine';
 import { EXPORT_CARD_COLORS, arrowEndNeighbor, stickerOutlinePadding } from '../export/look.ts';
 import type { SectionTitleSpot } from '../export/paint.ts';
 
@@ -106,7 +107,21 @@ export interface SpritePlace {
 
 /** Elements that are always interactive DOM. */
 export function isAlwaysLive(element: BoardElement): boolean {
-  return element.type === 'html' || element.type === 'timer';
+  switch (element.type) {
+    case 'html':
+    case 'timer':
+    case 'table':
+    case 'link':
+      return true;
+    case 'image':
+      return element.video !== undefined || element.href !== undefined;
+    case 'shape':
+    case 'note':
+    case 'text':
+      return element.text.includes('](');
+    default:
+      return false;
+  }
 }
 
 /** The rotation the element is drawn at, radians (a note's tilt included). */
@@ -294,14 +309,14 @@ function bodyItem(element: Exclude<BoardElement, ArrowElement>, box: Box, scope:
     case 'shape': {
       const fill = shapeFillPaint(element);
       const stroke = shapeStrokePaint(element, scope.scheme);
-      const outline = stroke === 'none' && fill !== 'none' ? shapeOutlineColor(element) : stroke;
+      const edge = stroke === 'none' && fill !== 'none';
       return {
         kind: 'path',
         ...base,
         d: roundedPolygonPathData(element.kind, box.w, box.h, true),
         fill: fill === 'none' ? 'transparent' : fill,
-        stroke: outline === 'none' ? 'transparent' : outline,
-        strokeWidth: outline === 'none' ? 0 : 1.5,
+        stroke: edge ? shapeEdgeOverlay(fill) : 'transparent',
+        strokeWidth: edge ? 1 : 0,
         join: 'round',
       };
     }
@@ -353,16 +368,16 @@ function drawSlot(element: BoardElement, order: number): { layer: number; z: num
 
 /**
  * The body items of one element at draw position `order` (everything but
- * its sprite): a hole when it is `live`. Arrows whose ends are missing draw
+ * its sprite): a transparent hit box while its DOM view is live. Arrows whose ends are missing draw
  * nothing.
  */
 export function elementBodyItems(element: BoardElement, order: number, scope: ItemScope, live: boolean): CanvasItem[] {
   const { layer, z } = drawSlot(element, order);
-  if (element.type === 'arrow') return arrowItems(element, layer, z, scope);
+  if (element.type === 'arrow') return live ? [] : arrowItems(element, layer, z, scope);
   const box = elementLayoutBox(element, scope.measures);
   if (!box) return [];
   if (live) {
-    return [{ kind: 'hole', id: element.id, x: box.x, y: box.y, w: box.w, h: box.h, rotation: itemRotation(element), layer, z, movable: false, resizable: false, hover: false }];
+    return [{ kind: 'rect', fill: 'transparent', id: element.id, x: box.x, y: box.y, w: box.w, h: box.h, rotation: itemRotation(element), layer, z, movable: false, resizable: false, hover: false }];
   }
   const locked = isElementLocked(element);
   const body = {
@@ -379,24 +394,14 @@ export function elementBodyItems(element: BoardElement, order: number, scope: It
     hover: false,
   } as CanvasItem;
   const items: CanvasItem[] = [body];
-  const cap = element.type === 'shape' ? cylinderCapPathData(element.kind, box.w, box.h) : undefined;
-  if (cap) {
-    const stroke = (body as PathItem).stroke;
-    items.push({
-      kind: 'path',
-      id: `${element.id}#k`,
-      x: box.x,
-      y: box.y,
-      w: box.w,
-      h: box.h,
-      rotation: body.rotation,
-      layer,
-      z: z + 1,
-      d: cap,
-      fill: 'transparent',
-      stroke: stroke === 'transparent' ? 'rgba(0,0,0,.15)' : stroke,
-      strokeWidth: 1.5,
-      ...COMPANION,
+  if (element.type === 'shape') {
+    const stroke = shapeStrokePaint(element, scope.scheme);
+    const ink = stroke !== 'none';
+    const d = ink ? handDrawnShapeOutline(element.kind, box.w, box.h, element.id)
+      : !element.hollow ? cylinderCapPathData(element.kind, box.w, box.h) : undefined;
+    if (d) items.push({
+      kind: 'path', id: element.id + '#k', ...box, rotation: body.rotation, layer, z: z + 1,
+      d, fill: ink ? stroke : shapeOutlineColor(element), ...COMPANION,
     });
   }
   return items;

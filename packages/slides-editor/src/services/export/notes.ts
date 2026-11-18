@@ -9,8 +9,8 @@
 export const NOTE_MESSAGES = {
   hidden: 'Hidden slides were left out',
   held: 'Slides with errors were left out',
-  embed: 'Embedded pages became placeholder pictures',
-  embedPdf: 'Embedded pages show as placeholders',
+  embed: 'Embedded pages became still pictures',
+  embedPdf: 'Some embedded pages could not be captured and show as placeholders',
   video: 'Videos became their poster pictures',
   videoMissing: 'Videos without a poster picture became placeholders',
   videoOnline: 'Videos too large to include play from the deck online',

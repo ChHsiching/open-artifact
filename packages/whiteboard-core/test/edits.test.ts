@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { normalizeElement } from '../src/normalize.ts';
 import {
   appendElement,
   arrowNeedsEndsMessage,
@@ -61,6 +62,11 @@ const arrow = (id: string, from: ArrowElement['from'], to: ArrowElement['to']): 
 const ids = (content: BoardContent): string[] => content.elements.map((element) => element.id);
 
 describe('basic edits', () => {
+  it('normalizes the original author stamp on imported shapes', () => {
+    const shape = normalizeElement({ type: 'shape', id: 's', kind: 'rect', x: 0, y: 0, w: 100, h: 100, by: 'agent', text: 'From an agent' });
+    assert.ok(shape?.type === 'shape' && shape.by === 'agent');
+  });
+
   it('keeps the same object when normalization changes nothing', () => {
     const content: BoardContent = { elements: [note('a', 0, 0)] };
     assert.equal(normalizeBoardContent(content), content);
@@ -212,8 +218,13 @@ describe('order and paste placement', () => {
     assert.equal(arrowNeedsEndsMessage('copy'), 'To copy an arrow, select what it is attached to as well.');
   });
 
-  it('makes a link card only for artifact addresses', () => {
-    assert.equal(linkCardFromPaste('hello', [], { x: 0, y: 0 }, 24), undefined);
+  it('makes a link card only for Open Artifact addresses', () => {
+    const center = { x: 0, y: 0 };
+    const href = 'open-artifact://artifact/art_abc1234567';
+    const card = linkCardFromPaste(`  ${href}\n`, [], center, 24);
+    assert.equal(card?.type, 'link');
+    assert.equal(card?.href, href);
+
   });
 });
 

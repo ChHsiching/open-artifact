@@ -193,8 +193,20 @@ if (wants('support')) await buildSupport();
 if (wants('cli')) await buildCli();
 if (wants('cli')) await buildPdfReader();
 if (wants('editors')) await buildEditors();
-if (wants('types') || only === 'editors' || only === 'cli' || only === 'support') await copyIntoTypes();
-if (wants('shell')) await buildShell();
+const copyTypes = wants('types') || ['editors', 'cli', 'support'].includes(only);
+if (wants('shell') || (copyTypes && !existsSync(join(OUT, 'shell/index.html')))) {
+  await buildShell();
+  await rm(join(OUT, 'shell'), { recursive: true, force: true });
+  await cp(join(ROOT, 'dist/daemon/shell'), join(OUT, 'shell'), { recursive: true });
+}
+if (copyTypes) await copyIntoTypes();
+if (only === 'shell') {
+  for (const type of Object.keys(EDITORS)) {
+    const target = join(ROOT, 'artifact-types', type, 'scripts/shell');
+    await rm(target, { recursive: true, force: true });
+    await cp(join(OUT, 'shell'), target, { recursive: true });
+  }
+}
 if (wants('frame')) await buildFrame();
 if (wants('dsh')) await buildDsh();
 console.log(`built ${only ?? 'everything'} in ${((Date.now() - started) / 1000).toFixed(1)}s`);

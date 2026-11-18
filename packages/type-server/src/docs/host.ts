@@ -17,6 +17,7 @@ import {
   walk,
 } from '@open-artifact/docs-core';
 import { canEdit, type Viewer } from '@open-artifact/runtime/capabilities';
+import { DocPeople } from './people.ts';
 import type {
   DocCallAnswer,
   DocCallRequest,
@@ -34,7 +35,7 @@ import type {
   DocVersionResponse,
 } from '@open-artifact/runtime/doc-api';
 import { type CallOutcome, type Changes, type DocPerson, rebirth, runCall, runPageBatch, runPageMember } from './calls.ts';
-import { DocStore, StoreError, docDirOf } from './store.ts';
+import { DocStore, LOCKED_WORDS, StoreError, docDirOf } from './store.ts';
 
 /** Calls answered again for a page that sends them twice (after a reconnect). */
 const MAX_REPLAYS = 500;
@@ -119,14 +120,17 @@ export class DocHost {
   readonly store: DocStore;
   private readonly options: DocHostOptions;
   /** Each page connection's writing session, by its event stream's id. */
-  private readonly sessions = new Map<string, string>();
+  private readonly sessions = new Map<string, { sess: string; who: string }>();
   private readonly replays = new Map<string, DocCallAnswer>();
   /** The pages' decisions on suggestions, for their undo to take back (in memory only). */
   private readonly decisions = new DecisionJournal();
+  /** Who the ids in versions and suggestions are, by name. */
+  readonly people: DocPeople;
 
   constructor(options: DocHostOptions) {
     this.options = options;
     this.store = DocStore.open(docDirOf(options.root));
+    this.people = DocPeople.open(docDirOf(options.root));
   }
 
   get title(): string {
@@ -150,6 +154,7 @@ export class DocHost {
       files: this.store.tabIds().map((id) => this.file(id)),
       enums: this.enums(),
       ...(manifest.display ? { display: manifest.display as DocJsonObject } : {}),
+      ...(manifest.locked ? { locked: manifest.locked } : {}),
     };
   }
 
@@ -178,13 +183,16 @@ export class DocHost {
   /** A page's session: made once per connection, kept while it holds one (a reader gets none). */
   session(client: string, viewer: Viewer): DocSessionResponse {
     const me = { id: viewer.id, name: viewer.name };
-    const base = { me, writable: canEdit(viewer.role), commentable: viewer.role !== 'viewer', project: this.project() };
+    // A person's name as they go by now, for the versions and suggestions their id is on.
+    if (viewer.role !== 'viewer') this.people.remember(viewer.id, viewer.name);
+    const base = { me, writable: canEdit(viewer.role), commentable: viewer.role !== 'viewer', project: this.project(), people: this.people.all() };
     if (!canEdit(viewer.role)) return { sess: null, next: 0, ...base };
     const held = this.sessions.get(client);
-    const kept = held ? this.store.session(held) : null;
+    if (held && held.who !== viewer.id) throw new DocRequestError(403, 'not_writer', 'The connection belongs to another viewer.');
+    const kept = held ? this.store.session(held.sess) : null;
     if (kept) return { sess: kept.sess, next: kept.next, ...base };
     const session = this.store.mintSession();
-    this.sessions.set(client, session.sess);
+    this.sessions.set(client, { sess: session.sess, who: viewer.id });
     return { sess: session.sess, next: session.next, ...base };
   }
 
@@ -202,7 +210,8 @@ export class DocHost {
       .filter((id) => !ids || ids.has(id))
       .map((id) => {
         const info = doc.suggestions?.[id];
-        return { id, by: info?.by ?? '', at: info?.at ?? '', ...(info?.via ? { via: info.via } : {}), mine: !!info?.by && info.by === me, asOf: suggestionAsOf(doc.blocks, id) };
+        const name = info?.via === 'agent' ? undefined : this.people.nameOf(info?.by);
+        return { id, by: info?.by ?? '', at: info?.at ?? '', ...(name ? { name } : {}), ...(info?.via ? { via: info.via } : {}), mine: !!info?.by && info.by === me, asOf: suggestionAsOf(doc.blocks, id) };
       });
   }
 
@@ -217,7 +226,7 @@ export class DocHost {
     const versions = [...(this.store.history(tabId)?.versions ?? [])].reverse().map((version) => ({
       rev: version.rev,
       by: version.by,
-      ...(version.by === 'human' ? { user: version.user } : {}),
+      ...(version.by === 'human' ? { user: version.user, ...(this.people.nameOf(version.user) ? { name: this.people.nameOf(version.user) } : {}) } : {}),
       at: version.at,
       ...(version.restoredFrom !== undefined ? { restoredFrom: version.restoredFrom } : {}),
     }));
@@ -233,6 +242,7 @@ export class DocHost {
 
   restore(tab: string, rev: number, ifRev: number | undefined, viewer: Viewer): DocRestoreResponse {
     if (!canEdit(viewer.role)) throw new DocRequestError(403, 'not_writer', 'Only editors can restore a version.');
+    if (this.store.manifest.locked) throw new DocRequestError(409, 'locked', LOCKED_WORDS);
     const tabId = this.tabOf(tab);
     const before = this.store.doc(tabId).rev;
     if (ifRev !== undefined && ifRev !== before) throw new DocRequestError(409, 'guard_mismatch', `The tab changed since: it is at rev ${before}, not ${ifRev}.`);
@@ -240,6 +250,7 @@ export class DocHost {
     try {
       result = this.store.restoreTab(tabId, rev, { by: 'human', user: viewer.id, sess: 'restore' });
     } catch (error) {
+      if (error instanceof StoreError && (error.code === 'DOC_TOO_LARGE' || error.code === 'LOCKED')) throw new DocRequestError(409, error.code.toLowerCase(), error.message);
       if (error instanceof StoreError) throw new DocRequestError(404, 'not_found', error.message);
       throw error;
     }
@@ -252,14 +263,15 @@ export class DocHost {
   /** A page's call. A call sent again with the same `opId` gets the first answer back when that one was allowed. */
   call(request: DocCallRequest, client: string, viewer: Viewer): DocCallAnswer {
     const opId = typeof request.opId === 'string' && request.opId ? request.opId : '';
-    if (opId) {
-      const first = this.replays.get(opId);
+    const replayKey = JSON.stringify([viewer.id, viewer.role, opId]);
+    if (opId && canEdit(viewer.role)) {
+      const first = this.replays.get(replayKey);
       if (first) return { ...first, replayed: true } as DocCallAnswer;
     }
     const answer = this.callOnce(request, client, viewer, opId);
-    const reads = 'member' in request && request.member.verb === 'read';
+    const reads = 'member' in request && request.member?.verb === 'read';
     if (opId && !reads && answer.verdict === 'allow') {
-      this.replays.set(opId, answer);
+      this.replays.set(replayKey, answer);
       if (this.replays.size > MAX_REPLAYS) this.replays.delete(this.replays.keys().next().value!);
     }
     return answer;
@@ -270,9 +282,9 @@ export class DocHost {
     if ('batch' in request) {
       if (!Array.isArray(request.batch)) return deny('bad_request', 'batch is a list of members');
       if (!canEdit(viewer.role)) return deny('not_writer', 'This link cannot edit the doc.');
-      const session = this.sessionFor(request.sess, client);
+      const session = this.sessionFor(request.sess, client, viewer);
       if (!session) return deny('not_your_session', 'Take a session first.');
-      const outcome = runPageBatch(this.store, request.batch, person, session);
+      const outcome = runPageBatch(this.store, request.batch, person, session, { owner: viewer.role === 'owner' });
       if (outcome.changes) this.announce(outcome.changes, { by: 'person', except: client });
       return outcome.body as DocCallAnswer;
     }
@@ -282,20 +294,23 @@ export class DocHost {
     const id = typeof member.ref?.id === 'string' ? member.ref.id : '';
     const payload = isRecord(member.payload) ? member.payload : {};
     if (member.verb === 'read' && object === 'node') return this.readNode(id, payload, viewer);
-    if (member.verb === 'read' && object === 'project') return { verdict: 'allow', value: this.project() as unknown as DocJsonObject };
+    // The deleted tabs (`payload.kind: 'deleted'`) are for those who can restore them.
+    if (member.verb === 'read' && object === 'project' && payload.kind === 'deleted' && !canEdit(viewer.role)) return deny('not_writer', 'Only editors can see and restore deleted tabs.');
+    if (member.verb === 'read' && object === 'project' && payload.kind !== 'deleted') return { verdict: 'allow', value: this.project() as unknown as DocJsonObject };
     if (member.verb === 'update' && object === 'node') return this.writeNode(id, payload, request.sess, client, viewer, opId);
     if (!canEdit(viewer.role) && member.verb !== 'read') return deny('not_writer', 'This link cannot edit the doc.');
-    const session = this.sessionFor(request.sess, client) ?? (member.verb === 'read' ? { sess: 'read', next: 0 } : null);
+    const session = this.sessionFor(request.sess, client, viewer) ?? (member.verb === 'read' ? { sess: 'read', next: 0 } : null);
     if (!session) return deny('not_your_session', 'Take a session first.');
     const { $lid: _alias, ...rest } = member as DocMember;
-    const outcome = runPageMember(this.store, rest, person, session);
+    const outcome = runPageMember(this.store, rest, person, session, { owner: viewer.role === 'owner' });
     if (outcome.changes) this.announce(outcome.changes, { by: 'person', except: client });
     return outcome.body as DocCallAnswer;
   }
 
   /** The session a page names, when it is the one this connection holds. */
-  private sessionFor(sess: string, client: string) {
-    if (typeof sess !== 'string' || this.sessions.get(client) !== sess) return null;
+  private sessionFor(sess: string, client: string, viewer: Viewer) {
+    const held = this.sessions.get(client);
+    if (!held || held.who !== viewer.id || held.sess !== sess) return null;
     return this.store.session(sess);
   }
 
@@ -317,24 +332,41 @@ export class DocHost {
     const tabId = this.store.tabOfNode(node);
     if (!tabId) return deny('node_gone', 'no such node');
     if (!canEdit(viewer.role)) return deny('not_writer', 'This link cannot edit the doc.');
-    const session = this.sessionFor(sess, client);
+    const session = this.sessionFor(sess, client, viewer);
     if (!session) return deny('not_your_session', 'Take a session first.');
     const ops = Array.isArray(payload.ops) ? payload.ops : null;
     if (!ops) return deny('bad_request', 'payload.ops is the list of ops');
+    const lock = this.store.manifest.locked;
+    if (lock) return deny('locked', LOCKED_WORDS, { data: { lockedBy: lock.by, lockedAt: lock.at } as unknown as DocJsonObject });
     const doc = this.store.doc(tabId);
+    const startNext = session.next;
+    // `strict`: the write is meant for the tab at `ifRev` and no other (the page making the tab match what it shows).
+    if (payload.strict === true && payload.ifRev !== doc.rev)
+      return deny('guard_mismatch', `the tab changed since: it is at rev ${doc.rev}, not ${String(payload.ifRev)}`, { data: { rev: doc.rev } });
     let result;
     try {
       result = applyOps(doc, ops, session, {
         ...(typeof payload.ifRev === 'number' ? { ifRev: payload.ifRev } : {}),
         decisions: (suggestId) => this.decisions.get(tabId, suggestId),
+        // What the person suggests in Suggesting mode is recorded as theirs.
+        author: viewer.id,
       });
     } catch (error) {
       if (!(error instanceof Refusal)) throw error;
       this.options.log(`refused ${error.code} at op ${error.opIndex ?? 0}: ${error.message}`);
       return deny(error.code, error.message, { index: error.opIndex ?? 0, data: error.extra as DocJsonObject });
     }
-    if (result.changed) this.store.putDoc(tabId, result.doc, { by: 'human', user: viewer.id, sess: session.sess });
-    else this.store.saveSessions();
+    if (result.changed) {
+      try {
+        this.store.putDoc(tabId, result.doc, { by: 'human', user: viewer.id, sess: session.sess });
+      } catch (error) {
+        if (!(error instanceof StoreError) || (error.code !== 'DOC_TOO_LARGE' && error.code !== 'LOCKED')) throw error;
+        // Nothing of the write stays: the ids it took are given back.
+        session.next = startNext;
+        this.options.log(`refused ${error.code.toLowerCase()}: ${error.message}`);
+        return deny(error.code.toLowerCase(), error.message, { data: error.data as DocJsonObject });
+      }
+    } else this.store.saveSessions();
     for (const decision of result.decisions) this.decisions.put(tabId, { ...decision, ...(opId ? { opId } : {}) });
     const rev = result.doc.rev;
     if (result.changed) this.announce({ tabs: [tabId] }, { by: 'person', except: client, sess: session.sess, ...(opId ? { opId } : {}) });

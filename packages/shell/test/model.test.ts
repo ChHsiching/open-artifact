@@ -51,6 +51,16 @@ const artifact = (id: string, patch: Partial<ArtifactView> = {}): ArtifactView =
 });
 
 describe('shell model', () => {
+  it('opens the linked slide in the editor frame and scopes slide links to decks', () => {
+    const boot = { id: 'deck', page: 'http://localhost:8000/', type: 'slides' };
+    const address = 'http://localhost:8100/a/deck';
+    for (const hash of ['#slide-~7', '#slide-~intro', '#slide-2']) {
+      assert.equal(new URL(pageAddress(boot, address + hash)!).hash, hash);
+    }
+    assert.equal(new URL(pageAddress(boot, address + '#unknown')!).hash, '');
+    assert.equal(new URL(pageAddress({ ...boot, type: 'design' }, address + '#slide-1')!).hash, '');
+  });
+
   it('names the agent: host, then boot, then fallback', () => {
     assert.equal(agentNameOf({ origin: 'x', caps: {}, agentName: 'Helper' }, { agentName: 'Boot' }, 'Agent'), 'Helper');
     assert.equal(agentNameOf(null, { agentName: 'Boot' }, 'Agent'), 'Boot');

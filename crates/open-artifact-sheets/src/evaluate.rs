@@ -280,7 +280,7 @@ impl Calculation {
             };
             args.push(arg);
         }
-        if description.name == "SUBTOTAL" && !self.subtotal_ranges_are_readable(&args[1..]) {
+        if lifted.is_empty() && !self.total_ranges_are_readable(description.name, &args) {
             return Operand::error(CellError::Value);
         }
         if let Some(e) = error_in_range {
@@ -384,6 +384,7 @@ impl Calculation {
                 }
                 let value = match answer {
                     Some(e) => e,
+                    None if !self.total_ranges_are_readable(id.description().name, &one) => Value::Error(CellError::Value),
                     None => {
                         let mut random = || self.random(f, index);
                         let mut cx = CallContext { cell, now, random: &mut random, locale, sources: None };
@@ -450,14 +451,26 @@ impl Calculation {
         }
     }
 
-    /// SUBTOTAL totals ranges only (not arrays or values), and none with a formula that calls SUBTOTAL in it.
-    fn subtotal_ranges_are_readable(&self, ranges: &[Arg]) -> bool {
+    /// SUBTOTAL and AGGREGATE options 0–3 refuse ranges containing either kind of nested total.
+    fn total_ranges_are_readable(&self, name: &str, args: &[Arg]) -> bool {
+        let ranges = match name {
+            "SUBTOTAL" => &args[1..],
+            "AGGREGATE" if args[1].number(self.locale).is_ok_and(|n| (0.0..4.0).contains(&n.trunc())) => {
+                // LARGE, SMALL and the percentile/quartile functions use the last argument as a parameter.
+                if args[0].number(self.locale).is_ok_and(|n| n.trunc() >= 14.0) {
+                    &args[2..3]
+                } else {
+                    &args[2..]
+                }
+            }
+            _ => return true,
+        };
         ranges.iter().all(|arg| match arg {
             Arg::Cells(Cells { place: Some(place), .. }) => self.grids[place.sheet]
                 .slots
                 .range((place.top, 0)..=(place.bottom, usize::MAX))
                 .all(|(&(_, column), slot)| match slot {
-                    Slot::Formula(i) if (place.left..=place.right).contains(&column) => !self.formulas[*i].calls_subtotal,
+                    Slot::Formula(i) if (place.left..=place.right).contains(&column) => !self.formulas[*i].contains_total,
                     _ => true,
                 }),
             _ => false,

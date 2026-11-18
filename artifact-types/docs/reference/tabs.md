@@ -49,7 +49,15 @@ one nested under it.
   with a `mention` chip, `ref: "file/<tab id>"`, or with a link on words, `[words](#<tab id>)`.
 - `open-artifact delete <root> '{"ref": {"object": "file", "id": "<tab>"}}'` removes a tab; links and
   mention chips to it then lead nowhere, so mend them. It takes the tab (its `file`), never its body as a `node` (`tab_body`), and the last tab
-  stays (`last_tab`): to start a tab over, replace what it holds. A deleted tab can't be brought back from here.
+  stays (`last_tab`): to start a tab over, replace what it holds. When open comment threads hang on the tab the
+  delete is refused (`anchors_affected`, naming the threads): resolve or move them, or send `"payload":
+  {"allowDetach": true}` to delete it anyway.
+- A deleted tab comes back with its name, body, history, comments and the subtabs deleted with it. `open-artifact
+  batch <root> '[{"verb": "read", "ref": {"object": "project", "id": "<doc id>"}, "payload": {"kind": "deleted"}}]'`
+  lists them; `open-artifact batch <root> '[{"verb": "create", "object": "file", "payload": {"undelete": "<tab id>"}}]'`
+  restores one at its old place (`returnedTo`), or after the last tab when that place is gone. When that is refused
+  (`unreadable` and the like), `{"copyOf": "<tab id>"}` in place of `undelete` adds its words as a new last tab with
+  the same name, without its comments or history; the deleted tab stays in the list.
 
 ## The doc's patch
 
@@ -65,6 +73,11 @@ in `read <root>` (or `$lid:p`).
 - `["display", "tabsLocation"]` set to `"left"` lists the tabs beside the text, as "Show on page" in the page's
   tabs menu does (`delete` it to put them back in the menu). The page's font and page-width controls write
   `headingFont`, `textFont` and `pageWidth` there too; `read <root>` shows the record as `display`.
+- `["locked"]` set (to `{}`, or `{"note": "<why>"}`) locks the doc, and `delete` unlocks it. Only an owner may:
+  you act for the owner; a page whose person isn't one is refused with `not_owner`. While it is locked, a patch of
+  `["locked"]` alone is the only write that lands; anything else, a lock patch mixed with other entries included,
+  is refused with `locked`. Every open page hears the lock at once and stops taking edits. Lock or unlock only when
+  the person asks.
 
 ## Dropdown lists
 

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { SHORTCUT_GROUPS, keyLabel } from '../src/topbar/shortcuts.ts';
-import { cleanDocName, defaultPaper, notesText } from '../src/topbar/words.ts';
+import { cleanDocName, defaultPaper, exportedTitle, exportFailure, notesText, otherNotes } from '../src/topbar/words.ts';
 
 describe('key labels', () => {
   it('writes chords the platform’s way', () => {
@@ -43,5 +43,25 @@ describe('renaming', () => {
   it('saves one trimmed line', () => {
     assert.equal(cleanDocName('  Plan\nfor 2027 '), 'Plan for 2027');
     assert.equal(cleanDocName(' \n '), '');
+  });
+});
+
+describe('export words', () => {
+  it('titles the file, naming the pictures it came without', () => {
+    assert.equal(exportedTitle('pdf'), 'Exported as a PDF');
+    assert.equal(exportedTitle('docx', [{ code: 'kept_as_text', what: 'image (not available here)', count: 2 }]), 'Exported as Word without 2 images');
+    assert.equal(
+      exportedTitle('pdf', [
+        { code: 'kept_as_text', what: 'image (not available here)', count: 1 },
+        { code: 'kept_as_text', what: 'embed snapshot (not drawn here)', count: 3 },
+      ]),
+      'Exported as a PDF without 1 image and 3 charts or diagrams',
+    );
+    assert.deepEqual(otherNotes([{ code: 'dropped', what: 'pending section', count: 1 }, { code: 'kept_as_text', what: 'image (x)', count: 1 }]), [{ code: 'dropped', what: 'pending section', count: 1 }]);
+  });
+  it('says why an export failed by its code', () => {
+    assert.match(exportFailure('pdf', 'tab', 'no_chrome'), /Chrome/);
+    assert.equal(exportFailure('docx', 'tab', 'no_node'), 'This tab can’t be exported.');
+    assert.equal(exportFailure('markdown', 'doc', 'weird'), 'Couldn’t export this document as Markdown. Try again in a moment.');
   });
 });

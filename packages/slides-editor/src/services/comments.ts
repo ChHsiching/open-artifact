@@ -36,7 +36,7 @@ export interface SlideAnchor {
 /** True when this viewer is a commenter or more. */
 const commenter = (): boolean => {
   const s = maybeSession();
-  return Boolean(s && s.viewer.role !== 'viewer');
+  return Boolean(s?.shell && s.viewer.role !== 'viewer');
 };
 
 /** The deck's comments. */
@@ -65,9 +65,15 @@ export const useComments = slidesComments.store;
 /** True when this viewer may write comments (commenters and up). */
 export const canComment = slidesComments.canComment;
 
+/** Ask the frame to enter comment mode at the selected slide or element. */
+export function requestAnchoredComment(anchor: SlideAnchor): void {
+  if (canComment()) maybeSession()?.shell?.requestCommentMode(true, JSON.stringify(anchor));
+}
+
 /** Loads the threads and keeps them current. */
 export async function startComments(): Promise<void> {
-  await slidesComments.start(maybeSession()?.comments ?? null);
+  const host = maybeSession();
+  if (host?.shell) await slidesComments.start(host.comments);
 }
 
 /** Reads a stored anchor; anything unreadable is the whole deck. */

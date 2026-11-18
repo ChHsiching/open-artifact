@@ -24,17 +24,19 @@ import { diffPage } from '../src/sync/diff.ts';
 import { type PageNode, canonical, docToPage } from '../src/sync/page.ts';
 
 describe('picture files', () => {
-  it('takes pictures up to 25 MB and says why others are left out', () => {
+  it('takes pictures up to 20 MB and says why others are left out', () => {
     assert.equal(judgeImageFile({ type: 'image/png', size: 10 }), 'ok');
     assert.equal(judgeImageFile({ type: 'IMAGE/JPEG', size: MAX_IMAGE_BYTES }), 'ok');
     assert.equal(judgeImageFile({ type: 'image/png', size: MAX_IMAGE_BYTES + 1 }), 'tooLarge');
     assert.equal(judgeImageFile({ type: 'application/pdf', size: 10 }), 'notImage');
     assert.equal(judgeImageFile({ type: 'image/png', size: 0 }), 'empty');
     assert.equal(refusalMessage(['ok']), null);
-    assert.equal(refusalMessage(['tooLarge']), 'That image is over 25 MB.');
+    assert.equal(refusalMessage(['tooLarge']), 'That image is over 20 MB.');
     assert.equal(refusalMessage(['notImage', 'notImage']), '2 files aren’t PNG, JPEG, GIF or WebP images.');
     assert.equal(judgeImageFile({ type: 'image/svg+xml', size: 10 }), 'notImage');
     assert.match(refusalMessage(['notImage', 'tooLarge'])!, /2 files couldn’t be added/);
+    assert.equal(MAX_IMAGE_BYTES, 20 * 1024 * 1024);
+    assert.equal(refusalMessage([], 3), 'Only 20 images can be added at once. The first 20 were added.');
   });
 
   it('sizes an upload’s box by the picture, no wider than the column', () => {

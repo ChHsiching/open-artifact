@@ -5,7 +5,7 @@
  * says what a design anchor is (`lib/comment-anchors.ts`), resolves it
  * against the live document and shows it.
  *
- * Comment mode (C, the Comment tool, or the Shell's Comment button) turns
+ * Comment mode (the Shell's Comments button or C) turns
  * presses on the canvas into new threads: a click on an element, an
  * artboard, a note or the empty canvas, or a drag that draws an area.
  * Commenters can comment; viewers only read. Only the owner hands threads
@@ -170,7 +170,7 @@ export function anchorAt(world: { x: number; y: number }): DesignAnchor {
   return { kind: 'point', page, x: Math.round(world.x), y: Math.round(world.y) };
 }
 
-/** Starts a thread on what is selected (the selection bar's Comment button). */
+/** Starts a thread on the selection when requested by the global frame shell. */
 export function commentOnSelection(): void {
   if (!canComment()) {
     toast.add({ title: 'You can only view this design' });

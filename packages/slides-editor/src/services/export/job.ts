@@ -51,21 +51,8 @@ export function videoFrames(slide: Slide): ImageNode[] {
   return out;
 }
 
-/** True when the slide holds an embedded page. */
-export function hasEmbeds(slide: Slide): boolean {
-  let found = false;
-  forEachNode(slide, (node) => {
-    if (node.kind === 'embed') found = true;
-  });
-  return found;
-}
-
-/**
- * Notes what a picture of the slide cannot show: embedded pages draw as
- * placeholders, videos as their poster (or nothing without one).
- */
-export function noteStills(job: ExportJob, entry: ExportSlide, embedKind: 'embed' | 'embedPdf'): void {
-  if (hasEmbeds(entry.slide)) job.notes.add(embedKind, entry.number);
+/** Pictures of a clip use its poster. */
+export function noteStills(job: ExportJob, entry: ExportSlide): void {
   for (const frame of videoFrames(entry.slide)) {
     const poster = frame.src || (frame.video?.link ? videoThumbnailUrl(frame.video.link) : null);
     job.notes.add(poster ? 'video' : 'videoMissing', entry.number);

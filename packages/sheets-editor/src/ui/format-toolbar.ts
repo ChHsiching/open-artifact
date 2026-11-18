@@ -608,7 +608,7 @@ export const FormattingToolbar = React.memo(function ({
   whyNoChart: whyNoChart,
   whatHasCaretAfterMenu: whatHasCaretAfterMenu,
   onKeyDown: onKeyDown,
-  comment: comment,
+  comment: comment = null,
   inserts: inserts,
   onInsertChosen: onInsertChosen,
 }: Dynamic) {

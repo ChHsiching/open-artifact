@@ -35,11 +35,11 @@ function DocShell(): ReactNode {
         <Slot name="aside" />
         <main className="doc-scroll relative min-w-0 flex-1 overflow-y-auto" data-doc-scroll="">
           <div
-            className="doc-page relative mx-auto px-6 pt-10 pb-[40vh] sm:px-12"
+            className="doc-page relative mx-auto px-[52px] pt-16 pb-[40vh]"
             data-text-font={display.textFont}
             data-heading-font={display.headingFont}
             data-width={display.pageWidth}
-            style={{ maxWidth: 'calc(var(--doc-width) + 6rem)' }}
+            style={{ maxWidth: 'calc(var(--doc-width) + 104px)' }}
           >
             {previewing ? (
               <VersionPreview />

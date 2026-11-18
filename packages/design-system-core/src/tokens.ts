@@ -127,20 +127,20 @@ const META_KEYS = new Set(['name', 'version', '$schema', 'description']);
 
 const HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
 const COLOR_FN = /^(?:rgba?|hsla?|oklch|oklab|lab|lch|color)\(\s*[A-Za-z0-9.%,/\s+-]*\)$/i;
-const ALIAS = /^\{([A-Za-z0-9][A-Za-z0-9_.-]{0,63})\}$/;
+const ALIAS = /^\{(?:--)?([A-Za-z0-9][A-Za-z0-9_.-]{0,63})\}$/;
 const LENGTH = /^-?(?:\d+\.?\d*|\.\d+)(?:px|rem|em|%)$/;
 const PLAIN_VALUE = /^[A-Za-z0-9 #%(),./+_-]+$/;
 
 /** Strips a leading `--` or `.` and validates; `null` when invalid. */
 export function cleanName(raw: unknown): string | null {
   if (typeof raw !== 'string') return null;
-  const name = raw.replace(/^--/, '').replace(/^\./, '');
+  const name = raw.trim().replace(/^--/, '').replace(/^\./, '');
   return TOKEN_NAME.test(name) ? name : null;
 }
 
 /** Escapes a name for a CSS identifier (`.` → `\.`). */
 export function cssIdent(name: string): string {
-  return name.replace(/\./g, '\\.');
+  return name.replace(/\./g, '\\.').replace(/^\d/, (digit) => '\\3' + digit + ' ');
 }
 
 /** A literal color (not an alias): hex lowercased, or a plain color function. */
@@ -221,6 +221,24 @@ export function plainValue(value: unknown): string | null {
   const text = value.trim();
   if (!text || text.length > TOKEN_LIMITS.plainValue || !PLAIN_VALUE.test(text) || !balanced(text)) return null;
   if (/\b(?:var|url|expression)\s*\(/i.test(text)) return null;
+  return text;
+}
+
+/** Older systems kept color tokens inside named groups. A flat list takes precedence. */
+export function storedTokenList(family: string, node: unknown): unknown[] | null {
+  if (!node || typeof node !== 'object') return null;
+  const { tokens, groups } = node as { tokens?: unknown; groups?: unknown };
+  if (Array.isArray(tokens)) return tokens;
+  if (family === 'color' && Array.isArray(groups)) {
+    return groups.flatMap((group) => Array.isArray(group?.tokens) ? group.tokens : []);
+  }
+  return null;
+}
+
+function motionValue(value: unknown): string | null {
+  if (typeof value === 'number' && value >= 0 && value < 1e6) return `${Math.round(value)}ms`;
+  const text = plainValue(value);
+  if (text && /^\.\d+(ms|s)$/i.test(text)) return '0' + text.toLowerCase();
   return text;
 }
 
@@ -343,7 +361,7 @@ export function normalizeTokens(input: unknown): NormalizeResult {
   const listOf = (key: string): unknown[] | null => {
     const family = raw[key];
     if (family === undefined) return null;
-    const tokens = (family as { tokens?: unknown })?.tokens;
+    const tokens = storedTokenList(key, family);
     if (!Array.isArray(tokens)) {
       note(`${key}: not a {"tokens": [...]} list, so it shows empty. Rewrite it as a list of {name, value, usage}.`);
       return null;
@@ -355,8 +373,8 @@ export function normalizeTokens(input: unknown): NormalizeResult {
   const color = raw.color as { themes?: unknown; note?: unknown } | undefined;
   const themeList = Array.isArray(color?.themes) ? (color!.themes as unknown[]) : [];
   for (const theme of themeList) {
-    const id = cleanName((theme as Theme)?.id)?.toLowerCase();
-    if (!id || out.themes.some((t) => t.id === id)) {
+    const id = cleanName(typeof theme === 'string' ? theme : (theme as Theme)?.id)?.toLowerCase();
+    if (!id || id === 'prototype' || Object.hasOwn(Object.prototype, id) || out.themes.some((t) => t.id === id)) {
       note(`color.themes: theme ${JSON.stringify((theme as Theme)?.id)} dropped (bad or duplicate id).`);
       continue;
     }
@@ -364,9 +382,9 @@ export function normalizeTokens(input: unknown): NormalizeResult {
       note(`color.themes: more than ${TOKEN_LIMITS.themes} themes; "${id}" dropped.`);
       continue;
     }
-    out.themes.push({ id, name: typeof (theme as Theme).name === 'string' ? (theme as Theme).name : id });
+    out.themes.push({ id, name: typeof (theme as Theme)?.name === 'string' ? (theme as Theme).name : id });
   }
-  if (!out.themes.length) out.themes.push({ id: 'default', name: 'Default' });
+  if (!out.themes.length) out.themes.push({ id: 'light', name: 'Light' });
   const themeIds = out.themes.map((theme) => theme.id);
   const firstTheme = themeIds[0]!;
   out.colorNote = clamp(color?.note, TOKEN_LIMITS.note);
@@ -393,7 +411,7 @@ export function normalizeTokens(input: unknown): NormalizeResult {
     }
     if (!Object.keys(declared).length) return null;
     // A value only in a later theme is borrowed for the first.
-    if (!declared[firstTheme]) declared[firstTheme] = declared[Object.keys(declared)[0]!]!;
+    if (!declared[firstTheme]) declared[firstTheme] = declared[themeIds.find((id) => declared[id] !== undefined)!]!;
     return declared;
   };
 
@@ -493,17 +511,21 @@ export function normalizeTokens(input: unknown): NormalizeResult {
     }
     const declared = readThemed('shadow', name, e.value, shadowValue);
     if (!declared) continue;
+    if (out.shadows.length >= TOKEN_LIMITS.familyTokens) {
+      note(`shadow: at most ${TOKEN_LIMITS.familyTokens} tokens are read.`);
+      break;
+    }
     taken.add(name);
     out.shadows.push({ name, usage: clamp(e.usage, TOKEN_LIMITS.usage), declared, resolved: { ...declared } });
   }
-  out.spacing = readPlain('spacing', length, TOKEN_LIMITS.familyTokens * 4);
-  out.radius = readPlain('radius', length, TOKEN_LIMITS.familyTokens * 4);
+  out.spacing = readPlain('spacing', length, TOKEN_LIMITS.familyTokens);
+  out.radius = readPlain('radius', (value) => value === 'full' ? '9999px' : length(value), TOKEN_LIMITS.familyTokens);
 
   // Extra families.
   for (const key of Object.keys(raw)) {
     if (META_KEYS.has(key) || (KNOWN_FAMILIES as readonly string[]).includes(key)) continue;
     const family = raw[key] as { tokens?: unknown; note?: unknown } | null;
-    if (!family || typeof family !== 'object' || !Array.isArray(family.tokens)) {
+    if (!/^(?!(?:prototype|constructor)$)[A-Za-z][A-Za-z0-9_-]{0,31}$/.test(key) || !family || typeof family !== 'object' || !Array.isArray(family.tokens)) {
       note(`"${key}" is not a token family; kept, not shown.`, 'info');
       continue;
     }
@@ -515,7 +537,7 @@ export function normalizeTokens(input: unknown): NormalizeResult {
       key,
       title: familyTitle(key),
       note: clamp(family.note, TOKEN_LIMITS.note),
-      tokens: readPlain(key, plainValue, TOKEN_LIMITS.familyTokens),
+      tokens: readPlain(key, key === 'motion' ? motionValue : plainValue, TOKEN_LIMITS.familyTokens),
     });
   }
 
@@ -529,12 +551,16 @@ export function normalizeTokens(input: unknown): NormalizeResult {
         note(`type.families.${rawKey}: invalid family stack; dropped.`);
         continue;
       }
+      if (Object.keys(out.families).length >= 12) {
+        note('type.families: at most 12 font families are read.');
+        break;
+      }
       out.families[key] = value;
     }
     for (const font of Array.isArray(type.fonts) ? type.fonts.slice(0, TOKEN_LIMITS.fonts) : []) {
       const family = typeof font?.family === 'string' ? font.family.trim() : '';
       const file = typeof font?.file === 'string' ? font.file.trim() : '';
-      if (!family || /["';{}<>\\()]/.test(family) || !file || /\.\.|^\/|[\s"'()\\]/.test(file)) {
+      if (!family || /["';{}<>\\()]/.test(family) || !file || /(?:^|\/)\.\.(?:\/|$)|^\/|[:\x00-\x1f"'()\\]/.test(file)) {
         note(`type.fonts: ${JSON.stringify(font)} dropped (family must be a bare name, file a relative path).`);
         continue;
       }
@@ -625,13 +651,15 @@ function cssThemed(text: string): string {
 /** Compiles normalized tokens to the `tokens.css` every consumer loads. */
 export function compileTokensCss(tokens: NormalizedTokens, options: CompileOptions = {}): string {
   const lines: string[] = [];
+  const comment = (value: string) => value.replace(/\*\//g, '* /').replace(/<\//g, '< /').replace(/[\r\n\f]+/g, ' ').trim();
+  const usage = (value?: string) => value ? ` /* ${comment(value)} */` : '';
   const first = tokens.themes[0]!.id;
-  lines.push(`/* ${(options.title ?? tokens.name ?? 'Design system').replace(/\*\//g, '')} — generated from tokens.json */`);
+  lines.push(`/* ${comment(options.title ?? tokens.name ?? 'Design system')} — generated from tokens.json */`);
 
   // Colors and shadows of the first theme.
   lines.push(`:root, [data-theme="${first}"] {`);
   for (const token of [...tokens.colors, ...tokens.shadows]) {
-    lines.push(`  --${cssIdent(token.name)}: ${cssThemed(token.declared[first]!)};`);
+    lines.push(`  --${cssIdent(token.name)}: ${cssThemed(token.declared[first]!)};${usage(token.usage)}`);
   }
   lines.push('}');
 
@@ -642,7 +670,7 @@ export function compileTokensCss(tokens: NormalizedTokens, options: CompileOptio
       const own = token.declared[theme.id];
       const inherited = token.declared[first]!;
       if (own !== undefined && own !== inherited) body.push(`  --${cssIdent(token.name)}: ${cssThemed(own)};`);
-      else if (own === undefined && aliasTarget(inherited)) body.push(`  --${cssIdent(token.name)}: ${cssThemed(inherited)};`);
+      else if (aliasTarget(own ?? inherited)) body.push(`  --${cssIdent(token.name)}: ${cssThemed(inherited)};`);
     }
     if (body.length) lines.push(`[data-theme="${theme.id}"] {`, ...body, '}');
   }
@@ -650,9 +678,17 @@ export function compileTokensCss(tokens: NormalizedTokens, options: CompileOptio
   // Theme-independent values.
   const root: string[] = [];
   for (const token of [...tokens.spacing, ...tokens.radius, ...tokens.extras.flatMap((family) => family.tokens)]) {
-    root.push(`  --${cssIdent(token.name)}: ${token.value};`);
+    root.push(`  --${cssIdent(token.name)}: ${token.value};${usage(token.usage)}`);
   }
   for (const [key, stack] of Object.entries(tokens.families)) root.push(`  --font-${cssIdent(key)}: ${stack};`);
+  const declared = new Set([...tokens.colors, ...tokens.shadows, ...tokens.spacing, ...tokens.radius, ...tokens.extras.flatMap((family) => family.tokens)].map((token) => token.name));
+  for (const group of tokens.groups) {
+    for (const style of group.styles) {
+      if (declared.has('text-' + style.name)) continue;
+      const italic = style.fontStyle === 'italic' ? 'italic ' : '';
+      root.push(`  --text-${cssIdent(style.name)}: ${italic}${style.fontWeight ?? '400'} ${style.fontSize}/${style.lineHeight ?? '1.4'} ${style.family ?? 'inherit'};${usage(style.usage)}`);
+    }
+  }
   if (root.length) lines.push(':root {', ...root, '}');
 
   // One class per type style.
@@ -661,13 +697,13 @@ export function compileTokensCss(tokens: NormalizedTokens, options: CompileOptio
       const decls: string[] = [];
       if (style.family) decls.push(`font-family: ${style.family}`);
       decls.push(`font-size: ${style.fontSize}`);
-      if (style.lineHeight) decls.push(`line-height: ${style.lineHeight}`);
-      if (style.fontWeight) decls.push(`font-weight: ${style.fontWeight}`);
-      if (style.letterSpacing) decls.push(`letter-spacing: ${style.letterSpacing}`);
+      decls.push(`line-height: ${style.lineHeight ?? '1.4'}`);
+      decls.push(`font-weight: ${style.fontWeight ?? '400'}`);
+      decls.push(`letter-spacing: ${style.letterSpacing ?? '0'}`);
       if (style.fontStyle) decls.push(`font-style: ${style.fontStyle}`);
       if (style.textTransform) decls.push(`text-transform: ${style.textTransform}`);
       if (style.opticalSize !== undefined) decls.push(`font-variation-settings: 'opsz' ${style.opticalSize}`);
-      lines.push(`.${cssIdent(style.name)} { ${decls.join('; ')}; }`);
+      lines.push(`.${cssIdent(style.name)} {`, ...decls.map((declaration) => `  ${declaration};`), '}');
     }
   }
 
@@ -697,7 +733,28 @@ export function tokensToCss(text: string, options?: CompileOptions): { css: stri
   return { css: compileTokensCss(tokens, options), notes };
 }
 
-/** Divider stem of a color name for grouping rows: `bg-000` → `bg`, `text-muted` → `text`. */
+/** The label shared by tokens in a palette (after any common namespace). */
 export function colorStem(name: string): string {
-  return name.replace(/[-_.][^-_.]*$/, '') || name;
+  return /^(.*?)-\d{1,4}$/.exec(name)?.[1] ?? name.split('-')[0]!;
+}
+
+export function colorGroups(colors: ThemedToken[]): { prefix: string; groups: Map<string, ThemedToken[]> } {
+  const names = colors.map((color) => color.name);
+  let prefix = '';
+  const parts = (names[0] ?? '').split('-');
+  for (let n = 1; names.length > 1 && n < parts.length; n++) {
+    const candidate = parts.slice(0, n).join('-') + '-';
+    if (!names.every((name) => name.startsWith(candidate) && name.length > candidate.length)) break;
+    if (names.some((name) => name.slice(candidate.length).includes('-'))) prefix = candidate;
+  }
+  const stems = new Set(names.map((name) => name.slice(prefix.length)).filter((name) => name.includes('-')).map(colorStem));
+  const groups = new Map<string, ThemedToken[]>([['', []]]);
+  for (const color of colors) {
+    const stem = colorStem(color.name.slice(prefix.length));
+    const key = stems.has(stem) ? stem : '';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(color);
+  }
+  if (!groups.get('')!.length) groups.delete('');
+  return { prefix, groups };
 }

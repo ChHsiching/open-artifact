@@ -137,7 +137,7 @@ export interface SheetStoreOptions {
   /** More people the page may name in cells (people chips), beyond the owner and those who opened it. */
   people?: () => SheetPerson[];
   /** Hands a request to the agent ("Import from Excel"); true when it was taken. */
-  sendToAgent?: (request: AgentRequest) => boolean;
+  sendToAgent?: (request: AgentRequest) => boolean | Promise<boolean>;
   log?: (line: string) => void;
 }
 
@@ -257,7 +257,7 @@ export class SheetStore {
   private readonly ownerId: string;
   private readonly ownerName: string;
   private readonly morePeople: () => SheetPerson[];
-  private readonly sendToAgent: ((request: AgentRequest) => boolean) | null;
+  private readonly sendToAgent: ((request: AgentRequest) => boolean | Promise<boolean>) | null;
   private readonly log: (line: string) => void;
   private readonly newest: number;
   /** The oldest format version the engine takes: operations no engine edit makes are logged in it. */
@@ -741,7 +741,7 @@ export class SheetStore {
    * `POST importFile`: an .xlsx file someone chose with "Import from Excel", kept in `imports/` for the agent, which
    * gets a request naming it. Refuses (SheetRefusalError) a file that is no .xlsx file or is too large.
    */
-  importFile(name: string, bytes: Uint8Array): ImportFileResponse {
+  async importFile(name: string, bytes: Uint8Array): Promise<ImportFileResponse> {
     this.rescan();
     const kept = importFileName(name);
     if (kept === null || !looksLikeXlsx(bytes)) throw SheetRefusalError.of(new AgentError('notAnXlsxFile', 'Import from Excel takes an .xlsx file.'));
@@ -749,10 +749,11 @@ export class SheetStore {
     const file = saveImport(this.dir, kept, bytes);
     let sentToAgent = false;
     try {
-      sentToAgent = this.sendToAgent?.(importRequest(`${SHEET_DIR}/${file}`)) ?? false;
+      sentToAgent = await this.sendToAgent?.(importRequest(`${SHEET_DIR}/${file}`)) ?? false;
     } catch (error) {
       this.log(`import: the request did not reach the agent (${(error as Error).message})`);
     }
+    if (!sentToAgent) fs.rmSync(path.join(this.dir, file), { force: true });
     return { path: `${SHEET_DIR}/${file}`, sentToAgent };
   }
 

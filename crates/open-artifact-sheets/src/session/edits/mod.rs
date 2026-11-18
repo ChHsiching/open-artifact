@@ -22,6 +22,7 @@ pub(crate) mod tables;
 /// What an edit is worked out with besides the workbook shown.
 #[allow(dead_code)] // until the families that read them are written
 pub struct Context<'a> {
+    pub is_among_several: bool,
     /// The edit's `newIdCode`: what the ids of what it adds are made of (`sht_<code>.0`, `row_<code>.<n>`, …).
     pub code: &'a str,
     /// The page's time zone, when it sent one (`timeZoneOfTheBrowser`).
@@ -81,6 +82,11 @@ pub enum Edit {
     Objects(objects::Edit),
 }
 
+pub struct EditLimits {
+    pub check_cell_count: bool,
+    pub send_whole: bool,
+}
+
 impl Edit {
     /// Whether the edit measures what cells show, or pastes their values: formulas waiting for `calculate` are worked
     /// out before it is made.
@@ -92,8 +98,12 @@ impl Edit {
     /// Whether the edit is held to the most cells a workbook holds (`tooManyCells`): every edit but `enter`, which
     /// gives one cell (found by probing: a workbook at the limit takes one more cell from `enter`, and none from any
     /// other edit).
-    pub fn is_held_to_most_cells(&self) -> bool {
-        !matches!(self, Edit::Cells(cells::Edit::Enter(_)))
+    pub fn limits(&self) -> EditLimits {
+        EditLimits {
+            check_cell_count: !matches!(self, Edit::Cells(cells::Edit::Enter(_))),
+            // format_cells already enforces its own 240 KiB limit, including values made by checkboxes.
+            send_whole: matches!(self, Edit::Formats(formats::Edit::FormatCells { .. })),
+        }
     }
 
     /// What the edit adds once made, as a part of its own after it, worked out on the workbook it leaves: an imported

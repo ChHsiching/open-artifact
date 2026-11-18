@@ -15,10 +15,10 @@ import { useEditor } from '../editor/format.ts';
 import { provideSuggestionReply } from '../suggest/reply.ts';
 import { commentOnSelection, commentOnSuggestion, revealThread, selectionCommentable } from './actions.ts';
 import { CommentsButton } from './CommentsButton.tsx';
-import { commentsPlugin } from './plugin.ts';
+import { commentsPlugin, rangeAt } from './plugin.ts';
 import { CommentsRail } from './Rail.tsx';
 import { SelectionReactionPicker } from './Reactions.tsx';
-import { canComment, docComments, setCommentUi, threadById } from './store.ts';
+import { canComment, docComments, setActive, setCommentUi, threadById } from './store.ts';
 import { commentInLink, withoutComment } from './threads.ts';
 import './comments.css';
 
@@ -30,7 +30,19 @@ fillSlot('overlay', 'comment-reaction-picker', SelectionReactionPicker);
 
 provideSuggestionReply(target => void commentOnSuggestion(target));
 
+/** With the caret in commented words (and nothing selected), their thread opens instead of a new one. */
+function openCommentAtCaret(): boolean {
+  const state = useEditor.getState().state;
+  if (!state || !state.selection.empty) return false;
+  const range = rangeAt(state, state.selection.from);
+  if (!range || !threadById(range.id)) return false;
+  if (getDocs().comments === 'hidden') setDocs({ comments: 'margin' });
+  setActive(range.id, range.place);
+  return true;
+}
+
 provideAction('comment', () => {
+  if (openCommentAtCaret()) return true;
   if (!canComment() || !useEditor.getState().view) return false;
   void commentOnSelection();
   return true;
@@ -47,7 +59,7 @@ provideSelectionAction('comment', {
   shortcut: 'Mod-Alt-m',
   icon: MessageSquarePlus,
   available: () => selectionCommentable(useEditor.getState().state),
-  run: () => void commentOnSelection(),
+  run: () => void (openCommentAtCaret() || commentOnSelection()),
 });
 
 provideSelectionAction('react', {

@@ -542,7 +542,7 @@ class Board implements BoardApi {
           if (this.text.keydown(event)) event.stopPropagation();
           return;
         }
-        if (this.mode !== 'edit') return;
+        if (this.mode !== 'edit' && event.key !== 'Escape') return;
         const target = event.target as HTMLElement | null;
         if (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
         event.preventDefault();
@@ -559,16 +559,29 @@ class Board implements BoardApi {
 
 /** Boot config when the page runs on its own: fetch our own source, siblings by URL. */
 async function standaloneBoot(): Promise<BoardBoot> {
+  const embedded = window.__dcExport;
+  if (embedded) return {
+    path: embedded.path, source: embedded.source, mode: 'play',
+    load: async target => {
+      if (Object.hasOwn(embedded.files, target)) return embedded.files[target]!;
+      throw new Error(`Missing from export: ${target}`);
+    },
+    report: event => { if (window.parent !== window && event.type === 'navigate') window.parent.postMessage({ __dc: event }, '*'); },
+  };
   const source = await fetch(location.href).then((response) => response.text());
-  const path = decodeURIComponent(location.pathname.split('/').pop() ?? 'index.dc.html');
-  const base = location.href.replace(/[^/]*$/, '');
+  // Keep the served folder in the path. A sibling link or import can climb out
+  // of a nested board folder, including when the ZIP is served under a prefix.
+  const path = decodeURIComponent(location.pathname.slice(1));
+  const urlOf = (target: string) => new URL('/' + target.split('/').map(encodeURIComponent).join('/'), location.href);
   return {
     path,
     source,
     mode: 'play',
-    // The page's own path is its base name, so children resolve next to it.
-    load: (target) => fetch(new URL(target, base)).then((r) => (r.ok ? r.text() : Promise.reject(new Error(`HTTP ${r.status}`)))),
-    report: (event) => window.parent !== window && window.parent.postMessage({ __dc: event }, '*'),
+    load: (target) => fetch(urlOf(target)).then((r) => (r.ok ? r.text() : Promise.reject(new Error(`HTTP ${r.status}`)))),
+    report: event => {
+      if (event.type === 'navigate') location.assign(urlOf(event.path).href);
+      else if (window.parent !== window) window.parent.postMessage({ __dc: event }, '*');
+    },
   };
 }
 

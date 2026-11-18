@@ -1,6 +1,7 @@
 import type { Dynamic } from '../dynamic.ts';
 import * as React from 'react';
 import { jsxs, jsx } from 'react/jsx-runtime';
+import { translateMessage } from '../i18n/messages.ts';
 export function ExcelFileIcon({ className: className }: Dynamic) {
   let idBase = React.useId();
   return jsxs('svg', {
@@ -309,3 +310,16 @@ export function ExcelFileIcon({ className: className }: Dynamic) {
   });
 }
 export const FILE_UPLOAD_ICON = 'FileUpload';
+export const IMPORT_FILE_SOURCES = {
+  computer: {
+    mark: jsx(ExcelFileIcon, {
+      className: 'size-4 shrink-0',
+    }),
+    name: () =>
+      translateMessage({
+        defaultMessage: 'Import from Excel',
+        id: '1JcbLhlHrv',
+      }),
+  },
+};
+export type ImportFileSource = keyof typeof IMPORT_FILE_SOURCES;

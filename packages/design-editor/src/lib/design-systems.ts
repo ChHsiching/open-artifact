@@ -16,6 +16,7 @@
  * - its font families, spacing and radius scales, for the Theme tab.
  */
 
+import type { ThemeLook } from './theme-look.ts';
 import { styleDeclarations, styleTag, type NormalizedStyle, type NormalizedTokens } from '@open-artifact/design-system-core';
 import { DS_FOLDER_PATTERN, type DesignSystemRecord } from '@open-artifact/design-core';
 
@@ -63,6 +64,7 @@ export interface InstalledSystem {
   version: string | null;
   copiedAt: string;
   colors: SystemColor[];
+  looks: ThemeLook[];
   styles: SystemTextStyle[];
   /** Font stacks by family key. */
   families: { key: string; stack: string }[];
@@ -117,6 +119,15 @@ export function systemFromTokens(record: Pick<DesignSystemRecord, 'namespace' | 
     version: typeof record.version === 'string' ? record.version : null,
     copiedAt: typeof record.copiedAt === 'string' ? record.copiedAt : '',
     colors,
+    looks: tokens.themes.map(theme => ({
+      id: theme.id, name: theme.name,
+      colors: tokens.colors.flatMap(token => {
+        const value = literalColor(token.resolved[theme.id]);
+        return value ? [{ name: token.name, value, variants: Object.values(token.resolved).map(v => v.toLowerCase()) }] : [];
+      }),
+      body: styles.find(s => s.tag === 'p')?.declarations['font-family'] ?? Object.values(tokens.families)[0],
+      heading: styles.find(s => s.tag === 'h1')?.declarations['font-family'],
+    })),
     styles,
     families: Object.entries(tokens.families)
       .filter(([, stack]) => !stack.includes('var('))

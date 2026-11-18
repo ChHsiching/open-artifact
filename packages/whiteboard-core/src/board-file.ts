@@ -74,13 +74,42 @@ function replaceUnpairedSurrogates(text: string): string {
   return text.replace(UNPAIRED_SURROGATE_PATTERN, '\uFFFD');
 }
 
+/** Remove a share parameter without changing the other query parameters or their escaping. */
+function withoutShareKeys(word: string): string {
+  return word.replace(/([?&#;])(?:sk=[A-Za-z0-9_-]{16,64}&)+/gi, '$1')
+    .replace(/[?&#;]sk=[A-Za-z0-9_-]{16,64}(?![A-Za-z0-9_-])/gi, '')
+    .replace(/(^|[^A-Za-z0-9])sk=[A-Za-z0-9_-]{16,64}(?![A-Za-z0-9_-])/gi, '$1');
+}
+
+/** Links in board text can also be URL- or HTML-encoded. Keep ordinary text byte-for-byte. */
+function scrubExportLinks(text: string): string {
+  return text.replace(/\S+/g, (word) => {
+    const clean = withoutShareKeys(word);
+    if (!/[%&]/.test(clean)) return clean;
+    let decoded = clean;
+    for (let round = 0; round < 8; round++) {
+      const next = decoded
+        .replace(/(?:%[0-9a-f]{2})+/gi, (bytes) => {
+          try { return decodeURIComponent(bytes); } catch { return bytes; }
+        })
+        .replace(/&#(?:x([0-9a-f]{1,6})|(\d{1,7}));/gi, (_, hex: string | undefined, decimal: string) =>
+          String.fromCodePoint(Math.min(0x10ffff, hex ? parseInt(hex, 16) : Number(decimal))))
+        .replace(/&amp;/gi, '&');
+      if (decoded === next) break;
+      decoded = next;
+    }
+    const scrubbed = withoutShareKeys(decoded);
+    return scrubbed === decoded ? clean : scrubbed;
+  });
+}
+
 /**
  * `JSON.stringify` replacer for board files: strings (other than image data
  * URLs, kept as they are) lose unpaired surrogates, so every reader parses
  * the file the same way.
  */
 export function boardFileJsonReplacer(_key: string, value: unknown): unknown {
-  return typeof value === 'string' && !IMAGE_DATA_URL_PATTERN.test(value) ? replaceUnpairedSurrogates(value) : value;
+  return typeof value === 'string' && !IMAGE_DATA_URL_PATTERN.test(value) ? replaceUnpairedSurrogates(scrubExportLinks(value)) : value;
 }
 
 /** The title of an HTML document (its `<title>`, whitespace collapsed), if any. */
@@ -149,7 +178,7 @@ export function serializeBoardFile(file: BoardFile): string {
 
 /** The download name of a board file: its title (at most 100 characters) plus `.json`. */
 export function boardFileName(title: string): string {
-  const stem = [...title.trim()].slice(0, BOARD_FILE_NAME_MAX_CHARS).join('').trim();
+  const stem = [...scrubExportLinks(title).trim()].slice(0, BOARD_FILE_NAME_MAX_CHARS).join('').trim();
   return `${stem !== '' ? stem : BOARD_FILE_DEFAULT_TITLE}.json`;
 }
 

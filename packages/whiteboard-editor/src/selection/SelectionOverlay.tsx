@@ -62,7 +62,7 @@ import {
 import { elementInkColor, paperTextColor } from '../export/look.ts';
 import type { Camera, Point } from '../lib/camera.ts';
 import { screenToBoard } from '../lib/camera.ts';
-import { engineResizes, isAlwaysLive } from '../engine/items.ts';
+import { engineResizes } from '../engine/items.ts';
 import { useEngineView } from '../engine/mode.ts';
 import { SectionTitleHint } from '../elements/BlockViews.tsx';
 import { useSectionHover } from '../tools/hover.ts';
@@ -700,7 +700,8 @@ export function SelectionOverlay(): ReactNode {
   const loneArrow = selected.length === 1 && lines.length === 1 ? lines[0] : undefined;
   const croppingImage = cropping !== null && lone?.id === cropping && lone.type === 'image' ? lone : undefined;
   // The engine outlines a lone item it draws (not one typed in, cropped or always live).
-  const engineFrames = engineOn && lone !== undefined && editing?.id !== lone.id && croppingImage === undefined && !isAlwaysLive(lone);
+  const engineLive = useEngineView((state) => state.live);
+  const engineFrames = engineOn && lone !== undefined && editing?.id !== lone.id && croppingImage === undefined && !engineLive.includes(lone.id);
 
   // Leg handles of a lone arrow. While an arrow handle is dragged they stay
   // as they were when it started (hidden), so the pressed one keeps its
@@ -788,7 +789,6 @@ export function SelectionOverlay(): ReactNode {
   // “Add a title” over an untitled section the engine draws. A live view above the canvas shows its own; a
   // view under the canvas has no hole for an untitled title (it may be there only for a neighbour's text).
   const sectionHoverId = useSectionHover((state) => state.id);
-  const engineLive = useEngineView((state) => state.live);
   const commenting = useTool((state) => state.commentMode);
   // The section under the pointer (not picked, not locked, not being edited) glows in the accent.
   const glowId = sectionHoverId ?? (hovered?.type === 'container' ? hovered.id : null);

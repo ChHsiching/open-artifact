@@ -68,3 +68,11 @@ export function byRecent(a: CommentThread, b: CommentThread): number {
   const at = (thread: CommentThread) => Date.parse(thread.messages[0]?.at ?? '') || 0;
   return at(b) - at(a);
 }
+
+/** "Resolved", "Resolved by you", "Resolved by Ana": who closed the thread, when the server says. */
+export function resolvedWords(thread: CommentThread, me: string | null, agent: string): string {
+  const by = thread.resolvedBy;
+  if (!by) return 'Resolved';
+  if (by.kind === 'agent') return `Resolved by ${agent}`;
+  return by.name === me ? 'Resolved by you' : `Resolved by ${by.name}`;
+}

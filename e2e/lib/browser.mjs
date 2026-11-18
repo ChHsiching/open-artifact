@@ -111,6 +111,8 @@ export async function launch({ chrome = findChrome(), width = 1440, height = 900
   const fd = fs.openSync(stderr, 'a');
   const child = spawn(chrome, [
     ...(process.env.E2E_HEADFUL ? [] : ['--headless=new']), '--remote-debugging-port=0', `--user-data-dir=${profile}`, `--window-size=${width},${height}`,
+    // Keep the test profile independent of the macOS login keychain.
+    ...(process.platform === 'darwin' ? ['--use-mock-keychain'] : []),
     '--no-first-run', '--no-default-browser-check', '--disable-extensions', '--disable-background-networking',
     '--disable-sync', '--disable-component-update', '--mute-audio', 'about:blank',
   ], { stdio: ['ignore', 'ignore', fd] });

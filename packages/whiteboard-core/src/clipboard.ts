@@ -25,10 +25,10 @@ import { stripInlineMarkers, stripMarkdownLinks, tableToTsv } from './table.ts';
 export const BOARD_CLIPBOARD_KIND = 'whiteboard-elements';
 
 /** The HTML attribute holding an artifact clipboard payload. */
-export const ARTIFACT_CLIPBOARD_ATTRIBUTE = 'data-open-artifact-object';
+export const ARTIFACT_CLIPBOARD_ATTRIBUTE = 'data-appifact-object';
 
 /** Finds the payload attribute in clipboard HTML; group 1 is the base64 payload. */
-export const ARTIFACT_CLIPBOARD_PATTERN = /data-open-artifact-object="([A-Za-z0-9+/=]+)"/;
+export const ARTIFACT_CLIPBOARD_PATTERN = /\bdata-(?:open-artifact|appifact)-object="([A-Za-z0-9+/=]+)"/;
 
 /** The version marker inside every payload (bumped on incompatible changes). */
 export const ARTIFACT_CLIPBOARD_VERSION = 1;
@@ -41,7 +41,8 @@ export interface ClipboardPayload<T = unknown> {
 
 /** The JSON stored in the payload attribute. */
 interface StoredClipboardPayload {
-  openArtifact: typeof ARTIFACT_CLIPBOARD_VERSION;
+  openArtifact?: typeof ARTIFACT_CLIPBOARD_VERSION;
+  appifact?: typeof ARTIFACT_CLIPBOARD_VERSION;
   kind: string;
   data: unknown;
 }
@@ -81,8 +82,9 @@ export function escapeClipboardHtml(text: string): string {
  * {@link ARTIFACT_CLIPBOARD_ATTRIBUTE} and showing `text`.
  */
 export function artifactClipboardHtml(payload: ClipboardPayload, text: string): string {
-  const stored: StoredClipboardPayload = { openArtifact: ARTIFACT_CLIPBOARD_VERSION, kind: payload.kind, data: payload.data };
-  return `<span ${ARTIFACT_CLIPBOARD_ATTRIBUTE}="${encodeClipboardUtf8(JSON.stringify(stored))}">${escapeClipboardHtml(text)}</span>`;
+  const stored: StoredClipboardPayload = { appifact: ARTIFACT_CLIPBOARD_VERSION, openArtifact: ARTIFACT_CLIPBOARD_VERSION, kind: payload.kind, data: payload.data };
+  const encoded = encodeClipboardUtf8(JSON.stringify(stored));
+  return `<span ${ARTIFACT_CLIPBOARD_ATTRIBUTE}="${encoded}" data-open-artifact-object="${encoded}">${escapeClipboardHtml(text)}</span>`;
 }
 
 /** The payload inside clipboard HTML, or `undefined` when it carries none (or a broken one). */
@@ -95,7 +97,7 @@ export function parseArtifactClipboardHtml(html: string): ClipboardPayload | und
     const value: unknown = JSON.parse(json);
     if (typeof value !== 'object' || value === null) return undefined;
     const record = value as Partial<StoredClipboardPayload>;
-    if (record.openArtifact !== ARTIFACT_CLIPBOARD_VERSION || typeof record.kind !== 'string' || !Object.hasOwn(record, 'data')) return undefined;
+    if ((record.appifact ?? record.openArtifact) !== ARTIFACT_CLIPBOARD_VERSION || typeof record.kind !== 'string' || !Object.hasOwn(record, 'data')) return undefined;
     return { kind: record.kind, data: record.data };
   } catch {
     return undefined;

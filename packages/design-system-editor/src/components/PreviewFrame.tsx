@@ -21,6 +21,7 @@ import { Button, cn } from '@open-artifact/ui';
 import { useModel, type SystemModel } from '../state/model.ts';
 import { projectUrl } from '../lib/color.ts';
 import { askToFixPreview } from '../services/agent.ts';
+import { useView } from '../state/view.ts';
 import { useFiles } from '../state/files.ts';
 import { useHostedFonts } from '../services/fonts.ts';
 import { liveScript } from '../lib/live-props.ts';
@@ -58,17 +59,20 @@ const heads = new WeakMap<SystemModel, Map<string, string>>();
 export function useSystemHead(): string {
   const model = useModel();
   const hosted = useHostedFonts((s) => s.urls);
+  const selected = useView((s) => s.theme);
+  const theme = model.tokens.themes.find((t) => t.id === selected)?.id ?? model.tokens.themes[0]!.id;
   const fontsKey = Object.values(hosted).sort().join(' ');
   let byFonts = heads.get(model);
   if (!byFonts) heads.set(model, (byFonts = new Map()));
-  let head = byFonts.get(fontsKey);
+  const key = `${theme}:${fontsKey}`;
+  let head = byFonts.get(key);
   if (head === undefined) {
     const { tokens, index, files } = model;
     const css = compileTokensCss(tokens, { fontUrl: (file) => projectUrl(file) }).replace(/<\/style/gi, '<\\/style');
     // A content version in the URL reloads frames when the agent rewrites a file.
     const listing = useFiles.getState().listing;
     const versioned = (path: string): string => `${projectUrl(path)}?v=${(listing[path]?.hash ?? '').slice(0, 12)}`;
-    const parts = [`<style>${css}</style>`];
+    const parts = [`<script>document.documentElement.dataset.theme=${JSON.stringify(theme)}</script><style>${css}</style>`];
     // Hosted (Google) families the tokens name.
     for (const url of fontsKey ? fontsKey.split(' ') : []) parts.push(`<link rel="stylesheet" href="${attr(url)}">`);
     if (files.has('components/bundle.css')) parts.push(`<link rel="stylesheet" href="${attr(versioned('components/bundle.css'))}">`);
@@ -79,7 +83,7 @@ export function useSystemHead(): string {
     if (files.has('components/bundle.js')) parts.push(`<script src="${attr(versioned('components/bundle.js'))}"></script>`);
     head = parts.join('');
     byFonts.clear();
-    byFonts.set(fontsKey, head);
+    byFonts.set(key, head);
   }
   return head;
 }
@@ -109,7 +113,23 @@ export function PreviewFrame({ component, designWidth, height, className, eager 
   const id = useMemo(() => `preview-${++nextId}`, []);
   const marker = preview ? parseCardMarker(preview) : null;
   const layoutWidth = designWidth ?? marker?.width;
-  const rowHeight = height ?? marker?.height ?? 120;
+  const minHeight = height ?? marker?.height ?? 120;
+  const [contentHeight, setContentHeight] = useState(0);
+  const rowHeight = Math.max(minHeight, contentHeight);
+  const observer = useRef<ResizeObserver | null>(null);
+  useEffect(() => () => observer.current?.disconnect(), []);
+  const fit = () => {
+    observer.current?.disconnect();
+    const body = frame.current?.contentDocument?.body;
+    if (!body) return;
+    const measure = () => {
+      const bottom = Math.ceil(body.getBoundingClientRect().height);
+      setContentHeight(Math.min(4000, bottom));
+    };
+    observer.current = new ResizeObserver(measure);
+    observer.current.observe(body);
+    measure();
+  };
 
   useEffect(() => {
     const element = box.current;
@@ -157,6 +177,7 @@ export function PreviewFrame({ component, designWidth, height, className, eager 
           ref={frame}
           title={`${component} preview`}
           sandbox="allow-scripts allow-same-origin"
+          onLoad={fit}
           srcDoc={srcDoc}
           className="absolute left-0 top-0 block border-0"
           style={{ width: frameWidth, height: rowHeight, transform: `scale(${scale})`, transformOrigin: '0 0' }}

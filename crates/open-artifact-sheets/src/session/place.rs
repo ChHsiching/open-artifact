@@ -5,7 +5,7 @@ use serde_json::{json, Value as Json};
 
 use crate::ids::{IdRun, LineId};
 use crate::workbook::load::Op;
-use crate::workbook::layout::live_ends;
+use crate::workbook::layout::{live_ends, RangeIds};
 use crate::workbook::{Sheet, Workbook};
 
 /// A box of positions in a sheet: top, left, bottom, right.
@@ -28,19 +28,27 @@ pub enum Place {
 pub struct Told {
     sheet_id: Option<String>,
     json: Json,
+    whole_rows: bool,
+    whole_columns: bool,
 }
 
 impl Told {
     pub fn of(place: &Place, workbook: &Workbook) -> Told {
         match place {
-            Place::Nowhere => Told { sheet_id: None, json: Json::Null },
-            Place::Gone(sheet_id) => Told { sheet_id: Some(sheet_id.clone()), json: json!({"sheetId": sheet_id, "cells": null}) },
-            Place::Sheet { sheet_id, .. } => Told { sheet_id: Some(sheet_id.clone()), json: place.to_json(workbook) },
+            Place::Nowhere => Told::nowhere(),
+            Place::Gone(sheet_id) => Told { sheet_id: Some(sheet_id.clone()), json: json!({"sheetId": sheet_id, "cells": null}), ..Told::nowhere() },
+            Place::Sheet { sheet_id, cells, .. } => {
+                let sheet = workbook.sheet_index(sheet_id).map(|i| &workbook.sheets[i]);
+                let (whole_rows, whole_columns) = cells.zip(sheet).map_or((false, false), |((t,l,b,r), s)| {
+                    (t == 0 && b + 1 == s.rows.len(), l == 0 && r + 1 == s.columns.len())
+                });
+                Told { sheet_id: Some(sheet_id.clone()), json: place.to_json(workbook), whole_rows, whole_columns }
+            }
         }
     }
 
     pub fn nowhere() -> Told {
-        Told { sheet_id: None, json: Json::Null }
+        Told { sheet_id: None, json: Json::Null, whole_rows: false, whole_columns: false }
     }
 
     /// Whether the place's sheet is in the workbook (a place on no sheet is).
@@ -54,10 +62,27 @@ impl Told {
     }
 
     pub fn to_json(&self, workbook: &Workbook) -> Json {
-        match self.is_there(workbook) {
-            true => self.json.clone(),
-            false => Json::Null,
+        let Some(sheet) = self.sheet_id.as_ref().and_then(|id| workbook.sheet_index(id)) else {
+            return Json::Null;
+        };
+        let mut place = self.json.clone();
+        if let Some(range) = place.get("cells").filter(|cells| !cells.is_null()) {
+            let range: RangeIds = serde_json::from_value(range.clone()).expect("a range written by Place");
+            let sheet = &workbook.sheets[sheet];
+            let mut live = sheet.live_range(&workbook.bases, &range);
+            if let Some(range) = &mut live {
+                if self.whole_rows {
+                    range.top_left.r = workbook.bases.text(sheet.rows.line(0).unwrap());
+                    range.bottom_right.r = workbook.bases.text(sheet.rows.line(sheet.rows.len() - 1).unwrap());
+                }
+                if self.whole_columns {
+                    range.top_left.c = workbook.bases.text(sheet.columns.line(0).unwrap());
+                    range.bottom_right.c = workbook.bases.text(sheet.columns.line(sheet.columns.len() - 1).unwrap());
+                }
+            }
+            place["cells"] = json!(live);
         }
+        place
     }
 }
 

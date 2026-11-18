@@ -35,3 +35,57 @@ export function notesText(notes: readonly ExportNoteLike[]): string | undefined 
     .filter((line): line is string => !!line);
   return words.length ? `In the file: ${words.join('; ')}.` : undefined;
 }
+
+/** How a title names the file: "a PDF", "Word". */
+const TITLE_NAMES: Record<DocExportFormat, string> = { docx: 'Word', pdf: 'a PDF', markdown: 'Markdown', html: 'HTML' };
+
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+/** The pictures and charts a file came without, read from its notes. */
+function without(notes: readonly ExportNoteLike[]): { images: number; charts: number } {
+  let images = 0;
+  let charts = 0;
+  for (const note of notes) {
+    const what = note.what ?? note.message ?? '';
+    const count = note.count ?? 1;
+    if (/^image\b/.test(what)) images += count;
+    else if (/^embed\b/.test(what)) charts += count;
+  }
+  return { images, charts };
+}
+
+/** The toast's title once the file is made: "Exported as a PDF", "Exported as Word without 2 images". */
+export function exportedTitle(format: DocExportFormat, notes: readonly ExportNoteLike[] = []): string {
+  const { images, charts } = without(notes);
+  const parts = [images ? plural(images, 'image', 'images') : '', charts ? plural(charts, 'chart or diagram', 'charts or diagrams') : ''].filter(Boolean);
+  return `Exported as ${TITLE_NAMES[format]}${parts.length ? ` without ${parts.join(' and ')}` : ''}`;
+}
+
+/** The notes the title doesn't already say. */
+export function otherNotes(notes: readonly ExportNoteLike[] = []): ExportNoteLike[] {
+  return notes.filter(note => !/^(image|embed)\b/.test(note.what ?? note.message ?? ''));
+}
+
+export const couldntTitle = (format: DocExportFormat) => `Couldn’t export as ${TITLE_NAMES[format]}`;
+
+/** Why an export failed, in a sentence, from the server's code. */
+export function exportFailure(format: DocExportFormat, scope: 'tab' | 'doc', code: string | undefined): string {
+  const what = scope === 'tab' ? 'this tab' : 'this document';
+  const name = TITLE_NAMES[format];
+  switch (code) {
+    case 'no_chrome':
+      return 'A PDF is printed by Chrome, and there is none on this computer. Export as HTML and print it from your browser.';
+    case 'renderer_unavailable':
+      return 'PDF export is busy. Try again in a moment.';
+    case 'no_node':
+    case 'no_tab':
+    case 'not_found':
+      return scope === 'tab' ? 'This tab can’t be exported.' : 'This document can’t be exported.';
+    case 'not_a_doc':
+      return 'This document can’t be exported.';
+    case 'unavailable':
+      return `Couldn’t reach the server to export ${what}. Check it’s running, then try again.`;
+    default:
+      return `Couldn’t export ${what} as ${name}. Try again in a moment.`;
+  }
+}

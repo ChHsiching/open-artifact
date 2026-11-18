@@ -1,15 +1,3 @@
-/**
- * The chat cards (cards.ts), draws a comment sent to Claude, on the person's side of the chat:
- *
- *   Comment on "Q3 results" sent to agent      ▾
- *   Make the title shorter
- *   Board "Home" › Title
- *   View thread ›
- *
- * The chevron folds the place and the link away. View thread opens the artifact's page in the session's Browser at that
- * comment (`?comment=<id>`, which the page's comments layer opens). A request from one of the page's buttons, or a
- * message from the Shell's chat, gets a card of its own: the header and its words.
- */
 import { type CSSProperties, useState } from 'react';
 import { isShellMessage, type CardData, type CardRequest, type CardThread } from '../cards.ts';
 import type { Translate } from '../i18n.ts';

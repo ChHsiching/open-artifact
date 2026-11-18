@@ -4,16 +4,19 @@ import { EditorState } from 'prosemirror-state';
 import { EditorView } from 'prosemirror-view';
 import { type ReactNode, useEffect, useMemo, useRef } from 'react';
 import { editorNodeViews } from '../editor/DocEditor.tsx';
-import { compareVersions } from './compare.ts';
+import { type Comparison, compareVersions } from './compare.ts';
 import { changesPlugin, previewDocOf } from './preview-doc.ts';
 
 interface VersionTextProps {
-  doc: DocState;
-  /** The version it is compared with; `null` draws it plain. */
-  base: DocState | null;
+  /** The version, or a comparison of two (from {@link compareVersions}) to draw with its changes highlighted. */
+  doc: DocState | Comparison;
+  /** A version to compare `doc` with here; `null` or left out draws `doc` as it is. */
+  base?: DocState | null;
+  /** The change the strip is on: ringed, and scrolled to when it changes. */
+  active?: string | null;
 }
 
-export function VersionText({ doc, base }: VersionTextProps): ReactNode {
+export function VersionText({ doc, base = null, active = null }: VersionTextProps): ReactNode {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const drawn = useMemo(() => {
@@ -23,11 +26,12 @@ export function VersionText({ doc, base }: VersionTextProps): ReactNode {
       return previewDocOf(doc);
     }
   }, [doc, base]);
+  const stateOf = () => EditorState.create({ doc: drawn.doc, plugins: [changesPlugin(drawn.changes, active)] });
 
   useEffect(() => {
     if (!host.current) return;
     const editor = new EditorView(host.current, {
-      state: EditorState.create({ doc: drawn.doc, plugins: [changesPlugin(drawn.changes)] }),
+      state: stateOf(),
       nodeViews: editorNodeViews(),
       editable: () => false,
       attributes: { class: 'doc-text doc-version-text', 'aria-readonly': 'true', 'aria-label': 'Version preview' },
@@ -42,8 +46,15 @@ export function VersionText({ doc, base }: VersionTextProps): ReactNode {
   }, []);
 
   useEffect(() => {
-    view.current?.updateState(EditorState.create({ doc: drawn.doc, plugins: [changesPlugin(drawn.changes)] }));
-  }, [drawn]);
+    view.current?.updateState(stateOf());
+  }, [drawn, active]);
+
+  useEffect(() => {
+    if (!active || !host.current) return;
+    const id = CSS.escape(active);
+    const target = host.current.querySelector(`[data-change-id="${id}"]:not(.vh-moved)`) ?? host.current.querySelector(`[data-change-id="${id}"]`);
+    target?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, [active, drawn]);
 
   return <div ref={host} className="relative" data-version-preview="" />;
 }

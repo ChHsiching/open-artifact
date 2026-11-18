@@ -47,6 +47,7 @@ interface ColorRoom {
 
 export interface PeerColorKeeping {
   roomChanged(): void;
+  dispose(): void;
 }
 
 function colorClaimOf(peer: RoomPeer): PeerColorClaim | undefined {
@@ -118,7 +119,7 @@ export function startPeerColorKeeper(
     dispose();
     throw error;
   }
-  return { roomChanged: () => void (isDisposed || keeper.heard()) };
+  return { roomChanged: () => void (isDisposed || keeper.heard()), dispose };
 }
 export function readCellIds(cell?: Dynamic) {
   if (!isNonNullObject(cell)) return null;
@@ -255,15 +256,11 @@ export function createRoomPresence(
   hostWindow.addEventListener('blur', () => void (isBlurred = true));
   hostWindow.addEventListener('focus', onFocus, true);
   let userByTab: Dynamic = new (Map as Dynamic)();
-  let hasColorKeeper: Dynamic = false;
-  let colorKeeper: Dynamic = null;
   let startColorKeeper = async (room?: Dynamic): Promise<Dynamic> => {
-    if (hasColorKeeper) return;
-    hasColorKeeper = true;
     try {
-      let value = readOwnColor(storage) === null ? await people.viewer() : null;
+      let value = await people.viewer();
       let [profile] = value === null ? [] : await people.profiles([value.userId]);
-      colorKeeper = startPeerColorKeeper(
+      return startPeerColorKeeper(
         room,
         {
           userId: value?.userId ?? '',
@@ -296,6 +293,7 @@ export function createRoomPresence(
       }),
     personWithTab: (tabKey?: Dynamic) => userByTab.get(tabKey) ?? null,
     onSelectionsChanged(onChange?: Dynamic) {
+      let colorKeeper: Dynamic = null;
       let isStopped: Dynamic = false;
       let stopListening: Dynamic = null;
       let heardPeers = (peers?: Dynamic) => {
@@ -317,11 +315,14 @@ export function createRoomPresence(
           () => heardPeers([]),
         );
         if (typeof stopPeers === 'function') stopListening = () => void Reflect.apply(stopPeers, undefined, []);
-        startColorKeeper(room);
+        colorKeeper = await startColorKeeper(room);
+        if (isStopped) colorKeeper?.dispose();
       })();
       return () => {
         isStopped = true;
         stopListening?.();
+        colorKeeper?.dispose();
+        colorKeeper = null;
       };
     },
   };

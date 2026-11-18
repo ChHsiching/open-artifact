@@ -5,12 +5,16 @@ import { EditorView, type NodeViewConstructor } from 'prosemirror-view';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { type OpenTab, docClient } from '../app/doc-client.ts';
 import { useDocs } from '../app/store.ts';
+import { isSyncedTransaction } from './binding.ts';
 import { stripIds } from './commands.ts';
 import { focusKeys } from './focus-keys.ts';
 import { useEditor } from './format.ts';
 import { baseNodeViews } from './node-views.ts';
 import { type EditorActions, docPlugins } from './plugins.ts';
 import { schema } from './schema.ts';
+
+/** Once a tab's saving has stopped, what is typed would be lost: the text is no longer editable. */
+const savingGoes = (tab: string) => useDocs.getState().saving[tab] !== 'stopped';
 
 /** What features add to the editor: their plugins and node views. */
 export interface EditorExtension {
@@ -30,7 +34,7 @@ export function editorNodeViews(): Record<string, NodeViewConstructor> {
 }
 
 /** Each tab's editor state, kept while the page is open so its undo history survives a switch of tabs. */
-const kept = new Map<string, EditorState>();
+const kept = new Map<string, { state: EditorState; writable: boolean }>();
 
 function withoutSuggestions(node: PMNode): PMNode {
   if (node.isText) return node.mark(node.marks.filter(mark => mark.type !== schema.marks.suggestIns && mark.type !== schema.marks.suggestDel));
@@ -81,14 +85,16 @@ export function DocEditor({ tabId, actions }: { tabId: string; actions: EditorAc
         if (cancelled || !host.current) return;
         tab = open;
         const nodeViews = editorNodeViews();
-        const state = kept.get(tabId) ?? makeState(open, relay, writable);
+        const cached = kept.get(tabId);
+        const state = cached?.writable === writable ? cached.state : makeState(open, relay, writable);
         const editor = new EditorView(host.current, {
           state,
           nodeViews,
-          editable: () => useDocs.getState().writable,
+          editable: () => useDocs.getState().writable && savingGoes(tabId),
           attributes: { class: 'doc-text', spellcheck: 'true', 'data-tab': tabId },
           transformPasted: slice => freshSlice(slice),
           dispatchTransaction(tr) {
+            if (tr.docChanged && !editor.editable && !isSyncedTransaction(tr)) return;
             const { state: next, transactions } = editor.state.applyTransaction(tr);
             editor.updateState(next);
             const changed = transactions.find(item => item.docChanged);
@@ -132,7 +138,7 @@ export function DocEditor({ tabId, actions }: { tabId: string; actions: EditorAc
       clearTimeout(composeEnd);
       stopFocusKeys?.();
       if (view) {
-        kept.set(tabId, view.state);
+        kept.set(tabId, { state: view.state, writable });
         tab?.binding.detach();
         view.destroy();
         if (useEditor.getState().view === view) useEditor.setState({ view: null, state: null, tab: null, focused: false });

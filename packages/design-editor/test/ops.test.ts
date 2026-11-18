@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { parseDcDocument, parseTemplate } from '@open-artifact/dc';
 import { applyOp, replayOps, type BoardOp } from '../src/lib/ops.ts';
+import { useDocument } from '../src/state/document.ts';
 import { freeBoardName, frameDocument, newBoardSource } from '../src/lib/frame.ts';
 
 const board = (template: string, props = '{"title":{"editor":"text","default":"Hi"}}') => `<!doctype html>
@@ -196,4 +197,21 @@ describe('buildOutline', () => {
     );
     assert.equal(svg!.children[4]!.children[0]!.name, 'Polygon');
   });
+});
+
+it('applies a theme to multiple artboards as one undo step and replays it over a remote edit', () => {
+  const source = board('<helmet><style>p{color:#111}</style></helmet><p style="color: #111; background: {{bg}}">Words</p>');
+  const doc = useDocument.getState;
+  doc().load({ title: 'Theme', readOnly: false, canvas: { text: '{}', hash: '1' }, boards: { a: {text: source, hash: 'a'}, b: {text: source, hash: 'b'} } });
+  const look = { id: 'night', name: 'Night', colors: [{ name: 'ink', value: '#fff', variants: ['#111'] }] };
+  assert.equal(doc().editBoards(['a', 'b'], { kind: 'look', look }), 2);
+  assert.equal(doc().undo.length, 1);
+  assert.match(doc().boards.a!.source!, /p\{color:#fff\}/);
+  assert.match(doc().boards.b!.source!, /color: #fff; background: \{\{bg\}\}/);
+  doc().undoLast();
+  assert.equal(doc().boards.a!.source, source);
+  assert.equal(doc().boards.b!.source, source);
+  doc().redoLast();
+  doc().remoteBoard('a', source.replace('Words', 'New words'), 'new');
+  assert.match(doc().boards.a!.source!, /color: #fff; background: \{\{bg\}\}">New words/);
 });

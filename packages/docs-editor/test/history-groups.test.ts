@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { DocVersion } from '@open-artifact/runtime/doc-api';
+import { learnNames } from '../src/app/people.ts';
 import { dayKey, dayLabel, editsLabel, foldVersions, restoredLabel, sectionByDay, versionBefore, whoOf } from '../src/history/groups.ts';
 
 const at = (day: number, hour: number, minute = 0) => new Date(2026, 10, day, hour, minute).toISOString();
@@ -73,6 +74,10 @@ describe('history words', () => {
     const me = { id: 'ana@example.com', name: 'Ana' };
     assert.equal(whoOf(person(1, 'ana@example.com', at(18, 1)), me), 'Ana');
     assert.equal(whoOf(person(1, 'ben@example.com', at(18, 1)), me), 'ben@example.com');
+    assert.equal(whoOf({ ...person(1, 'g_7f3a', at(18, 1)), name: 'Ben' }, me), 'Ben');
+    assert.equal(whoOf(person(1, 'g_7f3a', at(18, 1)), me), 'Someone');
+    learnNames({ g_9c1d: 'Cleo' });
+    assert.equal(whoOf(person(1, 'g_9c1d', at(18, 1)), me), 'Cleo');
     assert.equal(whoOf(agent(1, at(18, 1)), me), 'Agent');
     assert.equal(whoOf({ rev: 1, by: 'system', at: at(18, 1) }, me), 'auto-save');
     assert.equal(editsLabel(3, 'Agent'), '3 edits by Agent');

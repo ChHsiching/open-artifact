@@ -20,6 +20,8 @@ export interface CollabAdapter {
   showSurface?(): void;
   /** Starts a thread on what is selected (the Shell's `comment_selection` action). */
   commentOnSelection?(): void;
+  /** Route the comment shortcut through the host when it owns the entry point. */
+  requestCommentMode?(on: boolean): boolean;
   /** The viewer cannot edit (comment mode then leaves Delete alone). */
   readOnly(): boolean;
   /** The Shell's page button for comments (default `false`: the page draws its own). */
@@ -182,6 +184,7 @@ export function createCollab({ comments, history, adapter }: { comments: CollabC
       const letter = press.code?.startsWith('Key') ? press.code.slice(3).toLowerCase() : press.key.toLowerCase();
       if (letter === 'c' && !press.meta && !press.alt && !press.shift) {
         if (!comments.canComment() || !adapter.onSurface()) return false;
+        if (adapter.requestCommentMode) return adapter.requestCommentMode(!state.on);
         state.setOn(!state.on);
         return true;
       }

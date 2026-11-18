@@ -1,6 +1,6 @@
 /**
- * Suggestions: the agent's proposed edits drawn in the text, their cards beside it to accept or reject (and undo), and
- * Edit with Agent on the selection toolbar.
+ * Suggestions: proposed edits (the agent's, or a person's in Suggesting mode) drawn in the text, their cards beside it
+ * to accept or reject (and undo), the mode menu on the page bar, and Edit with Agent on the selection toolbar.
  */
 import './suggest.css';
 import { WandSparkles } from 'lucide-react';
@@ -12,6 +12,8 @@ import { addEditorExtension } from '../editor/DocEditor.tsx';
 import { currentView, useEditor } from '../editor/format.ts';
 import { undoDecisionByKeys } from './decide.ts';
 import { DecisionNotice } from './DecisionNotice.tsx';
+import { suggestingPlugin } from './in-doc.ts';
+import { SuggestModeControl } from './ModeControl.tsx';
 import { EditWithAgentPrompt } from './EditWithAgent.tsx';
 import { refreshOpenSuggestions, useOpenSuggestions } from './model.ts';
 import { showUi, suggestPlugins } from './plugin.ts';
@@ -22,6 +24,9 @@ import { SuggestionFloat } from './SuggestionFloat.tsx';
 import { SuggestionMargin } from './SuggestionMargin.tsx';
 
 export { provideSuggestionReply, type SuggestionReplyHandler, type SuggestionReplyTarget } from './reply.ts';
+
+// Suggesting mode goes first: the person's edits become suggestions before any other key or input handler sees them.
+addEditorExtension({ plugins: () => [suggestingPlugin()] });
 
 addEditorExtension({
   plugins: () =>
@@ -40,6 +45,7 @@ fillSlot('layer', 'suggestion-column', SuggestionColumnFeed, 21);
 fillSlot('layer', 'edit-with-agent', EditWithAgentPrompt, 12);
 fillSlot('float', 'suggestion-float', SuggestionFloat, 20);
 fillSlot('float', 'decision-notice', DecisionNotice, 30);
+fillSlot('pageBar', 'suggest-mode', SuggestModeControl, 90);
 
 provideSelectionAction('editWithAgent', {
   label: 'Edit with Agent',

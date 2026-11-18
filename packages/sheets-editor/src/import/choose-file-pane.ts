@@ -156,6 +156,10 @@ export const FILE_NOT_IMPORTED_WORDS = {
     headline: fileAwaitedMessages.notCsv(),
     wayOn: fileAwaitedMessages.saveAsCsv(),
   }),
+  excelFileDropped: () => ({
+    headline: fileAwaitedMessages.excelNotDropped(),
+    wayOn: fileAwaitedMessages.useButtonInstead(chooseFileLabel()),
+  }),
   empty: () => ({
     headline: fileAwaitedMessages.isEmpty(),
     wayOn: fileAwaitedMessages.whatToChoose(),

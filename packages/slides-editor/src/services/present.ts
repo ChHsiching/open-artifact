@@ -42,7 +42,7 @@ export function playableSlides(): string[] {
 
 /**
  * The build steps of a slide. `flow: false` leaves in-flow fragments out
- * (where they are not hidden, as in an HTML export).
+ * for callers that need only the pinned build timeline.
  */
 export function buildSteps(slide: Slide, options: { flow?: boolean } = {}): BuildStep[] {
   interface Event {

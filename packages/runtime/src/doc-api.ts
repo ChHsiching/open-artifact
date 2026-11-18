@@ -84,6 +84,15 @@ export interface DocProject {
   enums: DocEnum[];
   /** How the page shows the doc (fonts, page width, where the tabs go). The page owns the keys. */
   display?: DocJsonObject;
+  /** Set while an owner has locked the doc: nobody can edit it until an owner unlocks it. */
+  locked?: DocLockInfo;
+}
+
+/** Who locked a doc, when, and why. */
+export interface DocLockInfo {
+  by: { id: string; name: string };
+  at: string;
+  note?: string;
 }
 
 /** `POST session`: a writing session for this page connection (`client` is the event stream's id). */
@@ -100,6 +109,8 @@ export interface DocSessionResponse {
   /** The person, as suggestions name them (`by`). */
   me: { id: string; name: string };
   project: DocProject;
+  /** The names of the people who worked on the doc, by the id versions and suggestions name them with. */
+  people?: Record<string, string>;
 }
 
 /** `POST read`: a tab as the server holds it. */
@@ -111,6 +122,8 @@ export interface DocReadRequest {
 export interface DocSuggestion {
   id: string;
   by: string;
+  /** The name `by` goes by, when the doc knows it (not for the agent's). */
+  name?: string;
   at: string;
   /** `agent`: the agent laid it. */
   via?: string;
@@ -203,6 +216,8 @@ export interface DocVersion {
   by: 'human' | 'agent' | 'system';
   /** The person's id. */
   user?: string;
+  /** The name that person goes by, when the doc knows it. */
+  name?: string;
   at: string;
   /** A restore: the rev it brought back. */
   restoredFrom?: number;

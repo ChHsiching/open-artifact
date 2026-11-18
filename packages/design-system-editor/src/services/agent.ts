@@ -152,12 +152,10 @@ export async function askToFixPreview(component: string, message: string): Promi
 
 /** Prepared requests offered by the page (welcome cards, the cover). */
 export const REQUESTS = {
+  fromConnectors:
+    'Build this design system in its existing folder. Check this session’s connectors for a design file, code repository, drive or wiki with my brand materials. Tell me which sources are available and ask which to use. If none are connected, ask me about the brand, colors, typography and accessibility needs in one message and draft a starter system from my answers.',
   fromCode:
-    'Build this design system from a code repository. Ask me once which repository, branch and package to use. List what you found (variables by theme, text styles, fonts, logos, components) and wait for my go-ahead before writing.',
-  fromDesignTool:
-    'Build this design system from a design file. Ask me for the file. Walk every page: merge its variables into themes and write its components. Make two or three components first for me to check before doing the rest.',
-  fromScratch:
-    'Set up this design system from scratch: 6–10 colors, 5–7 text styles, 4 spacing steps, 3 radius steps and a README with usage rules. No components. Tell me it was made from scratch.',
+    'Build this design system from a GitHub repository using the design-system skill’s reference/from-code.md. Update this system in place. Ask me once which repository, branch and package to use. List what you found (variables by theme, text styles, fonts, logos, components) and wait for my go-ahead before writing.',
   fromUploads:
     'I uploaded brand files to this design system (fonts in fonts/, files in assets/). Build the tokens, README and cover from them.',
   cover: 'Change the cover of this design system: ',
@@ -168,6 +166,6 @@ export const REQUESTS = {
 } as const;
 
 /** Sends one of the prepared requests, with the viewer's extra words appended. */
-export async function sendPrepared(text: string, extra = ''): Promise<AgentSendResult | null> {
-  return send('Send to agent', [`${text}${extra.trim() ? `\n\n${extra.trim()}` : ''}`]);
+export async function sendPrepared(text: string, extra = '', title = 'Send to agent'): Promise<AgentSendResult | null> {
+  return send(title, [`${text}${extra.trim() ? `\n\n${extra.trim()}` : ''}`]);
 }

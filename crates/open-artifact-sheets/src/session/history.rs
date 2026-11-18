@@ -873,7 +873,7 @@ impl Steps {
 
     /// Whether an op id is one of an edit of the history.
     pub fn uses(&self, op_id: &str) -> bool {
-        self.undo.iter().chain(&self.redo).flat_map(|s| &s.parts).any(|p| p.op_id == op_id)
+        self.undo.iter().chain(&self.redo).any(|s| s.name == op_id || s.parts.iter().any(|p| p.op_id == op_id))
     }
 
     pub fn clear(&mut self) {

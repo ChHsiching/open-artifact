@@ -150,7 +150,15 @@ export interface FilesChangedEvent {
 }
 
 /** The `artifact` capability. */
+export interface SystemCopyStatus {
+  state: 'current' | 'behind' | 'missing' | 'unavailable';
+  changed: number;
+  removed: number;
+}
+
 export interface ArtifactCapability {
+  /** Compare or refresh an installed design system from its recorded source. */
+  systemCopy?(namespace: string, action: 'status' | 'sync'): Promise<SystemCopyStatus>;
   /** Stable artifact id. */
   readonly id: string;
   /** Current title as recorded by the host. */
@@ -426,6 +434,17 @@ export interface CommentMessage {
   /** Who the message asks, as the page named them (`agent` asks the agent). */
   to?: string[];
   reactions?: CommentReaction[];
+  /** The agent's reply to a message sent to it without asking it: it joined without being asked. */
+  joined?: boolean;
+}
+
+/** What {@link CommentsCapability.sendToAgent} takes besides the thread. */
+export interface CommentSendOptions {
+  /**
+   * The newest message does not ask the agent (no `@agent`) but goes to it because it took part in the thread: it
+   * decides whether to answer, and the thread keeps its status.
+   */
+  unasked?: boolean;
 }
 
 /** What {@link CommentsCapability.reply} takes besides the text. */
@@ -454,6 +473,8 @@ export interface CommentThread {
   /** Extra structured location (coordinates, element ids), for the agent. */
   location: JsonRecord;
   status: 'open' | 'resolved';
+  /** Who resolved it, while it is resolved (when the host knows). */
+  resolvedBy?: CommentAuthor;
   agent?: CommentAgentState;
   messages: CommentMessage[];
 }
@@ -485,8 +506,8 @@ export interface CommentsCapability {
   move(threadId: string, anchor: string, location?: JsonRecord): Promise<CommentThread>;
   /** Deletes one message, or the whole thread when `messageId` is omitted. */
   remove(threadId: string, messageId?: string): Promise<void>;
-  /** Hands the thread to the agent (status `pending` until it reads it). */
-  sendToAgent(threadId: string): Promise<CommentThread>;
+  /** Hands the thread to the agent (status `pending` until it reads it; `unasked` keeps the status). */
+  sendToAgent(threadId: string, options?: CommentSendOptions): Promise<CommentThread>;
   /** Subscribes to the full thread list whenever anyone changes it. */
   onChange(listener: (threads: CommentThread[]) => void): () => void;
 }

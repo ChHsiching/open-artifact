@@ -22,8 +22,10 @@ import {
   type TemplateModel,
 } from '@open-artifact/dc';
 import { addNoteCopies } from '@open-artifact/design-core';
-import { clipboardData, payloadFromHtml, type ClipboardPayload } from '../lib/clipboard-data.ts';
+import { create } from 'zustand';
+import { clipboardData, payloadFromHtml, remapBoardReferences, type ClipboardPayload } from '../lib/clipboard-data.ts';
 import { toast } from '@open-artifact/ui';
+import { placeImages } from './images.ts';
 import { freeBoardName } from '../lib/frame.ts';
 import { looksLikeHtml, sanitizeHtml } from '../lib/sanitize.ts';
 import type { Address } from '../lib/ops.ts';
@@ -211,11 +213,16 @@ function pasteObjects(payload: Extract<ClipboardPayload, { kind: 'objects' }>): 
   const page = view.page && view.page !== firstPage ? view.page : undefined;
   const taken = new Set([...Object.keys(doc.boards), ...Object.keys(doc.canvas.boards)]);
   const boards: string[] = [];
-  for (const { path, entry, source } of payload.boards) {
+  const names = new Map<string, string>();
+  for (const { path } of payload.boards) {
     const name = freeBoardName(path.replace(/\.dc\.html$/, '').replace(/^.*\//, ''), taken);
     taken.add(name);
+    names.set(path, name);
+  }
+  for (const { path, entry, source } of payload.boards) {
+    const name = names.get(path)!;
     const { page: _page, ...rest } = entry;
-    useDocument.getState().createBoard(name, source, { ...rest, x: entry.x + 40, y: entry.y + 40, ...(page ? { page } : {}) });
+    useDocument.getState().createBoard(name, remapBoardReferences(source, path, names), { ...rest, x: entry.x + 40, y: entry.y + 40, ...(page ? { page } : {}) });
     boards.push(name);
   }
   let notes: string[] = [];
@@ -233,10 +240,19 @@ function pasteObjects(payload: Extract<ClipboardPayload, { kind: 'objects' }>): 
   view.select({ kind: 'objects', boards, notes });
 }
 
+type BoardPaste = Extract<ClipboardPayload, { kind: 'objects' }>;
+export const useBoardPaste = create<{ pending: BoardPaste | null }>(() => ({ pending: null }));
+export function finishBoardPaste(accept: boolean): void {
+  const { pending } = useBoardPaste.getState();
+  useBoardPaste.setState({ pending: null });
+  if (accept && pending && !useDocument.getState().readOnly) pasteObjects(pending);
+}
+
 /** Pastes a payload. */
 export function pastePayload(payload: ClipboardPayload): void {
   if (useDocument.getState().readOnly) return;
   if (payload.kind === 'elements') pasteElements(payload);
+  else if (payload.externalCode) useBoardPaste.setState({ pending: payload });
   else pasteObjects(payload);
 }
 
@@ -277,6 +293,7 @@ export function pasteText(text: string): void {
 
 /** Paste for callers without a clipboard event (context menu, frame keys). */
 export async function pasteFromSystem(): Promise<void> {
+  if (useDocument.getState().readOnly) return;
   try {
     const items = await navigator.clipboard.read();
     for (const item of items) {
@@ -288,6 +305,14 @@ export async function pasteFromSystem(): Promise<void> {
           return;
         }
       }
+    }
+    for (const item of items) {
+      const type = item.types.find(t => t.startsWith('image/'));
+      if (!type) continue;
+      const blob = await item.getType(type);
+      const file = new File([blob], `Pasted image.${type.slice(6).replace('jpeg', 'jpg')}`, { type });
+      await placeImages([file], menuPoint?.world ?? viewportCenter(), menuPoint?.board);
+      return;
     }
     for (const item of items) {
       if (item.types.includes('text/plain')) {

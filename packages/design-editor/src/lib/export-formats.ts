@@ -15,7 +15,7 @@ type ChromeFormat = NonNullable<ChromeReport['formats']>[number];
 /** What the Export tab depends on. */
 export interface ExportScene {
   /** The selected artboard (`null`: none, or several), with whether each PNG size (1×, 2×) can be captured. */
-  artboard: { path: string; png: readonly [boolean, boolean] } | null;
+  artboard: { path: string; png: readonly [boolean, boolean]; preview?: { width: number; fits: readonly [boolean, boolean] } } | null;
   /** The page whose artboards "All artboards" exports. */
   page: string | null;
   /** How many artboards that page has. */
@@ -35,6 +35,7 @@ export type ExportJob =
   | { kind: 'html'; path: string }
   | { kind: 'single'; path: string }
   | { kind: 'figma'; path: string }
+  | { kind: 'standalone' | 'figmaPage'; page: string | null }
   | { kind: 'site' };
 
 /** Screen widths a page can be laid out at for "PNG at width" (as the focused view's preview width menu). */
@@ -78,6 +79,10 @@ export function exportFormats(scene: ExportScene): ChromeFormat[] {
       variants: [
         { id: 'current', label: 'Selected artboard, 1×', ...off(none || !one.png[0]) },
         { id: 'current2x', label: 'Selected artboard, 2×', ...off(none || !one.png[1]) },
+        ...(one?.preview ? [
+          { id: 'preview', label: `Preview width (${one.preview.width} px), 1×`, ...off(!one.preview.fits[0]) },
+          { id: 'preview2x', label: `Preview width (${one.preview.width} px), 2×`, ...off(!one.preview.fits[1]) },
+        ] : []),
         ...SCREEN_WIDTHS.map(([width, label]) => ({ id: `w${width}`, label: `At ${width} px (${label}), full length`, ...off(none) })),
         { id: 'all', label: 'All artboards on this page (.zip)', ...off(all) },
       ],
@@ -108,6 +113,8 @@ export function exportFormats(scene: ExportScene): ChromeFormat[] {
         { id: 'current', label: 'Selected artboard with its images and code (.zip)', ...off(none) },
         { id: 'single', label: 'Selected artboard as one file that works offline', ...off(none) },
         { id: 'figma', label: 'Selected artboard as one page for Figma’s capture extension', ...off(none) },
+        { id: 'standalone', label: 'Standalone web page (all artboards on this page)', ...off(all) },
+        { id: 'figmapage', label: 'All artboards on this page for Figma', ...off(all) },
         { id: 'canvas', label: 'The whole canvas with an index and a README (.zip)', ...off(scene.canvasArtboards === 0) },
       ],
     },
@@ -127,6 +134,9 @@ export function exportJob(scene: ExportScene, format: string, variant: string | 
       return path ? { kind: 'png', path, scale: 1 } : null;
     case 'png:current2x':
       return path ? { kind: 'png', path, scale: 2 } : null;
+    case 'png:preview':
+    case 'png:preview2x':
+      return scene.artboard?.preview ? { kind: 'png', path: scene.artboard.path, scale: variant === 'preview2x' ? 2 : 1, width: scene.artboard.preview.width } : null;
     case 'png:all':
       return { kind: 'pngAll', page: scene.page };
     case 'jpeg:current':
@@ -143,6 +153,10 @@ export function exportJob(scene: ExportScene, format: string, variant: string | 
       return path ? { kind: 'single', path } : null;
     case 'html:figma':
       return path ? { kind: 'figma', path } : null;
+    case 'html:standalone':
+      return { kind: 'standalone', page: scene.page };
+    case 'html:figmapage':
+      return { kind: 'figmaPage', page: scene.page };
     case 'html:canvas':
       return { kind: 'site' };
     default:

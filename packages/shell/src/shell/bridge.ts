@@ -17,18 +17,22 @@
  *   `open_session`, `close` and `comment_summon` to the host's origin.
  */
 
+import { copyShellLink } from './actions.ts';
+import { DOC_FRAGMENT, SLIDE_FRAGMENT } from '@open-artifact/protocol';
 import type { ChromeCommand, ChromeExportItem, ChromeExportState, PageToShell, ShellToHost, ShellToPage } from '@open-artifact/protocol';
 import { CHROME_DRAWS, isShellMessage } from '@open-artifact/protocol';
 import { toast } from '@open-artifact/ui';
 import { t } from '../lib/i18n.ts';
 import { call as brokerCall, want as brokerWant, type PagePost } from './broker.ts';
-import { actionOf, exportRequestId, normalizeReport, type ExportEntry } from './model.ts';
+import { actionOf, exportRequestId, showsComments, normalizeReport, type ExportEntry, sheetPageFragment } from './model.ts';
 import { useShell } from './store.ts';
 
 /** The page's frame, while mounted. */
 let frame: HTMLIFrameElement | null = null;
 /** The page's origin: chrome messages go only there. */
 let pageOrigin = location.origin;
+// An async editor can attach its message listener after the iframe's load event.
+let helloOnFirstReport = false;
 /** Export requests waiting for `chrome_exports`, by id. */
 const exportsWaiting = new Map<string, (items: ChromeExportItem[]) => void>();
 let exportSeq = 0;
@@ -50,7 +54,14 @@ export function attachFrame(element: HTMLIFrameElement | null, origin: string): 
 export function frameLoaded(): void {
   useShell.getState().setReport({});
   formatsWaiting.clear();
-  toPage({ openArtifact: 'chrome_hello', draws: [...CHROME_DRAWS] });
+  helloOnFirstReport = true;
+  sendChromeHello();
+}
+
+function sendChromeHello(): void {
+  const boot = useShell.getState().boot;
+  const standaloneDesign = boot?.type === 'design' && boot.typeServer;
+  toPage({ openArtifact: 'chrome_hello', draws: CHROME_DRAWS.filter(draw => draw !== 'actions' || !standaloneDesign) });
 }
 
 /** Sends a chrome message to the page. */
@@ -149,6 +160,49 @@ export function toHost(message: ShellToHost): void {
 function onPageMessage(message: PageToShell, event: MessageEvent): void {
   const store = useShell.getState();
   switch (message.openArtifact) {
+    case 'request_comment_mode':
+      if (store.boot?.typeServer?.role !== 'viewer' && showsComments(store.report) && typeof message.on === 'boolean') {
+        const anchor = message.on && typeof message.anchor === 'string' ? message.anchor : undefined;
+        command({ cmd: 'comments_mode', on: message.on, ...(anchor ? { anchor } : {}) });
+      }
+      break;
+    case 'copy_slide_link':
+      if (store.boot?.type === 'slides' && typeof message.hash === 'string' && SLIDE_FRAGMENT.test(message.hash)) {
+        void copyShellLink(message.hash);
+      }
+      break;
+    case 'copy_sheet_link':
+      if (store.boot?.type === 'sheets' && typeof message.page === 'string') {
+        void copyShellLink('#' + new URLSearchParams({ page: message.page }).toString());
+      }
+      break;
+    case 'sheet_page':
+      if (store.boot?.type !== 'sheets') break;
+      if (message.page !== null && typeof message.page !== 'string') break;
+      {
+        const hash = message.page ? '#' + new URLSearchParams({ page: message.page }).toString() : '';
+        if (location.hash !== hash) history.replaceState(history.state, '', location.pathname + location.search + hash);
+      }
+      break;
+    case 'design_page':
+      if (store.boot?.type === 'design' && (message.page === null || typeof message.page === 'string')) {
+        const hash = message.page ? '#' + new URLSearchParams({ page: message.page }).toString() : '';
+        if (location.hash !== hash) history.replaceState(history.state, '', location.pathname + location.search + hash);
+      }
+      break;
+    case 'doc_place':
+      if (store.boot?.type === 'docs' && typeof message.hash === 'string' && DOC_FRAGMENT.test(message.hash)) {
+        const url = new URL(location.href);
+        url.searchParams.delete('tab');
+        url.hash = message.hash;
+        if (url.href !== location.href) history.replaceState(history.state, '', url);
+      }
+      break;
+    case 'current_slide':
+      if (store.boot?.type === 'slides' && typeof message.hash === 'string' && SLIDE_FRAGMENT.test(message.hash) && location.hash !== message.hash) {
+        history.replaceState(history.state, '', message.hash);
+      }
+      break;
     case 'cap_want':
       void brokerWant(message, pageOrigin, toPageCap);
       break;
@@ -160,7 +214,13 @@ function onPageMessage(message: PageToShell, event: MessageEvent): void {
       filesTimer = null;
       break;
     case 'chrome_report':
-      if (message.report && typeof message.report === 'object') store.setReport(normalizeReport(message.report));
+      if (message.report && typeof message.report === 'object') {
+        store.setReport(normalizeReport(message.report));
+        if (helloOnFirstReport) {
+          helloOnFirstReport = false;
+          sendChromeHello();
+        }
+      }
       break;
     case 'chrome_export':
       exportState(message.request, message.state, message.reason);
@@ -211,6 +271,15 @@ function onBeforeUnload(event: BeforeUnloadEvent): void {
 
 /** Starts both protocols. Call once the boot is known; returns a function that stops them. */
 export function startBridge(): () => void {
+  const followPage = (): void => {
+    if (useShell.getState().boot?.type === 'docs' && location.hash) command({ cmd: 'goto_doc', hash: location.hash });
+    if (useShell.getState().boot?.type === 'sheets') {
+      const page = new URLSearchParams(sheetPageFragment(location.hash).slice(1)).get('page');
+      if (page) command({ cmd: 'goto_sheet', page });
+    }
+    if (useShell.getState().boot?.type === 'slides' && SLIDE_FRAGMENT.test(location.hash)) command({ cmd: 'goto_slide', hash: location.hash });
+  };
+  window.addEventListener('hashchange', followPage);
   window.addEventListener('message', onMessage);
   window.addEventListener('blur', onBlur);
   window.addEventListener('beforeunload', onBeforeUnload);
@@ -220,6 +289,7 @@ export function startBridge(): () => void {
     window.parent.postMessage(hello, '*');
   }
   return () => {
+    window.removeEventListener('hashchange', followPage);
     window.removeEventListener('message', onMessage);
     window.removeEventListener('blur', onBlur);
     window.removeEventListener('beforeunload', onBeforeUnload);

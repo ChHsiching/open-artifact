@@ -1,18 +1,17 @@
 /**
  * The toolbar floating at the bottom of the stage: the Text tool, Image or
- * video, Table, the Shapes tool and its menu, Comment, and the Ask field
+ * video, Table, the Shapes tool and its menu, and the Ask field
  * that hands a request to the agent with what this viewer is looking at.
  */
 
 import { useState, type ReactNode } from 'react';
-import { ArrowUp, ChevronDown, Circle, Diamond, Film, Image, Loader2, MessageCircle, Minus, MoveRight, RectangleHorizontal, Shapes, Spline, Square, Table, Type } from 'lucide-react';
+import { ArrowUp, ChevronDown, Circle, Diamond, Film, Image, Loader2, Minus, MoveRight, RectangleHorizontal, Shapes, Spline, Square, Table, Type } from 'lucide-react';
 import { cn } from '@open-artifact/ui';
 import { useUi } from '../state/ui.ts';
 import { useView, type Tool } from '../state/view.ts';
 import { sendToAgent, useAgent } from '../services/agent.ts';
 import { MEDIA_ACCEPT, pickFiles, placeFiles } from '../services/assets.ts';
 import { insertShape, type InsertShapeKind } from '../services/commands.ts';
-import { useComments } from '../services/comments.ts';
 import { Card, ChromeButton, ChromeDivider, ChromeMenu, ChromeMenuItem, ChromeMenuSeparator, SHIFT, Tip } from '@open-artifact/editor-kit/react';
 
 const ICON = { className: 'size-5', strokeWidth: 1.5 } as const;
@@ -180,12 +179,10 @@ export interface FootToolbarProps {
 /** The toolbar (the caller places it). */
 export function FootToolbar({ editing, ask }: FootToolbarProps): ReactNode {
   const tool = useView((s) => s.tool);
-  const commentsAvailable = useComments((s) => s.available);
-  const commentsOn = useComments((s) => s.on);
   const view = useView.getState;
-  if (!editing && !commentsAvailable && !ask) return null;
+  if (!editing && !ask) return null;
   return (
-    <Card role="toolbar" aria-label={editing ? 'Insert' : 'Comments'} className="max-w-full gap-1 p-1">
+    <Card role="toolbar" aria-label={editing ? 'Insert' : 'Ask'} className="max-w-full gap-1 p-1">
       {editing ? (
         <>
           <Tip label="Text" shortcut="T" side="top">
@@ -202,16 +199,9 @@ export function FootToolbar({ editing, ask }: FootToolbarProps): ReactNode {
           <ShapesMenu />
         </>
       ) : null}
-      {commentsAvailable ? (
-        <Tip label={commentsOn ? 'Stop commenting' : 'Comment'} shortcut="C" side="top">
-          <ChromeButton size="lg" square pressed={commentsOn} aria-label={commentsOn ? 'Stop commenting' : 'Comment'} onClick={() => useComments.getState().setOn(!commentsOn)}>
-            <MessageCircle {...ICON} />
-          </ChromeButton>
-        </Tip>
-      ) : null}
       {ask ? (
         <>
-          {editing || commentsAvailable ? <ChromeDivider className="mx-0" /> : null}
+          {editing ? <ChromeDivider className="mx-0" /> : null}
           <AskField />
         </>
       ) : null}

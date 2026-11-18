@@ -373,7 +373,7 @@ function normalizeElementFields(raw: unknown, takenIds: ReadonlySet<ElementId>):
       const src = normalizeImageSource(input.src);
       if (src === undefined) return undefined;
       const crop = normalizeImageCrop(input.crop);
-      const video = typeof input.video === 'string' && isUploadedBlobSource(input.video) ? input.video : undefined;
+      const video = typeof input.video === 'string' && isUploadedBlobSource(input.video) ? normalizeImageSource(input.video) : undefined;
       const href = video === undefined ? normalizeHttpUrl(input.href) : undefined;
       return {
         type: 'image',

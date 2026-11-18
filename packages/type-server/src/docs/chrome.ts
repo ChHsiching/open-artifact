@@ -67,6 +67,8 @@ export async function launchChrome(chrome: string, args: string[] = []): Promise
       '--headless=new',
       '--remote-debugging-port=0',
       `--user-data-dir=${profile}`,
+      // Keep this temporary profile independent of the macOS login keychain.
+      ...(process.platform === 'darwin' ? ['--use-mock-keychain'] : []),
       '--no-first-run',
       '--no-default-browser-check',
       '--disable-extensions',

@@ -70,6 +70,7 @@ export interface TextRun {
   /** Font size in px. */
   size: number;
   font?: string;
+  eastAsianFont?: string;
   bold?: boolean;
   italic?: boolean;
   underline?: boolean;
@@ -359,7 +360,7 @@ function runPropsXml(run: TextRun, rels: Rels, tag: 'a:rPr' | 'a:endParaRPr' = '
   if (run.spacing) attrs.push(`spc="${Math.round(run.spacing * SZ_PER_PX)}"`);
   attrs.push('dirty="0"');
   const fill = run.color ? `<a:solidFill>${srgb(run.color)}</a:solidFill>` : '';
-  const font = run.font ? `<a:latin typeface="${xml(run.font)}"/><a:ea typeface="${xml(run.font)}"/><a:cs typeface="${xml(run.font)}"/>` : '';
+  const font = run.font ? `<a:latin typeface="${xml(run.font)}"/><a:ea typeface="${xml(run.eastAsianFont ?? run.font)}"/><a:cs typeface="${xml(run.font)}"/>` : '';
   const link = run.href && tag === 'a:rPr' ? `<a:hlinkClick r:id="${rels.link(run.href)}"/>` : '';
   const children = fill + font + link;
   return children ? `<${tag} ${attrs.join(' ')}>${children}</${tag}>` : `<${tag} ${attrs.join(' ')}/>`;

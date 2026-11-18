@@ -30,16 +30,21 @@ const same = (a: unknown, b: unknown): boolean => a === b || JSON.stringify(a) =
 
 /**
  * Merges `ours` into `theirs` relative to `base`: a key we changed takes
- * our value, every other key keeps theirs. Objects listed in `deep`
- * (`assetGroups`, `sections`, `blobs`) merge one level further, entry by entry.
+ * our value, every other key keeps theirs. Nested records merge independently so adding two
+ * uploads to the same group keeps both. Ordered name lists retain concurrent additions.
  */
-export function mergeJson(base: Json, ours: Json, theirs: Json, deep: readonly string[] = ['assetGroups', 'sections', 'blobs']): Json {
-  const out: Json = { ...theirs };
+export function mergeJson(base: Json, ours: Json, theirs: Json): Json {
+  const out: Json = Object.assign(Object.create(null), theirs);
   for (const key of new Set([...Object.keys(base), ...Object.keys(ours)])) {
     if (same(base[key], ours[key])) continue;
-    if (deep.includes(key) && isObject(ours[key]) && isObject(theirs[key])) {
-      out[key] = mergeJson(isObject(base[key]) ? (base[key] as Json) : {}, ours[key] as Json, theirs[key] as Json, []);
-    } else if (key in ours) {
+    const local = ours[key];
+    const remote = theirs[key];
+    if (isObject(local) && isObject(remote)) {
+      out[key] = mergeJson(isObject(base[key]) ? base[key] as Json : {}, local, remote);
+    } else if ((key === 'groups' || key === 'order') && Array.isArray(local) && Array.isArray(remote)) {
+      const before = Array.isArray(base[key]) ? base[key] as unknown[] : [];
+      out[key] = [...local.filter((name) => !before.includes(name) || remote.includes(name)), ...remote.filter((name) => !before.includes(name) && !local.includes(name))];
+    } else if (Object.hasOwn(ours, key)) {
       out[key] = ours[key];
     } else {
       delete out[key];

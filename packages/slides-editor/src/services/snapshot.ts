@@ -35,6 +35,7 @@ import {
 import { isFontHref, nodeAt, parsePathKey, SLIDE_HEIGHT, SLIDE_WIDTH, type DeckFace, type Slide } from '@open-artifact/slides-core';
 import { SlideView, type RenderOptions } from '../render/SlideView.tsx';
 import { installSlideStyles, slideStylesheet } from '../render/css.ts';
+import { embedStillsReady } from '../render/embed-still.ts';
 import { fitElement } from '../render/fit.ts';
 import { fontFaceRule, fontsReady, syncDeckFonts } from '../render/fonts.ts';
 import { PAGE_RESET } from './capture.ts';
@@ -279,6 +280,7 @@ export async function snapshotSlide(slide: Slide, context: SnapshotContext): Pro
     flushSync(() => host.root.render(createElement(SlideView, { slide, options: thumbOptions(context.resolveSrc), rootRef: ref })));
     const root = ref.current;
     if (!root) throw new Error('The slide could not be drawn.');
+    await embedStillsReady(root);
     await picturesReady(root, IMAGE_TIMEOUT);
     await fontsReady(document, FONT_TIMEOUT);
     await wait(0);

@@ -1,4 +1,4 @@
-/** The card of a thread being written: the words it will hang on, and its text box. */
+/** The card of a thread being written: the words it will hang on (what the cells are, on several), and its text box. */
 import { ConfirmDialog } from '@open-artifact/ui';
 import { type ReactNode, type Ref, useState } from 'react';
 import { cancelComposer, createThread } from './actions.ts';
@@ -17,6 +17,7 @@ export function NewThreadCard({ cardRef }: { cardRef?: Ref<HTMLDivElement> }): R
   return (
     <div ref={cardRef} className="pointer-events-auto rounded-[12px] bg-chrome p-3 text-chrome-fg shadow-chrome-popup ring-1 ring-chrome-accent/50" data-comment-card="new">
       {composer.clamped ? <div className="mb-2 text-[12px] text-chrome-muted">Long selection — your comment will attach to the beginning of it.</div> : null}
+      {composer.anchor.kind === 'cells' ? <div className="mb-2 truncate border-l-2 border-[rgb(255_196_0/0.8)] pl-2 text-[12px] text-chrome-muted">{composer.label}</div> : null}
       <Composer
         autoFocus
         label="Add a comment"

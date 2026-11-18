@@ -49,6 +49,8 @@ describe('type server', () => {
     const assets = join(dir, 'assets');
     await mkdir(join(assets, 'editors', 'design'), { recursive: true });
     await writeFile(join(assets, 'editors', 'design', 'index.html'), '<!doctype html><title>Design</title>');
+    await mkdir(join(assets, 'shell'), { recursive: true });
+    await writeFile(join(assets, 'shell/index.html'), '<script>window.boot = /*__OPEN_ARTIFACT_BOOT__*/null;</script>');
     await writeFile(join(assets, 'support.js'), '/* runtime */');
     root = join(dir, 'My Design');
     server = createTypeServer({ assetsDir: assets, secret, idleMs: 0, downloadsDir: join(dir, 'downloads') });
@@ -65,7 +67,8 @@ describe('type server', () => {
     const canvas = JSON.parse(await readFile(join(root, 'project', 'canvas.json'), 'utf8')) as { v: number };
     assert.equal(canvas.v, 3);
     const html = await (await fetch(page)).text();
-    assert.match(html, /<title>Design<\/title>/);
+    assert.match(html, /"typeServer":\{"role":"owner"\}/);
+    assert.match(await (await fetch(new URL('index.html', page))).text(), /<title>Design<\/title>/);
     assert.equal(await (await fetch(new URL('project/Deep/support.js', page))).text(), '/* runtime */');
     const session = (await (await fetch(new URL('_api/session', page))).json()) as { artifact: { title: string; type: string }; viewer: { role: string } };
     assert.equal(session.artifact.title, 'My Design');
@@ -312,7 +315,7 @@ describe('type server', () => {
     const list = (await (await call('/__open-artifact/actions')).json()) as { actions: { name: string }[] };
     assert.deepEqual(
       list.actions.map((a) => a.name),
-      ['check', 'upload', 'context', 'snapshot', 'read', 'update', 'batch', 'widget', 'info', 'export', 'create', 'read', 'update', 'delete', 'batch', 'export', 'import'],
+      ['check', 'upload', 'context', 'snapshot', 'read', 'update', 'batch', 'widget', 'info', 'export', 'duplicate', 'create', 'read', 'update', 'delete', 'batch', 'export', 'import'],
     );
     // The page opened earlier may have written its context: start from none.
     await rm(join(root, '_agent', 'view-context.json'), { force: true });

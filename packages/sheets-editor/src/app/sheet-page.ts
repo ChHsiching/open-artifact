@@ -1,4 +1,4 @@
-import { DEFAULT_TOAST_TIMEOUT_MS } from '../kit/toast.tsx';
+import { DEFAULT_TOAST_TIMEOUT_MS, useToasts } from '../kit/toast.tsx';
 import { Surface } from '../kit/surface.tsx';
 import { UiRoot } from '../kit/theme.tsx';
 import { useStore } from 'zustand';
@@ -363,7 +363,8 @@ import { canSwitchSheetWhileEditing } from '../formulas/sheet-pointed-in.ts';
 import { isFormulaAskedOrProposed } from '../formulas/from-words/actions.ts';
 import { EVENTS_BEFORE_FILE_IMPORT } from '../import/text-file.ts';
 import { useImportFilePicker, importFileChoices } from '../import/csv-file.ts';
-import { PageFileDrop, canTakeDroppedFile } from '../import/page-file-drop.ts';
+import { PageFileDrop, canTakeDroppedFile, isExcelFileName } from '../import/page-file-drop.ts';
+import { NO_FILES_FOR_AGENT, type AgentFileSource } from '../agent/files-for-agent.ts';
 import { trackCellsAddedToChat, CellsAddedAnnouncer, AddedToMessageToast } from '../agent/added-to-message-notices.ts';
 import { askAgentForRulesInChat, askAgentAboutRule } from '../format/conditional/ask-agent-about-rule.ts';
 import { createPressForFixesTracker } from '../formulas/fix/press-for-fixes.ts';
@@ -726,6 +727,7 @@ export function SheetsPage({
   chartsRunOn = CHARTS_RUN_ON_NOTHING,
   changesOfCharts = null,
   chartsWrittenByAgent = null,
+  filesForAgent = NO_FILES_FOR_AGENT,
   gridZoom: gridZoom,
   isAgentWorkingNow = isAgentNeverWorking,
 }: Dynamic) {
@@ -795,6 +797,15 @@ export function SheetsPage({
   let { doCellsTakeNoText: doCellsTakeNoText2, wasSomethingKeptOff: wasSomethingKeptOff } = useKeysOffCells();
   let canPersonEdit = view.viewOnlyBecause !== 'readOnly';
   let cellsRef = React.useRef(null);
+  let filesOfferedToAgent = React.useSyncExternalStore<readonly AgentFileSource[]>(filesForAgent.onChanged, filesForAgent.offered, filesForAgent.offered);
+  let toastsOfPage = useToasts();
+  React.useEffect(
+    () =>
+      filesForAgent.onTold?.((words: string, isProblem: boolean) =>
+        toastsOfPage.add({ title: words, variant: isProblem ? 'warning' : 'neutral' }),
+      ),
+    [filesForAgent, toastsOfPage],
+  );
   let zoomedGridRef = React.useRef(null);
   let cellEditorRef = React.useRef(null);
   let pendingTypingRef = React.useRef(null);
@@ -6600,6 +6611,26 @@ export function SheetsPage({
     });
     return () => shell.offerImport(null);
   }, [shell, store, dispatchFileImport, canImportFile, scrollGesture]);
+  let askFilesForAgent = React.useCallback(
+    (source?: Dynamic) => {
+      const doc = (cellsRef.current as HTMLElement | null)?.ownerDocument;
+      if (doc?.hasFocus() === false) doc.defaultView?.focus();
+      filesForAgent.ask(source);
+      clicksSinceCaretMovedRef.current = 0;
+    },
+    [filesForAgent],
+  );
+  let takeDroppedImport = React.useCallback(
+    (file?: Dynamic) => {
+      if (!(file instanceof File && isExcelFileName(file) && filesForAgent.offered().includes('computer'))) return takeDroppedFile(file);
+      forgetFileToImport();
+      dispatchFileImport({
+        kind: 'fileToImportNotRead',
+        why: 'excelFileDropped',
+      });
+    },
+    [filesForAgent, dispatchFileImport, takeDroppedFile, forgetFileToImport],
+  );
   let chooseImportFile = React.useCallback(
     (choices?: Dynamic) => {
       if (store.getView().mode.kind !== 'editing') chooseFileToImport(choices);
@@ -7724,6 +7755,15 @@ export function SheetsPage({
     );
     return () => clearTimeout(timer);
   }, [store, notice, doesNoticeGiveWay]);
+  let isExcelDropNoticeUseless =
+    notice?.kind === 'fileNotImported' && notice.why === 'excelFileDropped' && !filesOfferedToAgent.includes('computer');
+  React.useEffect(() => {
+    if (isExcelDropNoticeUseless)
+      store.dispatch({
+        kind: 'noticeDismissed',
+        notice: notice,
+      });
+  }, [store, notice, isExcelDropNoticeUseless]);
   let { peopleList: peopleList } = view;
   let highlightedPerson = peopleList?.rows[peopleList.highlightedRow];
   let personChipGoneTo = peopleList?.inField?.find(({ userId: userId }: Dynamic) => userId === peopleList.chipGoneTo);
@@ -8226,6 +8266,7 @@ export function SheetsPage({
               },
               viewOnlyBecause: view.viewOnlyBecause,
               isVersionHistoryOpen: view.versionHistory !== null,
+              filesForAgent: filesOfferedToAgent,
               whyNoToolForCells: isChartSelected ? chartMessages.toolIsNotForCharts() : null,
             },
             {
@@ -8235,6 +8276,7 @@ export function SheetsPage({
               },
               onBlankChosen: blankSheetChooser(dispatchFromSheetList(view.listedSheets, dispatchFromSheetTabs)),
               onImportChosen: chooseImportFile,
+              onFileForAgentChosen: askFilesForAgent,
               onVersionHistoryAsked: askVersionHistory,
               onAllFunctionsAsked: askAllFunctions,
               onAllSheetsAsked: null,
@@ -9057,6 +9099,21 @@ export function SheetsPage({
           {
             words: noticeText(notice),
             ...(notice.kind === 'callsForFixesFailed' && WARNING_TOAST_ICON_PROPS),
+            action:
+              notice.kind === 'fileNotImported' && notice.why === 'excelFileDropped'
+                ? jsx(Button, {
+                    variant: 'secondary',
+                    size: 'sm',
+                    onClick: () => {
+                      askFilesForAgent('computer');
+                      store.dispatch({
+                        kind: 'noticeDismissed',
+                        notice: notice,
+                      });
+                    },
+                    children: sheetMessages.importFromExcel(),
+                  })
+                : undefined,
             staysUntilClosed: !noticeGivesWay(notice) || mode.kind === 'editing',
             onOver: ({ byUser: byUser }: Dynamic) => {
               store.dispatch({
@@ -9743,6 +9800,8 @@ export function SheetsPage({
                 onKeyDown: onSheetsTabsKeyDown,
                 isChosenForFormula: canSwitchSheet,
                 onImportChosen: chooseImportFile,
+                filesForAgent: filesOfferedToAgent,
+                onFileForAgentChosen: askFilesForAgent,
                 lookOnceEventsAreFinished: lookOnceEventsAreFinished,
                 dispatch: dispatchFromSheetTabs,
               }),
@@ -9804,6 +9863,8 @@ export function SheetsPage({
                           ref: setFootNoticeElement,
                           onAskAgent: askAgentFromWaysInOffer,
                           onImportChosen: chooseImportFile,
+                          filesForAgent: filesOfferedToAgent,
+                          onFileForAgentChosen: askFilesForAgent,
                           whatHasCaretAfter: whatHasCaretAfter,
                           onMenuOpenChange: onWaysInLayerOpenChange,
                           onKeyDown: onWaysInKeyDown,
@@ -10274,7 +10335,7 @@ export function SheetsPage({
       jsx(PageFileDrop, {
         isTaken: canTakeDroppedFile(view) && !isAnyLayerHeldBack,
         wayInByKeyboard: addSheetButtonRef,
-        onDropped: takeDroppedFile,
+        onDropped: takeDroppedImport,
       }),
     ],
   });

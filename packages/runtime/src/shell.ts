@@ -38,6 +38,14 @@ export interface ShellConnection {
   exportState(request: string, state: ChromeExportState, reason?: string): void;
   /** Sends the full report; call again whenever any part changes. */
   report(report: ChromeReport): void;
+  currentSheetPage(page: string | null): void;
+  copySheetLink(page: string): void;
+  currentDesignPage(page: string | null): void;
+  currentDocPlace(hash: string): void;
+  currentSlide(hash: string): void;
+  copySlideLink(hash: string): void;
+  // The optional page-defined anchor opens a draft at the context menu's target.
+  requestCommentMode(on: boolean, anchor?: string): void;
   /** Handles commands; return the export items for `exports`. */
   onCommand(handler: (command: ChromeCommand) => ChromeExportItem[] | void): () => void;
   /**
@@ -126,6 +134,21 @@ export function connectShell(): ShellConnection | null {
     },
     exportState(request, state, reason) {
       post({ openArtifact: 'chrome_export', request, state, ...(reason ? { reason } : {}) });
+    },
+    requestCommentMode(on, anchor) {
+      post({ openArtifact: 'request_comment_mode', on, ...(anchor ? { anchor } : {}) });
+    },
+    copySlideLink(hash) {
+      post({ openArtifact: 'copy_slide_link', hash });
+    },
+    currentSheetPage(page) { post({ openArtifact: 'sheet_page', page }); },
+    copySheetLink(page) { post({ openArtifact: 'copy_sheet_link', page }); },
+    currentDesignPage(page) {
+      post({ openArtifact: 'design_page', page });
+    },
+    currentDocPlace(hash) { post({ openArtifact: 'doc_place', hash }); },
+    currentSlide(hash) {
+      post({ openArtifact: 'current_slide', hash });
     },
     report(report) {
       lastReport = report;

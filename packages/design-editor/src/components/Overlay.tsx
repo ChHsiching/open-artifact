@@ -9,16 +9,18 @@
  * artboards far outside the view are left out.
  */
 
-import { AlertTriangle, Maximize2, Play, SlidersHorizontal, Wand2 } from 'lucide-react';
+import { AlertTriangle, Maximize2, Play, Square, SlidersHorizontal, Wand2 } from 'lucide-react';
 import { useMemo, type ReactNode } from 'react';
 import { parseDcDocument, tweakEntries, type BoardRect } from '@open-artifact/dc';
 import { cn } from '@open-artifact/ui';
 import { useDocument } from '../state/document.ts';
 import { useView, type Camera } from '../state/view.ts';
 import { boardApi } from '../services/frames.ts';
-import { askAgentToFix, useAgent } from '../services/agent.ts';
+import { session } from '../services/session.ts';
+import { askAgentToFix } from '../services/agent.ts';
 import { noteBounds } from '../lib/notes.ts';
 import type { Handle } from './Canvas.tsx';
+import { LayoutGuides } from './LayoutGuides.tsx';
 import { SelectionBar } from './SelectionBar.tsx';
 import { useScale } from '../services/scale.ts';
 import { viewportSize } from '../services/viewport.ts';
@@ -98,7 +100,7 @@ export function Overlay({ boards, engine = false }: OverlayProps) {
   const focus = useView((s) => s.focus);
   const canvas = useDocument((s) => s.canvas);
   const readOnly = useDocument((s) => s.readOnly);
-  const agentAvailable = useAgent((s) => s.status.available);
+  const playing = useView(s => s.playing);
   const panelOpen = useView((s) => s.panelOpen);
   const scaling = useScale((s) => s.session !== null);
   const sources = useDocument((s) => s.boards);
@@ -161,6 +163,7 @@ export function Overlay({ boards, engine = false }: OverlayProps) {
         return (
           // The engine moves selected artboards without the document until the drag ends: their labels hide meanwhile.
           <div key={path} data-gesture-bound={selected ? '' : undefined}>
+            {path !== playing && <LayoutGuides entry={entry} zoom={camera.zoom} left={box.left} top={box.top} />}
             <div
               data-board-title={path}
               className="pointer-events-auto absolute flex h-5 items-center gap-1 text-[11px] leading-5"
@@ -180,8 +183,11 @@ export function Overlay({ boards, engine = false }: OverlayProps) {
                       <SlidersHorizontal className="size-3" />
                     </FrameButton>
                   ) : null}
-                  <FrameButton label={entry.is_interactive ? 'Play' : 'Focus'} onClick={() => focus(path)}>
-                    {entry.is_interactive ? <Play className="size-3" /> : <Maximize2 className="size-3" />}
+                  {entry.is_interactive || path === playing ? <FrameButton label={playing === path ? 'Stop playing' : 'Play on canvas'} onClick={() => useView.getState().play(playing === path ? null : path)}>
+                    {playing === path ? <Square className="size-3 text-accent" /> : <Play className="size-3 text-accent" />}
+                  </FrameButton> : null}
+                  <FrameButton label={entry.is_interactive ? 'Play full screen' : 'Focus'} onClick={() => focus(path)}>
+                    <Maximize2 className="size-3" />
                   </FrameButton>
                 </>
               ) : entry.is_interactive ? (
@@ -201,7 +207,7 @@ export function Overlay({ boards, engine = false }: OverlayProps) {
                 <span>
                   {errors.length} {errors.length === 1 ? 'error' : 'errors'}
                 </span>
-                {agentAvailable && !readOnly ? (
+                {!readOnly && session().agent && session().viewer.role === 'owner' ? (
                   <button type="button" onClick={() => void askAgentToFix([path])} className="ml-1 flex items-center gap-1 rounded bg-white/20 px-1 hover:bg-white/30">
                     <Wand2 className="size-3" />
                     Ask agent to fix

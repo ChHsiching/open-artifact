@@ -3,6 +3,7 @@
  * host when the server has it open, so its pages hear of a write at once, else on the folder.
  */
 import fs from 'node:fs';
+import { duplicateDoc } from './duplicate.ts';
 import path from 'node:path';
 import { type CallOutcome, type DocPerson, birth, exportMarkdown, rebirth, runCall } from './calls.ts';
 import type { DocHost } from './host.ts';
@@ -15,6 +16,12 @@ type Json = Record<string, unknown>;
 export const EXPORTS_DIR = 'exports';
 
 export const DOC_ACTIONS = [
+  {
+    name: 'duplicate',
+    title: 'Copy the document into an independent folder beside it',
+    effect: 'write',
+    schema: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] },
+  },
   {
     name: 'create',
     title: 'Start the doc: {call: {name, doc: {markdown, blocks?}, batch?}} (on a new folder, or the blank doc opening one made)',
@@ -110,6 +117,11 @@ function openStore(root: string): DocStore | DocActionAnswer {
 export async function runDocAction(name: DocActionName, args: Json, context: DocActionContext): Promise<DocActionAnswer> {
   const { root, owner, host } = context;
   switch (name) {
+    case 'duplicate': {
+      if (typeof args.name !== 'string' || !args.name.trim() || args.name.length > 256) return refused(400, 'bad_name', 'Enter a document name of up to 256 characters.');
+      const store = host?.store ?? openStore(root);
+      return store instanceof DocStore ? { status: 201, body: duplicateDoc(store, args.name.trim()) } : store;
+    }
     case 'create': {
       const call = args.call;
       if (host) return answerOf(host.agentBirth(call));

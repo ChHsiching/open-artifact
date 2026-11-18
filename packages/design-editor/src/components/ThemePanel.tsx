@@ -8,7 +8,10 @@
  * system's copied README opens read-only.
  */
 
+import { boardsOnPage } from '@open-artifact/design-core';
 import { BookOpen, Bot } from 'lucide-react';
+import type { SystemCopyStatus } from '@open-artifact/runtime';
+import { flush } from '../services/sync.ts';
 import { useEffect, useState } from 'react';
 import { Button, Dialog, cn } from '@open-artifact/ui';
 import { useDocument } from '../state/document.ts';
@@ -60,9 +63,47 @@ function ReadmeDialog({ system, onClose }: { system: InstalledSystem | null; onC
   );
 }
 
+function CopyStatus({ system }: { system: InstalledSystem }) {
+  const copy = session().artifact.systemCopy;
+  const [status, setStatus] = useState<SystemCopyStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const readOnly = useDocument(s => s.readOnly);
+  useEffect(() => {
+    if (!copy) return;
+    let active = true;
+    const refresh = () => copy(system.namespace, 'status').then(value => {
+      if (active) { setStatus(value); setError(''); }
+    }, () => active && setError('Could not check the source.'));
+    void refresh();
+    window.addEventListener('focus', refresh);
+    return () => { active = false; window.removeEventListener('focus', refresh); };
+  }, [copy, system.namespace, system.copiedAt]);
+  if (!copy) return null;
+  const sync = async () => {
+    setBusy(true);
+    try {
+      await flush();
+      setStatus(await copy(system.namespace, 'sync'));
+      setError('');
+    } catch { setError('Could not sync this copy.'); }
+    finally { setBusy(false); }
+  };
+  return <div className="flex items-center justify-between gap-2 px-3 py-1 text-[12px] text-chrome-secondary">
+    <span role="status">{error || (status?.state === 'behind' ? [status.changed ? 'Behind source' : '', status.removed ? `${status.removed} removed from source` : ''].filter(Boolean).join(' · ')
+      : status?.state === 'current' ? 'Up to date' : status?.state === 'missing' ? 'Installed copy missing' : status ? 'Source not found' : 'Checking source…')}</span>
+    {status?.changed && !readOnly ? <PButton disabled={busy} onClick={() => void sync()}>{busy ? 'Syncing…' : 'Sync'}</PButton> : null}
+  </div>;
+}
+
 function SystemCard({ system, target, onReadme }: { system: InstalledSystem; target: Target; onReadme(): void }) {
   const readOnly = useDocument((s) => s.readOnly);
   const hasElements = useView((s) => s.selection.kind === 'elements' && s.selection.items.length > 0);
+  const selection = useView(s => s.selection);
+  const page = useView(s => s.page);
+  const canvas = useDocument(s => s.canvas);
+  const selected = selection.kind === 'elements' ? [selection.board] : selection.kind === 'objects' ? selection.boards : [];
+  const paths = selected.length ? selected : boardsOnPage(canvas, page);
   const can = hasElements && !readOnly;
   return (
     <PSection
@@ -76,6 +117,18 @@ function SystemCard({ system, target, onReadme }: { system: InstalledSystem; tar
       }
     >
       <PNote className="py-0.5 font-mono text-[11px]">ds/{system.namespace}/{system.version ? ` · v${system.version}` : ''}</PNote>
+      <CopyStatus system={system} />
+      {system.looks.length ? <div className="px-3 py-1.5">
+        <div className="mb-1 text-[12px] text-chrome-muted">Apply look to {selected.length ? 'selection' : 'page'}</div>
+        <div className="flex flex-wrap gap-1">{system.looks.map(look => <PButton key={look.id} disabled={readOnly || !paths.length}
+          aria-label={'Apply ' + look.name + ' look'} onClick={() => {
+            const n = useDocument.getState().editBoards(paths, { kind: 'look', look });
+            announce(n ? `Applied ${look.name} to ${n} artboard${n === 1 ? '' : 's'}` : 'No matching styles to change');
+          }}>
+          <span className="inline-flex overflow-hidden rounded-sm" aria-hidden="true">{look.colors.slice(0, 3).map(c => <i key={c.name} className="h-3 w-2" style={{ backgroundColor: c.value }} />)}</span>
+          {look.name}
+        </PButton>)}</div>
+      </div> : null}
       {system.colors.length ? (
         <div className="px-3 pb-1 pt-1.5">
           <div className="mb-1 text-[12px] text-chrome-muted">Colors</div>

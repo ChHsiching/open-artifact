@@ -12,7 +12,7 @@
 
 import { componentProps } from './props.ts';
 import { parseTokensFile } from './edit.ts';
-import { buildManifest, listAssets, listComponents, listSections, normalizeSystemIndex, parseBundleHeader, type SystemIndex, type SystemManifest } from './system.ts';
+import { buildManifest, listAssets, listComponents, listSections, parseCardMarker, normalizeSystemIndex, parseBundleHeader, type SystemIndex, type SystemManifest } from './system.ts';
 import { compileTokensCss, normalizeTokens, type NormalizedTokens } from './tokens.ts';
 
 /** Markers around the generated block of `README.md`. */
@@ -22,7 +22,11 @@ export const USAGE_END = '<!-- /open-artifact:usage -->';
 /** The README without its generated block. */
 export function stripUsageBlock(readme: string): string {
   const start = readme.indexOf(USAGE_START);
-  if (start < 0) return readme;
+  if (start < 0) {
+    // Published systems delimit the generated tail with a rule and these exact headings.
+    const marker = /(?:^|\r?\n)---\r?\n\s*## Consuming this system \(generated — do not edit\)\s*(?:\r?\n|$)/.exec(readme);
+    return marker ? readme.slice(0, marker.index).trimEnd() + '\n' : readme;
+  }
   const end = readme.indexOf(USAGE_END, start);
   const tail = end < 0 ? '' : readme.slice(end + USAGE_END.length);
   return `${readme.slice(0, start).trimEnd()}${tail.trim() ? `\n\n${tail.trim()}` : ''}\n`;
@@ -46,13 +50,13 @@ export interface GenerateInput {
 function bundleNamespace({ index, files }: GenerateInput): string | null {
   const bundle = files.get('components/bundle.js');
   if (bundle === undefined) return null;
-  return parseBundleHeader(bundle)?.namespace || index.namespace;
+  return index.namespace || parseBundleHeader(bundle)?.namespace || null;
 }
 
 /** The "How to use this system" block. */
-export function usageBlock(input: GenerateInput): string {
+export function usageBlock(input: GenerateInput, cards = buildApiCards(input)): string {
   const { tokens } = input;
-  const lines = ['## How to use this system', ''];
+  const lines = ['## Consuming this system (generated — do not edit)', ''];
   lines.push('Load the compiled tokens; every token is a CSS custom property and every text style a class:', '');
   lines.push('```html', '<link rel="stylesheet" href="tokens.css">', '```', '');
   if (tokens.themes.length > 1) {
@@ -79,7 +83,12 @@ export function usageBlock(input: GenerateInput): string {
       '',
     );
   }
-  lines.push('Reference cards for agents are in `api/`: start with `api/README.md`.');
+  for (const font of tokens.fonts) lines.push(`- ${font.family} (${font.weight}, ${font.style}): \`${font.file}\`.`);
+  lines.push('', '## Index (generated — do not edit)', '');
+  for (const path of Object.keys(cards)) {
+    const title = cards[path]!.split('\n', 1)[0]!.replace(/^#\s*/, '');
+    lines.push(`- \`${path}\` — ${title}`);
+  }
   return lines.join('\n');
 }
 
@@ -108,13 +117,26 @@ function tokensCard({ tokens }: GenerateInput): string {
       }
     }
     lines.push('');
-    const families = Object.entries(tokens.families);
-    if (families.length) lines.push('Font families: ' + families.map(([key, stack]) => `\`--font-${key}\` = ${stack}`).join('; ') + '.', '');
+  }
+  const families = Object.entries(tokens.families);
+  if (families.length) lines.push('## Font families', '', ...families.map(([key, stack]) => `- \`--font-${key}\`: ${stack}`), '');
+  if (tokens.fonts.length) {
+    lines.push('## Font files', '', '| Family | File | Weight | Style |', '|---|---|---|---|');
+    for (const font of tokens.fonts) lines.push(`| ${cell(font.family)} | \`${cell(font.file)}\` | ${font.weight} | ${font.style} |`);
+    lines.push('');
+  }
+  if (tokens.shadows.length) {
+    lines.push('## Shadows', '', `| Token | ${tokens.themes.map((t) => cell(t.name)).join(' | ')} | Usage |`,
+      `|---|${tokens.themes.map(() => '---|').join('')}---|`);
+    for (const shadow of tokens.shadows) {
+      const first = tokens.themes[0]!.id;
+      lines.push(`| \`--${shadow.name}\` | ${tokens.themes.map((t) => cell(shadow.declared[t.id] ?? shadow.declared[first]!)).join(' | ')} | ${cell(shadow.usage ?? '')} |`);
+    }
+    lines.push('');
   }
   const plain: [string, { name: string; value: string; usage?: string }[]][] = [
     ['Spacing', tokens.spacing],
     ['Radius', tokens.radius],
-    ['Shadow', tokens.shadows.map((s) => ({ name: s.name, value: s.declared[tokens.themes[0]!.id] ?? '', ...(s.usage ? { usage: s.usage } : {}) }))],
     ...tokens.extras.map((family) => [family.title, family.tokens] as [string, { name: string; value: string; usage?: string }[]]),
   ];
   for (const [title, list] of plain) {
@@ -133,7 +155,13 @@ function componentCard(input: GenerateInput, name: string): string {
   const readme = files.get(`components/${name}/README.md`)?.trim();
   const declared = componentProps((path) => files.get(path), name);
   const lines = [`# ${name}`, ''];
-  if (namespace) lines.push(`\`const { ${name} } = window.${namespace};\``, '');
+  const preview = files.get(`components/${name}/preview.html`);
+  const page = preview && parseCardMarker(preview)?.page;
+  if (namespace && !page) {
+    lines.push(`\`const { ${name} } = window.${namespace};\``, '', '~~~jsx', `<${namespace}.${name} />`, '~~~', '',
+      '~~~html', `<x-import component-from-global-scope="${namespace}.${name}"></x-import>`, '~~~', '');
+  }
+  if (!namespace && !page) lines.push('This component has no runtime bundle. Use its documented guidelines to implement it.', '');
   if (declared) {
     const { props, dts } = declared;
     if (props?.length) {
@@ -147,7 +175,7 @@ function componentCard(input: GenerateInput, name: string): string {
     }
   }
   if (readme) lines.push('## Notes', '', readme.replace(/^#\s+[^\n]*\n+/, ''), '');
-  lines.push(`Preview: \`components/${name}/preview.html\`.`);
+  if (preview !== undefined) lines.push(`Preview: \`components/${name}/preview.html\`.`);
   return `${lines.join('\n').trimEnd()}\n`;
 }
 
@@ -168,15 +196,36 @@ function assetsCard({ index, files }: GenerateInput): string {
 export function buildApiCards(input: GenerateInput): Record<string, string> {
   const cards: Record<string, string> = {};
   const components = listComponents(input.files).filter((component) => component.name !== 'Cover');
-  const hasAssets = listAssets(input.index, input.files.keys()).some((group) => group.items.length);
+  const groups = listAssets(input.index, input.files.keys()).filter((group) => group.items.length);
+  const hasAssets = groups.length > 0;
   cards['api/tokens.md'] = tokensCard(input);
   for (const component of components) cards[`api/components/${component.name}.md`] = componentCard(input, component.name);
   if (hasAssets) cards['api/assets.md'] = assetsCard(input);
+  const groupPaths = new Set<string>();
+  for (const group of groups) {
+    const slug = group.name.replace(/[^A-Za-z0-9_.]+/g, '-').replace(/^[-.]+|[-.]+$/g, '') || 'group';
+    let path = `api/assets/${slug}.md`;
+    for (let n = 2; groupPaths.has(path.toLowerCase()); n++) path = `api/assets/${slug}-${n}.md`;
+    groupPaths.add(path.toLowerCase());
+    const lines = [`# ${group.name}`, '', input.files.get(`assets/${group.name}/README.md`)?.trim() ?? '', '', '| File | Read |', '| --- | --- |'];
+    for (const item of group.items) {
+      lines.push(`| ${cell(item.name)} | \`${cell(item.path ?? '/_blob/' + item.blob)}\` |`);
+    }
+    cards[path] = lines.join('\n') + '\n';
+  }
+  const iconType = /\btype\s+IconName\s*=\s*((?:\s*\|?\s*["'][^"'\n]+["']\s*)+)/.exec(input.files.get('components/index.d.ts') ?? '');
+  if (iconType) {
+    const names = [...iconType[1]!.matchAll(/["']([^"']+)["']/g)].map((match) => match[1]!).sort();
+    cards['api/icons.md'] = ['# Icons', '', ...names.map((name) => `- \`${name}\``), ''].join('\n');
+  }
 
   const readme = [`# ${input.index.title || 'Design system'} — agent reference`, ''];
   readme.push('Generated by the design system page on save. Read these instead of the whole project.', '');
   readme.push('- `api/tokens.md`: every token and text style with its usage.');
   if (hasAssets) readme.push('- `api/assets.md`: logos, icons and images by group.');
+  for (const path of Object.keys(cards).filter((path) => path.startsWith('api/assets/') || path === 'api/icons.md')) {
+    readme.push(`- \`${path}\`: ${cards[path]!.split('\n', 1)[0]!.slice(2)}.`);
+  }
   if (components.length) {
     readme.push('- Components:');
     for (const component of components) readme.push(`  - \`api/components/${component.name}.md\`${component.summary ? ` — ${component.summary}` : ''}`);
@@ -237,6 +286,6 @@ export function generateSystemFiles({ files, fallbackTitle }: GenerateFilesInput
   Object.assign(out, cards);
 
   const { readme } = listSections(files);
-  if (readme) out[readme.path] = withUsageBlock(files.get(readme.path) ?? '', usageBlock(input));
+  if (readme) out[readme.path] = withUsageBlock(files.get(readme.path) ?? '', usageBlock(input, cards));
   return out;
 }

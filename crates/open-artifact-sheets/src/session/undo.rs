@@ -13,7 +13,7 @@ impl WorkbookSession {
     /// Whether an op id is in use: an edit queued has it (or takes back the action of that id), or an edit of the
     /// history.
     pub(super) fn is_op_id_in_use(&self, op_id: &str) -> bool {
-        self.queue.iter().any(|q| q.op_id == op_id || q.action_id.as_deref() == Some(op_id)) || self.steps.uses(op_id)
+        self.queue.iter().any(|q| q.op_id == op_id || q.group_id.as_deref() == Some(op_id)) || self.steps.uses(op_id)
     }
 
     /// A step of the page's own taken back (`queueNextUndo`) or made again (`queueNextRedo`).
@@ -70,7 +70,7 @@ impl WorkbookSession {
             Err(why @ StepNotTaken::Refused(_)) => why.answer(),
             // While the workbook is to be loaded, the step is kept, whatever stands in its way (the sheet whose name
             // does is not told): the load may change that.
-            Err(StepNotTaken::GivenUp(why, _)) if known && self.loading.is_some() => refused(why),
+            Err(StepNotTaken::GivenUp(why, _)) if known && (self.loading.is_some() || self.queue.iter().any(|q| q.reverse.is_none())) => refused(why),
             Err(why) => {
                 self.steps.pop(stack);
                 why.answer()
@@ -167,6 +167,7 @@ impl WorkbookSession {
             all.extend(ops.iter().cloned());
             self.queue.push(Queued {
                 op_id: id.clone(),
+                group_id: several.then(|| op_id.to_owned()),
                 action_id: (is_action || several && is_one_action).then(|| op_id.to_owned()),
                 recorded: Recorded { v: version::of_ops(&ops), base: self.confirmed_revision, ops: ops.clone() },
                 acknowledged: None,

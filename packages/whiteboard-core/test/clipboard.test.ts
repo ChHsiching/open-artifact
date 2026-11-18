@@ -55,6 +55,19 @@ describe('clipboard payload', () => {
     assert.deepEqual(parseArtifactClipboardHtml(`<meta charset="utf-8">${html}`), { kind: BOARD_CLIPBOARD_KIND, data: [{ a: 1 }] });
   });
 
+  it('reads existing Open Artifact copies alongside the interoperable envelope', () => {
+    const data = [note('n1', 'Shared note')];
+    const old = encodeClipboardUtf8(JSON.stringify({ openArtifact: 1, kind: BOARD_CLIPBOARD_KIND, data }));
+    assert.deepEqual(parseArtifactClipboardHtml(`<span data-open-artifact-object="${old}">Shared note</span>`), { kind: BOARD_CLIPBOARD_KIND, data });
+    const html = artifactClipboardHtml({ kind: BOARD_CLIPBOARD_KIND, data }, 'Shared note');
+    const encoded = /data-appifact-object="([^"]+)"/.exec(html)?.[1];
+    assert.ok(encoded);
+    const stored = JSON.parse(decodeClipboardUtf8(encoded)!);
+    assert.equal(stored.appifact, 1);
+    assert.equal(stored.openArtifact, 1);
+    assert.equal(/data-open-artifact-object="([^"]+)"/.exec(html)?.[1], encoded);
+  });
+
   it('ignores HTML without a valid payload', () => {
     assert.equal(parseArtifactClipboardHtml(''), undefined);
     assert.equal(parseArtifactClipboardHtml('<p>hello</p>'), undefined);

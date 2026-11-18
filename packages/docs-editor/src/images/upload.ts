@@ -10,7 +10,7 @@ import { maybeSession } from '../app/session.ts';
 import { getDocs } from '../app/store.ts';
 import { currentView, useEditor } from '../editor/format.ts';
 import { schema } from '../editor/schema.ts';
-import { type FileVerdict, IMAGE_TYPES, judgeImageFile, pixelDims, placeholderBox, refusalMessage } from './geometry.ts';
+import { type FileVerdict, IMAGE_TYPES, judgeImageFile, MAX_IMAGE_FILES, pixelDims, placeholderBox, refusalMessage } from './geometry.ts';
 import { addPending, liveUploads, markReplacing, pendingPos, removePending } from './pending.ts';
 import { dropPlace } from './place.ts';
 
@@ -85,7 +85,7 @@ function insertMediaAt(tr: Transaction, pos: number, node: PMNode): void {
   tr.insert(at, nodes.paragraph!.create(null, node));
 }
 
-function verdicts(files: readonly File[]): { taken: File[]; refused: FileVerdict[] } {
+function verdicts(files: readonly File[]): { taken: File[]; refused: FileVerdict[]; overCount: number } {
   const taken: File[] = [];
   const refused: FileVerdict[] = [];
   for (const file of files) {
@@ -93,7 +93,8 @@ function verdicts(files: readonly File[]): { taken: File[]; refused: FileVerdict
     if (verdict === 'ok') taken.push(file);
     else refused.push(verdict);
   }
-  return { taken, refused };
+  const overCount = Math.max(0, taken.length - MAX_IMAGE_FILES);
+  return { taken: taken.slice(0, MAX_IMAGE_FILES), refused, overCount };
 }
 
 function addedMessage(count: number): string {
@@ -111,8 +112,8 @@ export function addImageFiles(view: EditorView, files: readonly File[], at?: num
     toast.add({ title: 'You can’t add images to this doc' });
     return false;
   }
-  const { taken, refused } = verdicts(files);
-  const refusal = refusalMessage(refused);
+  const { taken, refused, overCount } = verdicts(files);
+  const refusal = refusalMessage(refused, overCount);
   if (refusal) toast.add({ title: refusal });
   if (!taken.length) return refused.length > 0;
   const tab = useEditor.getState().tab;

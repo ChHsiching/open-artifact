@@ -8,7 +8,7 @@ import { useFiles } from '../state/files.ts';
 import { useModel } from '../state/model.ts';
 import { anchorId, useView, type Focus } from '../state/view.ts';
 import { editTokens } from '../services/edit.ts';
-import { openComments, useComments } from '../services/comments.ts';
+import { serializeAnchor } from '../lib/comment-anchors.ts';
 
 /** True when the viewer may edit. */
 export function useEditable(): boolean {
@@ -131,8 +131,8 @@ export function useAnchor(): void {
     const frame = requestAnimationFrame(() => {
       const element = document.getElementById(anchor);
       if (element) {
-        element.scrollIntoView({ block: 'center', behavior: 'smooth' });
-        element.animate([{ boxShadow: '0 0 0 3px var(--color-accent, #3b82f6)' }, { boxShadow: '0 0 0 0 transparent' }], { duration: 1400, easing: 'ease-out' });
+        element.scrollIntoView({ block: anchor.startsWith('ds-page-') ? 'start' : 'center' });
+        if (!anchor.startsWith('ds-page-')) element.animate([{ boxShadow: '0 0 0 3px var(--color-accent, #3b82f6)' }, { boxShadow: '0 0 0 0 transparent' }], { duration: 1400, easing: 'ease-out' });
       }
       useView.getState().clearAnchor();
     });
@@ -145,17 +145,13 @@ export function useAnchor(): void {
  * comment mode it opens the item's comments (with a composer), and the row
  * under the pointer is outlined.
  */
-export function useFocusProps(focus: Focus): { 'data-focused': boolean | undefined; 'data-comment-item': ''; onClick: () => void } {
+export function useFocusProps(focus: Focus) {
   const current = useView((s) => s.focus);
   const active = current?.kind === focus.kind && current.name === focus.name && current.family === focus.family;
   return {
     'data-focused': active || undefined,
-    // Outlined under the pointer in comment mode (styles.css).
-    'data-comment-item': '',
-    onClick: () => {
-      useView.getState().setFocus(focus);
-      if (useComments.getState().on) openComments(focus);
-    },
+    'data-comment-item': serializeAnchor(focus),
+    onClick: () => useView.getState().setFocus(focus),
   };
 }
 
@@ -172,7 +168,7 @@ export function TokenMenu({ family, name }: { family: string; name: string }) {
       return;
     }
     editTokens((raw) => {
-      if (familyEntries(raw, family).some((entry) => entry.name === clean && clean !== name)) {
+      if (clean !== name && Object.keys(raw).some((key) => familyEntries(raw, key).some((entry) => cleanName(entry.name) === clean))) {
         toast.add({ title: `${clean} already exists` });
         return raw;
       }

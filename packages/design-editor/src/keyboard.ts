@@ -73,6 +73,7 @@ export function runShortcut({ key, code, meta, shift, alt }: KeyPress, fromFrame
     if (view.composer) view.setComposer(false);
     else if (view.findOpen) useFind.getState().close();
     else if (view.noteEdit) view.setNoteEdit(null);
+    else if (view.playing) view.play(null);
     else if (view.mode === 'focused') view.focus(null);
     else if (view.tool !== 'select') view.setTool('select');
     else if (view.selection.kind === 'elements') selectParent();

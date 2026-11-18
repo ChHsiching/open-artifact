@@ -88,7 +88,9 @@ export function ReadOnlyBar() {
   const role = s?.viewer.role;
   const owner = Boolean(s?.isOwner && s.agent);
   const text =
-    reason === 'code'
+    reason === 'index'
+      ? 'Editing is paused until design-system.json has a valid files index and creation or conversion marker.'
+      : reason === 'code'
       ? 'This design system is synced from code. Change it in the code and sync again.'
       : reason === 'off'
         ? 'Editing is turned off until this design system is set up and cleaned up.'
@@ -251,7 +253,7 @@ export function ConflictBar() {
         <div key={conflict.path} className="flex flex-wrap items-center gap-2">
           <GitCompare className="size-3.5 shrink-0 text-warning" />
           <span className="min-w-0 flex-1">
-            <span className="font-mono">{conflict.path}</span> {conflict.theirs === null ? 'was deleted' : 'was changed'} elsewhere while you were editing it.
+            <span className="font-mono">{conflict.path}</span> {conflict.recovered ? 'has unsaved edits recovered from this tab.' : conflict.theirs === null ? 'was deleted elsewhere while you were editing it.' : 'was changed elsewhere while you were editing it.'}
           </span>
           <Button size="sm" variant="ghost" onClick={() => setDiff(conflict)}>
             See changes

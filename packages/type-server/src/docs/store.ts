@@ -3,6 +3,8 @@
  *
  *   doc/doc.json         the manifest: id, name, tabs (id → name, order, content node), dropdown enums
  *   doc/tabs/<tab>.json  one tab's content: {rev, blocks}, text kept as runs
+ *   doc/tabs/.deleted/   deleted tabs' content files, until a restore puts one back (the manifest's `deleted` says
+ *                        what each was called, where it sat and who deleted it when)
  *   doc/.sessions.json   writing sessions and their id counters (the page predicts ids from them)
  *   doc/history/<tab>/   the tab's versions: who wrote each (a person or the agent), when, and its content
  *
@@ -21,9 +23,12 @@ import {
   type Writer,
   HISTORY_DIR,
   HISTORY_INDEX,
+  blockText,
+  committed,
   docFromDisk,
   docToDisk,
   emptyIndex,
+  isText,
   newBlock,
   recordWrite,
 } from '@open-artifact/docs-core';
@@ -69,7 +74,126 @@ export interface Manifest {
   enums: Record<string, EnumDef>;
   /** How the page shows the doc: fonts (headingFont, textFont), where the tabs go (tabsLocation) and the like. The page owns the keys. */
   display?: Record<string, unknown>;
+  /** Deleted tabs that can be restored, by id: their content waits in tabs/.deleted/. */
+  deleted?: Record<string, DeletedTab>;
+  /** Set while an owner has locked the doc: nobody can change it (only a lock or unlock gets through) until it is unlocked. */
+  locked?: DocLock;
 }
+
+export interface DocLock {
+  by: { id: string; name: string };
+  at: string;
+  note?: string;
+}
+
+export const LOCKED_WORDS = 'this document is locked; nobody can edit it until an owner unlocks it';
+
+export const TAB_LIMITS = { blocks: 20_000, textBytes: 2 * 1024 * 1024 };
+
+/** A tab's size as the limits count it: every block at any depth, and the UTF-8 bytes of its characters. */
+export function tabSize(doc: DocState): { blocks: number; textBytes: number } {
+  let blocks = 0;
+  let textBytes = 0;
+  const visit = (list: Block[]) => {
+    for (const block of list) {
+      blocks++;
+      for (const item of block.inline ?? []) {
+        if (!('ch' in item)) continue;
+        const code = item.ch.codePointAt(0) ?? 0;
+        textBytes += code < 0x80 ? 1 : code < 0x800 ? 2 : code < 0x10000 ? 3 : 4;
+      }
+      if (block.children) visit(block.children);
+    }
+  };
+  visit(doc.blocks);
+  return { blocks, textBytes };
+}
+
+const sizeWords = (bytes: number) => (bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(bytes % (1024 * 1024) ? 1 : 0)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
+
+export function tabTooLarge(before: DocState | null, after: DocState): { dim: 'doc_blocks' | 'doc_text_bytes'; limit: number; got: number; message: string } | null {
+  const now = tabSize(after);
+  const was = before ? tabSize(before) : { blocks: 0, textBytes: 0 };
+  if (now.blocks > TAB_LIMITS.blocks && now.blocks > was.blocks)
+    return { dim: 'doc_blocks', limit: TAB_LIMITS.blocks, got: now.blocks, message: `this document is at its size limit (${TAB_LIMITS.blocks.toLocaleString('en-US')} blocks); nothing was added — remove something or start a new document` };
+  if (now.textBytes > TAB_LIMITS.textBytes && now.textBytes > was.textBytes)
+    return { dim: 'doc_text_bytes', limit: TAB_LIMITS.textBytes, got: now.textBytes, message: `this document is at its size limit (${sizeWords(TAB_LIMITS.textBytes)} of text); nothing was added — remove something or start a new document` };
+  return null;
+}
+
+/** Who deleted a tab: a person, or the agent writing for one. */
+export interface DeletedBy {
+  id: string;
+  name: string;
+  agent?: true;
+}
+
+/** What the doc remembers of a deleted tab, so a restore can put it back where it was. */
+export interface DeletedTab extends Tab {
+  deletedAt: string;
+  by?: DeletedBy;
+  /** The tabs that sat right under it then and were kept (moved up a level): a restore puts them back under it. */
+  subtabs?: string[];
+  /** Tabs deleted in one call share this; a restore brings back the deleted subtabs of the same group with their tab. */
+  group: string;
+}
+
+/** A deleted tab as the list of deleted tabs shows it. */
+export interface DeletedTabInfo {
+  id: string;
+  /** Its name; for a tab deleted before the doc kept names, the one a restore gives it. */
+  name: string;
+  /** False when the doc no longer knows the tab's name or place (it was deleted before the doc kept them). */
+  known: boolean;
+  /** When it was deleted (null: not known). */
+  deletedAt: string | null;
+  by?: DeletedBy;
+  /** Where a restore puts it: its old place (under `parent` when it sat under a tab), or after the last tab. */
+  returnsTo: 'place' | 'end';
+  parent?: { id: string; name: string };
+  /**
+   * The first line of text in it, trimmed and cut at {@link FIRST_LINE_MAX} characters: `''` when it holds no text, null
+   * when its content can't be read (left out when the list was asked for without lines).
+   */
+  firstLine?: string | null;
+  /** Its subtabs deleted with it: they come back with it. */
+  subtabs: DeletedTabInfo[];
+}
+
+/** How long a deleted tab's first line in the list can be. */
+export const FIRST_LINE_MAX = 120;
+
+/** The first line of words in a tab (what it holds as it reads: open suggestions' insertions are not in it). */
+export function firstLineOf(doc: DocState, max = FIRST_LINE_MAX): string {
+  const find = (blocks: Block[]): string => {
+    for (const block of blocks) {
+      if (isText(block)) {
+        const line = blockText(block).replace(/\uFFFC/g, '').split('\n').map(part => part.replace(/\s+/g, ' ').trim()).find(Boolean);
+        if (line) return line;
+      } else if (block.children) {
+        const line = find(block.children);
+        if (line) return line;
+      }
+    }
+    return '';
+  };
+  const line = find(committed(doc).blocks);
+  return line.length > max ? `${line.slice(0, max - 1).trimEnd()}…` : line;
+}
+
+/** What a restore of a deleted tab did. */
+export interface UndeleteResult {
+  id: string;
+  name: string;
+  returnedTo: 'place' | 'end';
+  /** Every tab it brought back: the tab, then the subtabs deleted with it. */
+  restored: string[];
+}
+
+/** The folder of deleted tabs' content files, under the tabs folder. */
+export const DELETED_DIR = '.deleted';
+/** The name a restored tab gets when the doc no longer knows its old one. */
+export const RESTORED_TAB_NAME = 'Restored tab';
 
 interface SessionRecord {
   next: number;
@@ -86,9 +210,11 @@ const MAX_PAGE_SESSIONS = 200;
 
 export class StoreError extends Error {
   code: string;
-  constructor(code: string, message: string) {
+  data: Record<string, unknown>;
+  constructor(code: string, message: string, data: Record<string, unknown> = {}) {
     super(message);
     this.code = code;
+    this.data = data;
   }
 }
 
@@ -157,7 +283,7 @@ export class DocStore {
   private live = new Map<string, Session>();
   /** An open transaction: what to put back if it fails (begin / commit / rollback). */
   private nested = 0;
-  private txn: { manifest: string; sessions: string; counters: Map<string, number>; files: Map<string, string | null> } | null = null;
+  private txn: { manifest: string; sessions: string; counters: Map<string, number>; files: Map<string, string | null>; group?: string } | null = null;
 
   private constructor(root: string, manifest: Manifest, sessions: SessionsFile) {
     this.root = root;
@@ -333,8 +459,10 @@ export class DocStore {
   /** Stores a tab's new content (and the counters of the session that wrote it); `writer` gets the version. */
   putDoc(tabId: string, doc: DocState, writer: Writer): void {
     this.tab(tabId);
+    this.assertUnlocked();
     const file = path.join(this.root, TABS_DIR, `${tabId}.json`);
     const before = this.doc(tabId);
+    this.assertFits(before, doc);
     let beforeAt = new Date().toISOString();
     try {
       beforeAt = fs.statSync(file).mtime.toISOString();
@@ -400,6 +528,8 @@ export class DocStore {
 
   /** Adds a tab after the last one (or at `order`); returns its id, a new one unless `id` is one picked already. */
   addTab(name: string, blocks: Block[], order?: string, save = true, id = shortId()): string {
+    this.assertUnlocked();
+    this.assertFits(null, { rev: 1, blocks });
     const last = this.tabIds().map(tab => this.manifest.tabs[tab]!.order).pop();
     this.manifest.tabs[id] = { name, order: order ?? orderAfter(last), node: shortId() };
     const doc: DocState = { rev: 1, blocks };
@@ -413,17 +543,20 @@ export class DocStore {
   }
 
   renameTab(id: string, name: string): void {
+    this.assertUnlocked();
     this.tab(id).name = name;
     this.touch();
   }
 
   moveTab(id: string, order: string): void {
+    this.assertUnlocked();
     this.tab(id).order = order;
     this.touch();
   }
 
   /** Puts a tab under another in the tab list (`parent` undefined takes it out again). */
   nestTab(id: string, parent: string | undefined): void {
+    this.assertUnlocked();
     const tab = this.tab(id);
     if (parent === undefined) delete tab.subtabOf;
     else {
@@ -435,31 +568,192 @@ export class DocStore {
     this.touch();
   }
 
-  /** Removes a tab; its content file goes to <root>/tabs/.deleted/ so nothing is lost. */
-  deleteTab(id: string): void {
-    this.tab(id);
+  private binFile(id: string): string {
+    return path.join(this.root, TABS_DIR, DELETED_DIR, `${id}.json`);
+  }
+
+  /**
+   * Removes a tab; its content file goes to <root>/tabs/.deleted/ and the manifest remembers its name, place and who
+   * deleted it, so a restore can put it back (its history and the comments on it are left where they are).
+   */
+  deleteTab(id: string, by?: DeletedBy): void {
+    this.assertUnlocked();
+    const tab = this.tab(id);
     if (Object.keys(this.manifest.tabs).length <= 1) throw new StoreError('LAST_TAB', 'A doc keeps at least one tab.');
+    // Tabs deleted in one call (a tab and its subtabs) form a group: restoring the tab brings them back together.
+    const group = this.txn ? (this.txn.group ??= shortId()) : shortId();
+    const deleted = (this.manifest.deleted ??= {});
+    // A subtab whose tab went first in the same call was moved up a level by that delete: it still sat under it.
+    const under = tab.subtabOf ?? Object.entries(deleted).find(([, record]) => record.group === group && record.subtabs?.includes(id))?.[0];
+    const subtabs = Object.entries(this.manifest.tabs)
+      .filter(([, other]) => other.subtabOf === id)
+      .map(([child]) => child);
+    deleted[id] = {
+      name: tab.name,
+      order: tab.order,
+      node: tab.node,
+      ...(under ? { subtabOf: under } : {}),
+      deletedAt: new Date().toISOString(),
+      ...(by ? { by } : {}),
+      ...(subtabs.length ? { subtabs } : {}),
+      group,
+    };
     delete this.manifest.tabs[id];
     this.docs.delete(id);
-    for (const tab of Object.values(this.manifest.tabs)) if (tab.subtabOf === id) delete tab.subtabOf;
+    for (const child of subtabs) delete this.manifest.tabs[child]!.subtabOf;
     const file = path.join(this.root, TABS_DIR, `${id}.json`);
-    const bin = path.join(this.root, TABS_DIR, '.deleted');
     try {
       this.remember(file);
-      this.remember(path.join(bin, `${id}.json`));
-      fs.mkdirSync(bin, { recursive: true });
-      fs.renameSync(file, path.join(bin, `${id}.json`));
+      this.remember(this.binFile(id));
+      fs.mkdirSync(path.dirname(this.binFile(id)), { recursive: true });
+      fs.renameSync(file, this.binFile(id));
     } catch {}
     this.touch();
   }
 
+  /** Ids of the tabs whose content waits in the deleted folder (with a record or from before the doc kept them). */
+  private deletedIds(): string[] {
+    let names: string[] = [];
+    try {
+      names = fs.readdirSync(path.join(this.root, TABS_DIR, DELETED_DIR));
+    } catch {}
+    return names.filter(name => name.endsWith('.json') && !name.startsWith('.')).map(name => name.slice(0, -'.json'.length)).filter(id => !this.manifest.tabs[id]);
+  }
+
+  /**
+   * A deleted tab's content as it was deleted, for a read-only preview (throws NOT_DELETED when there is no such deleted
+   * tab, BAD_TAB when its file can't be read).
+   */
+  deletedSnapshot(id: string): DocState {
+    if (this.manifest.tabs[id]) throw new StoreError('NOT_DELETED', `Tab ${id} is not deleted (it was restored already).`);
+    const bin = this.binFile(id);
+    try {
+      return docFromDisk(JSON.parse(fs.readFileSync(bin, 'utf8')) as DiskDoc);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new StoreError('NOT_DELETED', `No deleted tab ${id}.`);
+      throw new StoreError('BAD_TAB', `${bin} is not readable: ${(error as Error).message}`);
+    }
+  }
+
+  /**
+   * The deleted tabs a restore can bring back, newest first; subtabs deleted with a tab are listed under it. With
+   * `lines`, each says the first line of text in it (it reads every deleted tab's file).
+   */
+  deletedTabs({ lines = true }: { lines?: boolean } = {}): DeletedTabInfo[] {
+    const records = this.manifest.deleted ?? {};
+    const ids = this.deletedIds();
+    const present = new Set(ids);
+    // Under a deleted tab of the same group: it comes back with that tab, so it is listed there.
+    const parentOf = (id: string): string | undefined => {
+      const record = records[id];
+      const parent = record?.subtabOf;
+      return parent && present.has(parent) && records[parent]?.group === record.group ? parent : undefined;
+    };
+    const info = (id: string): DeletedTabInfo => {
+      const record = records[id];
+      const parent = record?.subtabOf ? this.manifest.tabs[record.subtabOf] : undefined;
+      // A subtab listed under its deleted tab returns to its place with that tab; restored on its own, it goes last.
+      const placed = !!record && (!record.subtabOf || !!parent);
+      return {
+        id,
+        name: record?.name ?? RESTORED_TAB_NAME,
+        known: !!record,
+        deletedAt: record?.deletedAt ?? null,
+        ...(record?.by ? { by: record.by } : {}),
+        returnsTo: placed ? 'place' : 'end',
+        ...(parent && record?.subtabOf ? { parent: { id: record.subtabOf, name: parent.name } } : {}),
+        ...(lines ? { firstLine: this.deletedFirstLine(id) } : {}),
+        subtabs: ids.filter(child => parentOf(child) === id).map(info).sort(byOrder(records)),
+      };
+    };
+    return ids
+      .filter(id => parentOf(id) === undefined)
+      .map(info)
+      .sort((a, b) => (b.deletedAt ?? '').localeCompare(a.deletedAt ?? ''));
+  }
+
+  private deletedFirstLine(id: string): string | null {
+    try {
+      return firstLineOf(this.deletedSnapshot(id));
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Brings a deleted tab back with the same id, body and history, so the comments on it hang where they did: at its
+   * old place (under its tab, when that is still there), or after the last tab when that is gone or not known. The
+   * subtabs deleted with it come back under it, and those moved up a level by its delete go back under it.
+   */
+  undeleteTab(id: string): UndeleteResult {
+    if (this.manifest.tabs[id]) throw new StoreError('TAB_EXISTS', `Tab ${id} is not deleted (it was restored already).`);
+    const bin = this.binFile(id);
+    let disk: DiskDoc;
+    try {
+      disk = JSON.parse(fs.readFileSync(bin, 'utf8')) as DiskDoc;
+      docFromDisk(disk);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new StoreError('NOT_DELETED', `No deleted tab ${id}.`);
+      throw new StoreError('BAD_TAB', `${bin} is not readable: ${(error as Error).message}`);
+    }
+    const restored: string[] = [];
+    const returnedTo = this.putBack(id, restored);
+    this.touch();
+    return { id, name: this.tab(id).name, returnedTo, restored };
+  }
+
+  private putBack(id: string, restored: string[]): 'place' | 'end' {
+    const record = this.manifest.deleted?.[id];
+    const parentLive = !!record?.subtabOf && !!this.manifest.tabs[record.subtabOf];
+    const atPlace = !!record && (!record.subtabOf || parentLive);
+    const orders = Object.values(this.manifest.tabs).map(tab => tab.order);
+    let order: string;
+    if (atPlace) {
+      // Its old key, unless a tab took that one since: then just after it.
+      const next = orders.filter(other => other > record.order).sort()[0];
+      order = orders.includes(record.order) ? orderBetween(record.order, next) : record.order;
+    } else order = orderAfter(orders.sort().pop());
+    this.manifest.tabs[id] = { name: record?.name ?? RESTORED_TAB_NAME, order, node: record?.node ?? shortId(), ...(atPlace && record.subtabOf ? { subtabOf: record.subtabOf } : {}) };
+    const bin = this.binFile(id);
+    const file = path.join(this.root, TABS_DIR, `${id}.json`);
+    this.remember(bin);
+    this.remember(file);
+    fs.renameSync(bin, file);
+    this.docs.delete(id);
+    restored.push(id);
+    if (this.manifest.deleted) {
+      delete this.manifest.deleted[id];
+      if (!Object.keys(this.manifest.deleted).length) delete this.manifest.deleted;
+    }
+    // Subtabs its delete moved up a level, still there and still at the top level, go back under it.
+    for (const child of record?.subtabs ?? []) {
+      const tab = this.manifest.tabs[child];
+      if (tab && !tab.subtabOf && child !== id && !this.holds(child, id)) tab.subtabOf = id;
+    }
+    // Subtabs deleted with it come back under it.
+    if (record) {
+      const deleted = this.manifest.deleted ?? {};
+      for (const [child, other] of Object.entries(deleted).sort(([, a], [, b]) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0)))
+        if (other.subtabOf === id && other.group === record.group && fs.existsSync(this.binFile(child))) this.putBack(child, restored);
+    }
+    return atPlace ? 'place' : 'end';
+  }
+
+  /** Whether tab `id` sits (at any depth) under tab `ancestor`. */
+  private holds(ancestor: string, id: string): boolean {
+    for (let at = this.manifest.tabs[id]?.subtabOf; at; at = this.manifest.tabs[at]?.subtabOf) if (at === ancestor) return true;
+    return false;
+  }
+
   rename(name: string): void {
+    this.assertUnlocked();
     this.manifest.name = name;
     this.touch();
   }
 
   /** Sets one display key, or the whole record when key is undefined; a value of undefined removes it. */
   setDisplay(key: string | undefined, value: unknown): void {
+    this.assertUnlocked();
     if (key === undefined) {
       if (value === undefined) delete this.manifest.display;
       else this.manifest.display = { ...(value as Record<string, unknown>) };
@@ -474,6 +768,7 @@ export class DocStore {
   }
 
   addEnum(def: EnumDef): string {
+    this.assertUnlocked();
     const id = shortId();
     this.manifest.enums[id] = def;
     this.touch();
@@ -481,8 +776,39 @@ export class DocStore {
   }
 
   updateEnum(id: string, def: EnumDef): void {
+    this.assertUnlocked();
     this.manifest.enums[id] = def;
     this.touch();
+  }
+
+  // ---- the lock ----
+
+  /** Throws LOCKED while the doc is locked: every change but a lock or unlock is refused then. */
+  assertUnlocked(): void {
+    const lock = this.manifest.locked;
+    if (lock) throw new StoreError('LOCKED', LOCKED_WORDS, { lockedBy: lock.by, lockedAt: lock.at });
+  }
+
+  /** Throws DOC_TOO_LARGE when `after` breaks a tab limit {@link tabTooLarge} names. */
+  private assertFits(before: DocState | null, after: DocState): void {
+    const over = tabTooLarge(before, after);
+    if (over) throw new StoreError('DOC_TOO_LARGE', over.message, { dim: over.dim, limit: over.limit, got: over.got });
+  }
+
+  /** Locks the doc (or changes the note of the lock it has): nobody can change it until it is unlocked. */
+  lock(by: { id: string; name: string }, note?: string): DocLock {
+    const lock: DocLock = { by: { id: by.id, name: by.name }, at: new Date().toISOString(), ...(note ? { note } : {}) };
+    this.manifest.locked = lock;
+    this.touch();
+    return lock;
+  }
+
+  /** Unlocks the doc; answers false when it was not locked. */
+  unlock(): boolean {
+    if (!this.manifest.locked) return false;
+    delete this.manifest.locked;
+    this.touch();
+    return true;
   }
 
   /** Bumps head and the updated time, and saves the manifest. */
@@ -551,6 +877,15 @@ export class DocStore {
     writeJson(path.join(this.root, SESSIONS_FILE), this.sessionsFile);
   }
 }
+
+/** Deleted tabs in tab order. */
+const byOrder =
+  (records: Record<string, DeletedTab>) =>
+  (a: DeletedTabInfo, b: DeletedTabInfo): number => {
+    const left = records[a.id]?.order ?? '';
+    const right = records[b.id]?.order ?? '';
+    return left < right ? -1 : left > right ? 1 : 0;
+  };
 
 /** The name a doc's first tab gets. */
 export const FIRST_TAB_NAME = 'Tab 1';

@@ -115,3 +115,16 @@ main[data-commenting] [data-comment-item]:hover:not(:has([data-comment-item]:hov
   outline: 2px solid color-mix(in srgb, var(--color-warning) 80%, transparent);
   outline-offset: 2px;
 }
+/* Let the row receive a comment click even over an embedded preview or native control. */
+main[data-commenting] [data-comment-item] :is(iframe, input, textarea, select, button, [contenteditable="true"]):not([data-comment-badge]) {
+  pointer-events: none;
+}
+
+.ds-sheet { min-width: 0; }
+.ds-sheet:last-child { margin-bottom: min(60vh, 32rem); }
+.ds-sheet [data-comment-item] { scroll-margin-block: 2rem; }
+
+@media (max-width: 767px) {
+  .ds-sheet { overflow-x: auto; }
+  .ds-pages { padding-inline: 8px; }
+}

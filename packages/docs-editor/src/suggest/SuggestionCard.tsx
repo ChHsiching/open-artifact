@@ -13,6 +13,7 @@ import type { SuggestionCard as CardModel } from './model.ts';
 import { useSuggestionReply } from './reply.ts';
 import { setSuggest, useSuggest, type Verdict } from './store.ts';
 import { sentenceText, type Sentence } from './summary.ts';
+import { nameOfPerson } from '../app/people.ts';
 
 const ICON = { className: 'size-4', strokeWidth: 1.75 } as const;
 
@@ -48,7 +49,7 @@ export function SentenceView({ sentence }: { sentence: Sentence }): ReactNode {
 function author(card: CardModel, me: { id: string; name: string } | null): string {
   if (card.agent) return 'Agent';
   if (me && card.by === me.id) return me.name || 'You';
-  return 'Suggestion';
+  return nameOfPerson(card.by) ?? 'Suggestion';
 }
 
 export interface SuggestionCardProps {

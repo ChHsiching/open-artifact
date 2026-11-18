@@ -66,7 +66,8 @@ describe('tokens', () => {
     assert.match(css, /\[data-theme="dark"\] \{\n  --surface-100: #1d1a17;\n  --ink: oklch\(0\.9 0\.02 80\);\n  --accent: var\(--ink\);/);
     assert.match(css, /--space-1\\\.5: 6px;/);
     assert.match(css, /--font-sans: "Acme Sans", system-ui, sans-serif;/);
-    assert.match(css, /\.body \{ font-family: var\(--font-sans\); font-size: 15px; line-height: 1\.4; font-weight: 700; \}/);
+    assert.match(css, /--text-body: 700 15px\/1\.4 var\(--font-sans\);/);
+    assert.match(css, /\.body \{\s+font-family: var\(--font-sans\);\s+font-size: 15px;\s+line-height: 1\.4;\s+font-weight: 700;\s+letter-spacing: 0;/);
     assert.match(css, /@font-face \{ font-family: "Acme Sans"; src: url\("fonts\/AcmeSans\.woff2"\) format\("woff2"\); font-weight: 300 800;/);
     assert.doesNotMatch(css, /url\(x\)|body \{ background/);
   });
@@ -94,6 +95,7 @@ describe('system', () => {
     const manifest = buildManifest(JSON.parse(files.get('design-system.json')!), files);
     assert.equal(manifest.manifestVersion, 3);
     assert.equal(manifest.namespace, 'AcmeUI');
+    assert.deepEqual(manifest.files, ['components/Button/README.md', 'components/bundle.js', 'tokens.css']);
     assert.deepEqual(manifest.components[0], { name: 'Button', group: 'Actions', summary: 'Triggers an action.' });
   });
 
@@ -103,7 +105,8 @@ describe('system', () => {
 
   it('checks the project', () => {
     const findings = checkDesignSystem(files);
-    assert.ok(!findings.some((f) => f.level === 'error'), JSON.stringify(findings.filter((f) => f.level === 'error')));
+    assert.ok(findings.some((f) => f.level === 'error' && f.message.includes('loop-a')));
+    assert.ok(findings.filter((f) => f.level === 'error').every((f) => f.file === 'tokens.json'));
     assert.ok(findings.some((f) => f.file === 'components/Badge/preview.html' && f.message.includes('marker')));
   });
 });
@@ -131,5 +134,46 @@ describe('generateSystemFiles', () => {
   it('generates nothing without a readable index', async () => {
     const { generateSystemFiles } = await import('../src/index.ts');
     assert.deepEqual(generateSystemFiles({ files: new Map([['design-system.json', '{']]) }), {});
+  });
+});
+
+describe('published design systems', () => {
+  it('edits a legacy palette without losing its other tokens or theme overrides', async () => {
+    const { setThemedValue, renameEntry } = await import('../src/index.ts');
+    const raw = {
+      color: { themes: ['Light', 'dark'], groups: [{ tokens: [{ name: 'ink', value: '#111' }, { name: 'text', value: '{--ink}' }] }] },
+      radius: { tokens: [{ name: 'pill', value: 'full' }] },
+      motion: { tokens: [{ name: 'fast', value: 125 }] },
+    };
+    const edited = renameEntry(setThemedValue(raw, 'color', 'ink', '#fff', 'dark'), 'color', 'ink', 'fg');
+    const { tokens } = normalizeTokens(edited);
+    assert.deepEqual(tokens.colors.map((c) => c.name), ['fg', 'text']);
+    assert.deepEqual(tokens.colors[1]?.resolved, { light: '#111', dark: '#fff' });
+    assert.equal(tokens.radius[0]?.value, '9999px');
+    assert.equal(tokens.extras[0]?.tokens[0]?.value, '125ms');
+  });
+
+  it('combines encoded groups, physical files and uploads into one catalogue', async () => {
+    const { normalizeSystemIndex, listAssets, generateSystemFiles } = await import('../src/index.ts');
+    const name = '品牌 Logos';
+    const key = assetKey(name);
+    const record = (name: string) => ({ name, blob: '0123456789abcdef0123456789abcdef', size: 8, type: 'image/svg+xml' });
+    const index = normalizeSystemIndex({ ...emptySystemIndex('Acme'), groups: [key], assetGroups: {
+      [key]: { order: ['logo.svg', 'alt.svg'], files: { 'logo.svg': record('logo.svg'), 'alt.svg': record('alt.svg') } },
+    } });
+    const files = new Map([['design-system.json', JSON.stringify(index)], [`assets/${name}/logo.svg`, '<svg/>'], ['components/index.d.ts', 'export type IconName = "close" | "menu";']]);
+    const groups = listAssets(index, files.keys());
+    assert.equal(groups.length, 1);
+    assert.equal(groups[0]?.name, name);
+    assert.deepEqual(groups[0]?.items.map((item) => item.path ?? item.blob), [`assets/${name}/logo.svg`, record('').blob]);
+    const generated = generateSystemFiles({ files });
+    assert.match(generated['api/assets/Logos.md']!, /logo\.svg/);
+    assert.match(generated['api/icons.md']!, /menu/);
+    assert.deepEqual(JSON.parse(generated['manifest.json']!).assetGroups[0].files, [{ path: `assets/${name}/alt.svg`, id: record('').blob }]);
+  });
+
+  it('rejects unreadable token maps even when the document is valid JSON', () => {
+    const files = new Map([['design-system.json', JSON.stringify(emptySystemIndex('Acme'))], ['tokens.json', '{"color":{"accent":{"$value":"#123"}}}']]);
+    assert.ok(checkDesignSystem(files).some((f) => f.file === 'tokens.json' && f.level === 'error'));
   });
 });

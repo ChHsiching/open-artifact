@@ -4,8 +4,8 @@
  */
 
 import { Loader2, TriangleAlert } from 'lucide-react';
-import { useEffect, useRef, type CSSProperties } from 'react';
-import { EmptyState } from '@open-artifact/ui';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { EmptyState, toast } from '@open-artifact/ui';
 import { COMMENT_CURSOR } from '@open-artifact/editor-kit/react';
 import { useFiles } from './state/files.ts';
 import { useModel } from './state/model.ts';
@@ -15,7 +15,7 @@ import { loadSystem } from './services/sync.ts';
 import { startPresence } from './services/agent.ts';
 import { startShellBridge } from './services/shell.ts';
 import { collabAside, startCollab } from './services/collab.ts';
-import { useComments } from './services/comments.ts';
+import { openComments, parseAnchor, useComments } from './services/comments.ts';
 import { useHistory } from './services/history.ts';
 import { syncHostedFonts } from './services/fonts.ts';
 import { installKeyboard } from './components/keys.ts';
@@ -30,6 +30,9 @@ import { Scale } from './views/Scale.tsx';
 import { Components } from './views/Components.tsx';
 import { Assets } from './views/Assets.tsx';
 import { Files } from './views/Files.tsx';
+import { droppedBrandFiles } from './lib/drop-files.ts';
+import { importBrandFiles } from './services/edit.ts';
+import { useAnchor } from './views/common.tsx';
 import { Welcome } from './views/Welcome.tsx';
 
 /** Connects and loads. Runs once. */
@@ -50,10 +53,7 @@ async function boot(): Promise<void> {
 let booted = false;
 
 function Section({ id }: { id: SectionId }) {
-  const empty = useModel().empty;
   switch (id) {
-    case 'overview':
-      return empty ? <Welcome /> : <Overview />;
     case 'colors':
       return <Colors />;
     case 'typography':
@@ -77,7 +77,13 @@ export function App() {
   const status = useFiles((s) => s.status);
   const error = useFiles((s) => s.error);
   const section = useView((s) => s.section);
-  const { index, tokens } = useModel();
+  const { index, tokens, empty } = useModel();
+  const [intake, setIntake] = useState(false);
+  const intakeDrop = useRef<((files: File[]) => Promise<void>) | null>(null);
+  const readOnly = useFiles((s) => s.readOnly);
+  useAnchor();
+  const sections: SectionId[] = ['overview', 'colors', 'typography', 'spacing', 'radius', 'shadow',
+    ...tokens.extras.map((extra): SectionId => `family:${extra.key}`), 'components', 'assets'];
   const main = useRef<HTMLElement>(null);
   const commentsAvailable = useComments((s) => s.available);
   const listOpen = useComments((s) => s.listOpen);
@@ -103,10 +109,14 @@ export function App() {
     if (status === 'ready') syncHostedFonts(tokens);
   }, [status, tokens]);
 
-  // A new section starts at the top (anchors scroll on their own).
-  useEffect(() => {
-    if (!useView.getState().anchor) main.current?.scrollTo({ top: 0 });
-  }, [section]);
+  const trackSection = (): void => {
+    const port = main.current;
+    if (!port || useView.getState().anchor || useView.getState().section === 'files') return;
+    const top = port.getBoundingClientRect().top + 48;
+    const sheets = Array.from(port.querySelectorAll<HTMLElement>('[data-system-section]'));
+    const current = sheets.filter((sheet) => sheet.getBoundingClientRect().top <= top).at(-1) ?? sheets[0];
+    if (current) useView.setState({ section: current.dataset.systemSection as SectionId });
+  };
 
   if (status === 'loading') {
     return (
@@ -123,23 +133,51 @@ export function App() {
     );
   }
   return (
-    <div className="flex h-full flex-col bg-canvas text-fg">
+    <div className="flex h-full flex-col bg-canvas text-fg"
+      onDragOver={(event) => {
+        if (event.dataTransfer.types.includes('Files')) event.preventDefault();
+      }}
+      onDrop={(event) => {
+        if (event.defaultPrevented || !event.dataTransfer.types.includes('Files')) return;
+        event.preventDefault();
+        const intakeHandler = section === 'files' ? null : intakeDrop.current;
+        if (!readOnly) void droppedBrandFiles(event.dataTransfer).then(async (files) => {
+          if (intakeHandler) await intakeHandler(files);
+          else await importBrandFiles(files);
+        }).catch(() => toast.add({ title: 'Could not read these files' }));
+      }}>
       <TopBar />
       <PreviewBar />
       <ReadOnlyBar />
       <PipelineBanner />
       <NoticesBar />
       <ConflictBar />
-      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1 flex-col md:flex-row">
         <Nav />
         <main
+          onScroll={trackSection}
           ref={main}
           className="min-w-0 flex-1 overflow-y-auto"
           data-commenting={commenting || undefined}
+          onClickCapture={commenting ? (event) => {
+            const item = event.target instanceof Element && event.target.closest<HTMLElement>('[data-comment-item], [data-comment-badge]');
+            if (!item || !event.currentTarget.contains(item)) return;
+            const anchor = parseAnchor(item.dataset.commentBadge ?? item.dataset.commentItem ?? '');
+            if (!anchor) return;
+            event.preventDefault();
+            event.stopPropagation();
+            useView.getState().setFocus(anchor);
+            openComments(anchor);
+          } : undefined}
           style={commenting ? ({ '--comment-cursor': COMMENT_CURSOR } as CSSProperties) : undefined}
         >
-          <div className="mx-auto max-w-[1040px] px-10 pb-32 pt-8">
-            <Section id={section} />
+          <div className="ds-pages mx-auto max-w-[1040px] px-4 pb-32 pt-5 lg:px-10">
+            {section === 'files' && <Files />}
+            {(section !== 'files' || intake) && sections.map((id) => (
+              <div key={id} hidden={section === 'files'} data-system-section={id} id={`ds-page-${id}`} className="ds-sheet mb-5 scroll-mt-5 rounded-xl border border-line bg-surface p-5 lg:p-8">
+                {id === 'overview' && (empty || intake) ? <Welcome setIntake={setIntake} intakeDrop={intakeDrop} /> : <Section id={id} />}
+              </div>
+            ))}
           </div>
         </main>
         {aside === 'history' ? <HistoryAside /> : null}

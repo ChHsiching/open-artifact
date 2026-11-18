@@ -36,6 +36,8 @@ const SHRINK_RATIO = 0.7;
 const MIN_EDGE = 64;
 
 const MIME_BY_EXTENSION: Readonly<Record<string, string>> = {
+  avif: 'image/avif',
+  bmp: 'image/bmp',
   gif: 'image/gif',
   jpeg: 'image/jpeg',
   jpg: 'image/jpeg',
@@ -78,7 +80,7 @@ export type MediaRefusal = 'unsupported_type' | 'too_large' | 'old_quicktime' | 
 export function mediaRefusalMessage(reason: MediaRefusal, video: boolean): string {
   switch (reason) {
     case 'unsupported_type':
-      return video ? 'The board plays MP4 and WebM videos.' : 'The board takes PNG, JPEG, GIF, WebP and SVG pictures.';
+      return video ? 'The board plays MP4 and WebM videos.' : 'The board takes PNG, JPEG, GIF, WebP, SVG, AVIF and BMP pictures.';
     case 'too_large':
       return video ? `Videos can be up to ${MAX_VIDEO_UPLOAD_BYTES / 1024 / 1024} MB.` : 'That picture is too large.';
     case 'old_quicktime':

@@ -59,9 +59,18 @@ export function chartsOfWorkbookForXlsx(reads: WorkbookReads) {
     ];
   });
 }
+/** Asks the server to describe the charts, by view id, as the file's own kind of chart; a chart it cannot describe is left out. */
+export type ChartsForXlsx = (viewIds: readonly string[]) => Promise<readonly { viewId: string; description?: unknown }[]>;
 export function describeChartsForXlsx(
   charts: Dynamic,
-  { agent: agent, viewerAllowsAgent: viewerAllowsAgent, codeOfChart: codeOfChart, afterMs: afterMs, isFileStillWanted: isFileStillWanted }: Dynamic,
+  {
+    agent: agent,
+    viewerAllowsAgent: viewerAllowsAgent,
+    codeOfChart: codeOfChart,
+    chartsForXlsx: chartsForXlsx,
+    afterMs: afterMs,
+    isFileStillWanted: isFileStillWanted,
+  }: Dynamic,
 ) {
   let descriptions: Dynamic = [];
   let isDone: Dynamic = false;
@@ -101,9 +110,12 @@ export function describeChartsForXlsx(
         finish();
       });
     let start = async (): Promise<Dynamic> => {
-      let describedLocally = (globalThis as Dynamic).__agentSheetsLocal?.chartsForXlsx;
+      // The server describes the charts that its stock programs draw (sheets-core's xlsxChartsOf); the page has no
+      // model of its own to ask, so a chart of any other code is left out of the file, as `notCarriedOver` says.
+      let describedLocally: ChartsForXlsx | undefined =
+        typeof chartsForXlsx === 'function' ? chartsForXlsx : (globalThis as Dynamic).__agentSheetsLocal?.chartsForXlsx;
       if (typeof describedLocally === 'function') {
-        let told = await describedLocally();
+        let told = await describedLocally(charts.map(({ viewId: viewId }: Dynamic) => viewId)).catch(() => []);
         if (!isStillWanted()) return;
         let asked = new Set(charts.map(({ viewId: viewId }: Dynamic) => viewId));
         for (let chart of told as Dynamic)

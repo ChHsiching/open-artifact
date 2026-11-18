@@ -156,3 +156,15 @@ export async function askAgentToFix(boards: readonly string[]): Promise<void> {
     reportResult(sendFailure(error));
   }
 }
+
+/** A broken index has no board selection to attach to a repair request. */
+export async function askAgentToFixIndex(error: string): Promise<void> {
+  const { agent } = session();
+  if (!agent) return;
+  const text = 'Fix project/canvas.json so that the design can open.\n\n' + fenceUntrusted(error.slice(0, 1800), { label: 'canvas.json parse error' });
+  try {
+    reportResult(await agent.send({ title: 'Ask agent to fix', text, context: { file: 'project/canvas.json' } }));
+  } catch (error) {
+    reportResult(sendFailure(error));
+  }
+}

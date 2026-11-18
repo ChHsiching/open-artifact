@@ -4,8 +4,8 @@
  * opens its section and scrolls to it.
  */
 
-import { Blocks, BookOpen, Box, Circle, Files, Image, Layers, Palette, Ruler, Search, Square, Type, X } from 'lucide-react';
-import { useMemo, type ReactNode } from 'react';
+import { Blocks, BookOpen, Circle, Files, Image, Layers, Palette, Ruler, Search, Square, Type, X } from 'lucide-react';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { familyTitle } from '@open-artifact/design-system-core';
 import { cn } from '@open-artifact/ui';
 import { useModel, type SystemModel } from '../state/model.ts';
@@ -27,14 +27,14 @@ function navItems(model: SystemModel): NavItem[] {
     { id: 'colors', label: 'Colors', icon: <Palette className="size-4" />, count: tokens.colors.length },
     { id: 'typography', label: 'Typography', icon: <Type className="size-4" />, count: tokens.groups.reduce((n, g) => n + g.styles.length, 0) },
     { id: 'spacing', label: 'Spacing', icon: <Ruler className="size-4" />, count: tokens.spacing.length },
-    { id: 'radius', label: 'Radius', icon: <Square className="size-4" />, count: tokens.radius.length },
-    { id: 'shadow', label: 'Shadow', icon: <Layers className="size-4" />, count: tokens.shadows.length },
+    { id: 'radius', label: 'Corner radius', icon: <Square className="size-4" />, count: tokens.radius.length },
+    { id: 'shadow', label: 'Shadows', icon: <Layers className="size-4" />, count: tokens.shadows.length },
   ];
   for (const family of tokens.extras) items.push({ id: `family:${family.key}`, label: family.title, icon: <Circle className="size-4" />, count: family.tokens.length });
   items.push(
     { id: 'components', label: 'Components', icon: <Blocks className="size-4" />, count: model.components.length },
     { id: 'assets', label: 'Assets', icon: <Image className="size-4" />, count: model.assets.reduce((n, g) => n + g.items.length, 0) },
-    { id: 'files', label: 'Files', icon: <Files className="size-4" />, count: model.files.size },
+    { id: 'files', label: 'Files', icon: <Files className="size-4" />, count: model.files.size + model.uploads.size },
   );
   return items;
 }
@@ -93,7 +93,7 @@ function search(model: SystemModel, query: string): Hit[] {
         hits.push({ section: 'assets', anchor: anchorId('asset', `${item.group}/${item.name}`), label: item.name, detail: `Asset · ${group.name}`, focus: { kind: 'asset', name: `${item.group}/${item.name}` } });
     }
   }
-  for (const path of model.files.keys()) {
+  for (const path of [...model.files.keys(), ...model.uploads.keys()]) {
     if (match(path)) hits.push({ section: 'files', anchor: '', label: path.split('/').pop()!, detail: path, focus: { kind: 'file', name: path } });
   }
   return hits.slice(0, 80);
@@ -107,15 +107,30 @@ export function Nav() {
   const items = useMemo(() => navItems(model), [model]);
   const hits = useMemo(() => search(model, query), [model, query]);
 
+  const [expanded, setExpanded] = useState(false);
+  const results = useRef<HTMLDivElement>(null);
+  const listId = 'ds-nav-items';
+  const close = () => setExpanded(false);
+
   return (
-    <nav className="flex w-60 shrink-0 flex-col border-r border-line bg-surface">
-      <div className="relative p-2">
+    <nav aria-label="Sections" className="relative z-20 flex shrink-0 flex-col border-b border-line bg-surface md:w-60 md:border-r md:border-b-0">
+      <div className="flex items-center">
+        <button className="ml-2 rounded border border-line px-2 py-1 text-sm md:hidden" aria-controls={listId} aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>Sections</button>
+        <div className="relative flex-1 p-2">
         <Search className="pointer-events-none absolute left-4 top-1/2 size-3.5 -translate-y-1/2 text-fg-subtle" />
         <input
           data-search
           value={query}
-          onChange={(event) => setSearch(event.target.value)}
-          onKeyDown={(event) => event.key === 'Escape' && setSearch('')}
+          onChange={(event) => { setSearch(event.target.value); setExpanded(true); }}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') { setSearch(''); close(); }
+            if (query && hits.length && (event.key === 'ArrowDown' || event.key === 'Enter')) {
+              event.preventDefault();
+              const first = results.current?.querySelector('button');
+              if (event.key === 'Enter') first?.click();
+              else first?.focus();
+            }
+          }}
           placeholder={`Search  ${MOD}K`}
           aria-label="Search the design system"
           className="h-8 w-full rounded-control border border-line bg-surface-2 pl-7 pr-7 text-[13px] text-fg outline-none placeholder:text-fg-subtle focus:border-accent"
@@ -126,7 +141,23 @@ export function Nav() {
           </button>
         ) : null}
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+      </div>
+      <div id={listId} ref={results}
+        onKeyDown={(event) => {
+          const buttons = Array.from(results.current?.querySelectorAll('button') ?? []);
+          const i = buttons.indexOf(event.target as HTMLButtonElement);
+          if (i < 0) return;
+          if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault();
+            buttons[(i + (event.key === 'ArrowDown' ? 1 : buttons.length - 1)) % buttons.length]?.focus();
+          } else if (event.key === 'Escape') {
+            close();
+            setSearch('');
+            document.querySelector<HTMLInputElement>('[data-search]')?.focus();
+          }
+        }}
+        className={cn('min-h-0 overflow-y-auto bg-surface px-2 pb-3 md:static md:block md:flex-1',
+          expanded ? 'absolute inset-x-0 top-full max-h-[60vh] border-b border-line md:max-h-none md:border-0' : 'hidden')}>
         {query.trim() ? (
           hits.length ? (
             <ul className="flex flex-col gap-px">
@@ -138,6 +169,7 @@ export function Nav() {
                       if (hit.section === 'files' && hit.focus) openFile(hit.focus.name);
                       else go(hit.section, hit.anchor);
                       setFocus(hit.focus);
+                      close();
                     }}
                     className="flex w-full flex-col rounded-md px-2 py-1.5 text-left hover:bg-hover"
                   >
@@ -156,7 +188,7 @@ export function Nav() {
               <li key={item.id}>
                 <button
                   type="button"
-                  onClick={() => go(item.id)}
+                  onClick={() => { go(item.id); close(); }}
                   aria-current={section === item.id ? 'page' : undefined}
                   className={cn(
                     'flex h-8 w-full items-center gap-2 rounded-md px-2 text-[13px] text-fg-muted hover:bg-hover hover:text-fg',
@@ -165,18 +197,12 @@ export function Nav() {
                 >
                   <span className="text-fg-subtle">{item.icon}</span>
                   <span className="flex-1 truncate text-left">{item.label}</span>
-                  {item.count ? <span className="text-[11px] tabular-nums text-fg-subtle">{item.count}</span> : null}
+                  {item.id === 'files' && item.count ? <span className="text-[11px] tabular-nums text-fg-subtle">{item.count}</span> : null}
                 </button>
               </li>
             ))}
           </ul>
         )}
-      </div>
-      <div className="flex items-center gap-1.5 border-t border-line px-3 py-2 text-[11px] text-fg-subtle">
-        <Box className="size-3.5" />
-        <span className="truncate">
-          {model.files.has('components/bundle.js') && model.index.namespace ? <span className="font-mono">window.{model.index.namespace}</span> : 'No components bundle'}
-        </span>
       </div>
     </nav>
   );

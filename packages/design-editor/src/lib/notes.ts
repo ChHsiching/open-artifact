@@ -3,7 +3,10 @@
  * tiny Markdown subset for stickies.
  */
 
-import type { CanvasNote, NoteColor, NoteSize, Rect } from '@open-artifact/design-core';
+import type { CanvasNote, NoteColor, Rect } from '@open-artifact/design-core';
+
+import { noteFontSize } from '@open-artifact/design-core';
+export { noteFontSize };
 
 /** Sticky backgrounds and stroke colors for the named note colors. */
 export const NOTE_PALETTE: Record<NoteColor, { sticky: string; stroke: string }> = {
@@ -23,15 +26,18 @@ export const DEFAULT_STICKY = '#fdf0b2';
 /** A named color's value, or the string itself (any CSS color). */
 export function noteColor(value: string | undefined, use: 'sticky' | 'stroke', fallback: string): string {
   if (!value) return fallback;
-  return value in NOTE_PALETTE ? NOTE_PALETTE[value as NoteColor][use] : value;
+  return Object.hasOwn(NOTE_PALETTE, value) ? NOTE_PALETTE[value as NoteColor][use] : value;
 }
 
-/** Font size in px of a note size. */
-export function noteFontSize(size: NoteSize | undefined, kind: CanvasNote['kind']): number {
-  if (typeof size === 'number') return size;
-  const base = kind === 'title1' ? 48 : 16;
-  const scale = { s: 0.75, m: 1, l: 1.5, xl: 2, xxl: 3 }[size ?? 'm'];
-  return Math.round(base * scale);
+/** Stroke shared by SVG notes and the GPU scene. */
+export function noteStroke(note: CanvasNote) {
+  const css = note.css;
+  const value = typeof note.stroke === 'number' ? note.stroke : parseFloat(css?.['stroke-width'] ?? '');
+  const width = Number.isFinite(value) ? Math.max(0.1, Math.min(100, value)) : 3;
+  const pattern = css?.['stroke-dasharray']?.split(/[\s,]+/).map(Number);
+  const dash: [number, number] | undefined = note.dash === 'dashed' ? [width * 3, width * 2.5] : note.dash === 'dotted' ? [0.01, width * 2]
+    : pattern?.length === 2 && pattern.every(n => Number.isFinite(n) && n >= 0) && pattern.some(n => n > 0) ? [pattern[0]!, pattern[1]!] : undefined;
+  return { width, dash, color: note.color ?? css?.stroke };
 }
 
 /** Notes drawn from points. */
@@ -46,6 +52,7 @@ export function noteBounds(note: CanvasNote): Rect {
     const minY = Math.min(...ys);
     return { x: note.x + minX, y: note.y + minY, w: Math.max(1, Math.max(...xs) - minX), h: Math.max(1, Math.max(...ys) - minY) };
   }
+  if (note.kind === 'link') return { x: note.x, y: note.y, w: note.w ?? 640, h: note.h ?? 112 };
   const w = note.w ?? (note.kind === 'title1' ? Math.min(note.maxW ?? 1200, 480) : 240);
   const h = note.h ?? (note.kind === 'title1' ? noteFontSize(note.size, note.kind) * 1.3 : 80);
   return { x: note.x, y: note.y, w, h };
@@ -54,7 +61,7 @@ export function noteBounds(note: CanvasNote): Rect {
 /** One rendered piece of a sticky's Markdown. */
 export type MarkdownBlock =
   | { kind: 'heading'; text: string }
-  | { kind: 'item'; text: string; ordered: boolean }
+  | { kind: 'item'; text: string; marker: string }
   | { kind: 'paragraph'; text: string };
 
 /** Splits sticky text into headings, list items and paragraphs. */
@@ -63,27 +70,30 @@ export function markdownBlocks(text: string): MarkdownBlock[] {
   for (const line of text.split('\n')) {
     const heading = /^#{1,3}\s+(.*)$/.exec(line);
     const bullet = /^\s*[-*]\s+(.*)$/.exec(line);
-    const ordered = /^\s*\d+[.)]\s+(.*)$/.exec(line);
+    const ordered = /^\s*(\d+[.)])\s+(.*)$/.exec(line);
     if (heading) blocks.push({ kind: 'heading', text: heading[1]! });
-    else if (bullet) blocks.push({ kind: 'item', text: bullet[1]!, ordered: false });
-    else if (ordered) blocks.push({ kind: 'item', text: ordered[1]!, ordered: true });
+    else if (bullet) blocks.push({ kind: 'item', text: bullet[1]!, marker: '•' });
+    else if (ordered) blocks.push({ kind: 'item', text: ordered[2]!, marker: ordered[1]! });
     else blocks.push({ kind: 'paragraph', text: line });
   }
   return blocks;
 }
 
 /** Inline runs: `**bold**`, `*italic*` and `` `code` ``. */
-export type InlineRun = { text: string; bold?: boolean; italic?: boolean; code?: boolean };
+export type InlineRun = { text: string; bold?: boolean; italic?: boolean; code?: boolean; href?: string };
 
 /** Splits a line into inline runs. */
 export function inlineRuns(text: string): InlineRun[] {
   const runs: InlineRun[] = [];
-  const pattern = /(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g;
+  const pattern = /(\[[^\]\n]+\]\(https?:\/\/[^\s)]+\)|\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g;
   let last = 0;
   for (let match = pattern.exec(text); match; match = pattern.exec(text)) {
     if (match.index > last) runs.push({ text: text.slice(last, match.index) });
     const token = match[0];
-    if (token.startsWith('**')) runs.push({ text: token.slice(2, -2), bold: true });
+    if (token.startsWith('[')) {
+      const split = token.indexOf('](');
+      runs.push({ text: token.slice(1, split), href: token.slice(split + 2, -1) });
+    } else if (token.startsWith('**')) runs.push({ text: token.slice(2, -2), bold: true });
     else if (token.startsWith('`')) runs.push({ text: token.slice(1, -1), code: true });
     else runs.push({ text: token.slice(1, -1), italic: true });
     last = match.index + token.length;
@@ -97,4 +107,32 @@ export function dashArray(dash: string | undefined, width: number): string | und
   if (dash === 'dashed') return `${width * 3} ${width * 2.5}`;
   if (dash === 'dotted') return `0 ${width * 2}`;
   return undefined;
+}
+
+/** Stroke and fill paths for the two configurable ends, in the shaft's coordinates. */
+export function arrowHeads(note: CanvasNote, points: readonly (readonly [number, number])[]): { d: string; filled: boolean }[] {
+  if (points.length < 2) return [];
+  const heads = [];
+  for (const start of [true, false]) {
+    const kind = start ? note.headStart : note.headEnd ?? (note.kind === 'arrow' ? 'filled' : 'none');
+    if (kind !== 'open' && kind !== 'filled') continue;
+    const [x, y] = points[start ? 0 : points.length - 1]!;
+    const [a, b] = points[start ? 1 : points.length - 2]!;
+    const angle = Math.atan2(y - b, x - a);
+    const wing = (offset: number) => `${x - 12 * Math.cos(angle + offset)} ${y - 12 * Math.sin(angle + offset)}`;
+    const filled = kind === 'filled';
+    heads.push({ d: `M${wing(-0.45)}L${x} ${y}L${wing(0.45)}${filled ? 'Z' : `L${x} ${y}`}`, filled });
+  }
+  return heads;
+}
+
+/** The pen path's original coordinate box, before the note was resized. */
+export function penViewBox(d: string): [number, number] {
+  const values = d.match(/-?\d+(?:\.\d+)?/g) ?? [];
+  const box: [number, number] = [1, 1];
+  for (let i = 0; i + 1 < values.length; i += 2) {
+    box[0] = Math.max(box[0], Number(values[i]));
+    box[1] = Math.max(box[1], Number(values[i + 1]));
+  }
+  return box;
 }

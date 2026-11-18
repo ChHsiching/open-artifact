@@ -2,6 +2,7 @@
 import { toast } from '@open-artifact/ui';
 import { TextSelection } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
+import { maybeSession } from '../app/session.ts';
 import { showTab } from '../app/start.ts';
 import { getDocs } from '../app/store.ts';
 import { useEditor } from '../editor/format.ts';
@@ -60,7 +61,11 @@ async function goTo(place: DocPlace): Promise<void> {
     return;
   }
   if (tab !== active) showTab(tab);
-  if (!place.block && !place.slug) return;
+  const target = place.block ? place.block + (place.slug ? '~' + place.slug : '') : place.slug;
+  const hash = '#' + tab + (target ? '.' + target : '');
+  history.replaceState(history.state, '', hash);
+  maybeSession()?.shell?.currentDocPlace(hash);
+  if (!target) return;
   const view = await editorOf(tab);
   if (!view) return;
   const pos = findPlace(view.state.doc, place);
@@ -68,7 +73,9 @@ async function goTo(place: DocPlace): Promise<void> {
     toast.add({ title: 'That section no longer exists in this document' });
     return;
   }
-  requestAnimationFrame(() => scrollToBlock(view, pos));
+  requestAnimationFrame(() => {
+    if (!view.isDestroyed && getDocs().activeTab === tab) scrollToBlock(view, pos);
+  });
 }
 
 /** Follows `#…` inside the doc; false for any other link. */
@@ -79,14 +86,30 @@ export function followDocLink(href: string): boolean {
   return true;
 }
 
+/** Public shell or invitation address, without frame transport parameters. */
+export function docLinkBase(): URL {
+  const here = new URL(location.href);
+  const base = here.searchParams.get('doc_link_base');
+  if (base && window.parent !== window) {
+    try {
+      const url = new URL(base);
+      if (/^https?:$/.test(url.protocol)) return url;
+    } catch { /* Older hosts supply only the frame address. */ }
+  }
+  here.searchParams.delete('open_artifact_shell');
+  here.searchParams.delete('open_artifact_id');
+  here.searchParams.delete('doc_link_base');
+  return here;
+}
+
 /** The full address of an in-doc link, to share: the page's, naming the tab, with the place as its fragment. */
 export function docLinkUrl(href: string): string {
-  const url = new URL(location.href);
+  const url = docLinkBase();
   const place = parseDocHref(href);
   const tab = place?.tab ?? getDocs().activeTab;
-  if (tab) url.searchParams.set('tab', tab);
-  const fragment = place?.tab ? href.slice(1).replace(/^[0-9a-f]{8}-[0-9a-f]{4}\.?/, '') : href.slice(1);
-  url.hash = fragment;
+  url.searchParams.delete('tab');
+  const fragment = place?.block ? place.block + (place.slug ? '~' + place.slug : '') : place?.slug ?? '';
+  url.hash = tab ? tab + (fragment ? '.' + fragment : '') : fragment;
   return url.href;
 }
 
@@ -102,6 +125,6 @@ export function followAddressOnce(): void {
     if (place.tab && state.tab !== place.tab) return;
     const view = state.view;
     const pos = findPlace(view.state.doc, place);
-    if (pos !== null) requestAnimationFrame(() => scrollToBlock(view, pos));
+    if (pos !== null) requestAnimationFrame(() => { if (!view.isDestroyed) scrollToBlock(view, pos); });
   });
 }

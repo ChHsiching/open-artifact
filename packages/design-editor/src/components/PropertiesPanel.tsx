@@ -70,6 +70,7 @@ import { NOTE_PALETTE } from '../lib/notes.ts';
 import { describeElement, detailOf, selectorOf } from '../lib/outline.ts';
 import { MOD } from '@open-artifact/editor-kit';
 import { Tip } from '@open-artifact/editor-kit/react';
+import { GuideInspector } from './LayoutGuides.tsx';
 import { Outline } from './Outline.tsx';
 import { isFontAvailable } from '../lib/fonts.ts';
 import { matchSystemStyle, systemStylePatch, styleById, useDesignSystems, useSystemSwatches, useSystemTextStyles } from '../services/design-systems.ts';
@@ -829,6 +830,7 @@ function BoardInspector({ path }: { path: string }) {
           <PInput aria-label="Corner radius" value={entry.radius ? String(entry.radius) : ''} placeholder="0" unit="px" disabled={readOnly} onCommit={(value) => updateBoard(path, { radius: num(value) ? Math.round(num(value)) : undefined })} />
         </PRow>
       </PSection>
+      <GuideInspector guides={entry.guides} readOnly={readOnly} change={guides => updateBoard(path, { guides: guides.length ? guides : undefined })} />
       <PSection title="Prototype">
         <PRow label="Interactive">
           <Switch label="Interactive" checked={Boolean(entry.is_interactive)} disabled={readOnly} onChange={(on) => updateBoard(path, { is_interactive: on || undefined })} />
@@ -857,6 +859,7 @@ const SIZES: { value: Exclude<NoteSize, number>; label: string }[] = [
   { value: 'm', label: 'M' },
   { value: 'l', label: 'L' },
   { value: 'xl', label: 'XL' },
+  { value: 'xxl', label: 'XXL' },
 ];
 
 function Swatches({ selected, onPick, disabled, ring, colorOf }: { selected?: string; onPick(color: string): void; disabled: boolean; ring?: boolean; colorOf(color: (typeof NOTE_COLORS)[number]): string }) {
@@ -885,7 +888,8 @@ function NoteInspector({ id }: { id: string }) {
   const textual = !note.kind || note.kind === 'sticky' || note.kind === 'title1' || note.kind === 'rect' || note.kind === 'oval';
   const shape = note.kind === 'rect' || note.kind === 'oval';
   const stroked = note.kind === 'title1' || note.kind === 'arrow' || note.kind === 'line' || note.kind === 'pen';
-  const colorKey = shape ? 'fill' : 'color';
+  const sticky = !note.kind || note.kind === 'sticky';
+  const colorKey = shape || sticky ? 'fill' : 'color';
   const title = note.kind === 'title1' ? 'Text' : note.kind === 'pen' ? 'Drawing' : note.kind ? note.kind[0]!.toUpperCase() + note.kind.slice(1) : 'Sticky note';
   return (
     <PSection title={title}>
@@ -902,19 +906,26 @@ function NoteInspector({ id }: { id: string }) {
           <Swatches ring selected={note.color} disabled={readOnly} colorOf={(color) => NOTE_PALETTE[color].stroke} onPick={(color) => updateNote(id, { color: note.color === color ? undefined : color })} />
         </PRow>
       ) : null}
+      {note.kind === 'line' || note.kind === 'arrow' ? (['headStart', 'headEnd'] as const).map(key => (
+        <PRow key={key} label={key === 'headStart' ? 'Start' : 'End'}>
+          <PSelect aria-label={key === 'headStart' ? 'Start arrowhead' : 'End arrowhead'} value={note[key] ?? (key === 'headEnd' && note.kind === 'arrow' ? 'filled' : 'none')}
+            disabled={readOnly} options={['none', 'open', 'filled'].map(value => ({ value, label: value }))}
+            onChange={value => updateNote(id, { [key]: value })} />
+        </PRow>
+      )) : null}
       {textual ? (
         <>
           <PRow label="Size">
             <PSegments
               className="flex-1"
               disabled={readOnly}
-              value={typeof note.size === 'string' ? note.size : note.size ? null : 'm'}
+              value={typeof note.size === 'string' ? note.size : note.size ? null : note.kind === 'title1' ? 'xl' : 's'}
               options={SIZES.map((s) => ({ value: s.value, label: s.label, icon: <span className="text-[12px]">{s.label}</span> }))}
-              onChange={(value) => updateNote(id, { size: value === 'm' ? undefined : value })}
+              onChange={(value) => updateNote(id, { size: value })}
             />
           </PRow>
           <PRow label="Style">
-            <PIconButton label="Bold" pressed={Boolean(note.bold)} disabled={readOnly} onClick={() => updateNote(id, { bold: note.bold ? undefined : true })}>
+            <PIconButton label="Bold" pressed={note.bold ?? note.kind === 'title1'} disabled={readOnly} onClick={() => updateNote(id, { bold: !(note.bold ?? note.kind === 'title1') })}>
               <Bold className="size-3.5" />
             </PIconButton>
             <PIconButton label="Italic" pressed={Boolean(note.italic)} disabled={readOnly} onClick={() => updateNote(id, { italic: note.italic ? undefined : true })}>
@@ -924,9 +935,10 @@ function NoteInspector({ id }: { id: string }) {
         </>
       ) : null}
       {note.kind === 'link' ? (
+        <><PRow label="Title"><PInput aria-label="Link title" value={note.title ?? note.text ?? ''} disabled={readOnly} onCommit={value => updateNote(id, { title: value, text: undefined })} /></PRow>
         <PRow label="URL">
           <PInput aria-label="Link" value={note.href ?? ''} disabled={readOnly} onCommit={(value) => updateNote(id, { href: value.trim() || undefined })} />
-        </PRow>
+        </PRow></>
       ) : null}
       <PRow label="Position">
         {(['x', 'y'] as const).map((key) => (

@@ -218,14 +218,14 @@ describe('SheetStore', () => {
     assert.equal(store.widgets.list().length, before);
   });
 
-  it('answers a new Sheet\'s reads, widgets and imports before any edit', () => {
+  it('answers a new Sheet\'s reads, widgets and imports before any edit', async () => {
     const store = storeIn(folder());
     assert.deepEqual(store.agentWidget({ action: 'list' }), { widgets: [] });
     assert.deepEqual(store.read({ kind: 'xlsxCharts', charts: [] }, owner), { kind: 'xlsxCharts', descriptions: [] });
     assert.deepEqual(store.read({ kind: 'versions' }, owner), { kind: 'versions', rows: [] });
     assert.equal(new TextDecoder().decode(store.exportFile('csv').bytes), '');
     assert.throws(() => store.exportFile('xlsx'), (error: { body?: { data?: { refusal?: string } } }) => error.body?.data?.refusal === 'noSheetToWrite');
-    assert.throws(() => store.importFile('notes.xlsx', new Uint8Array([1, 2, 3])), (error: { body?: { data?: { refusal?: string } } }) => error.body?.data?.refusal === 'notAnXlsxFile');
+    await assert.rejects(store.importFile('notes.xlsx', new Uint8Array([1, 2, 3])), (error: { body?: { data?: { refusal?: string } } }) => error.body?.data?.refusal === 'notAnXlsxFile');
     assert.equal(store.revision, 0);
   });
 
@@ -248,8 +248,14 @@ describe('SheetStore', () => {
     const asked: string[] = [];
     const importing = new SheetStore({ root, log: () => {}, sendToAgent: (request) => asked.push(request.text) > 0 });
     stores.push(importing);
-    assert.deepEqual(importing.importFile('Costs.xlsx', xlsx.bytes), { path: 'sheet/imports/Costs.xlsx', sentToAgent: true });
-    assert.deepEqual(importing.importFile('Costs.xlsx', xlsx.bytes).path, 'sheet/imports/Costs-2.xlsx');
+    assert.deepEqual(await importing.importFile('Costs.xlsx', xlsx.bytes), { path: 'sheet/imports/Costs.xlsx', sentToAgent: true });
+    assert.deepEqual((await importing.importFile('Costs.xlsx', xlsx.bytes)).path, 'sheet/imports/Costs-2.xlsx');
+    const refused = new SheetStore({ root, log: () => {}, sendToAgent: async () => false });
+    stores.push(refused);
+    const reply = await refused.importFile('Costs.xlsx', xlsx.bytes);
+    assert.equal(reply.sentToAgent, false);
+    assert.equal(fs.existsSync(path.join(root, reply.path)), false);
+    assert.equal(fs.existsSync(path.join(root, 'sheet/imports/Costs-2.xlsx')), true);
     assert.match(asked[0]!, /Import this Excel file into the Sheet, as new sheets: sheet\/imports\/Costs.xlsx/);
   });
 });

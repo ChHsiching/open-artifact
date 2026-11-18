@@ -79,10 +79,11 @@ describe('engine items', () => {
     assert.equal(spritePlace(stroke, scopeOf([stroke])), undefined, 'ink has no sprite');
   });
 
-  it('turns a live element into a hole the DOM above draws', () => {
+  it('keeps live elements interactive without punching through the artwork below', () => {
     const block = note('n1', 0, 0, 'Typing');
     const [body] = elementBodyItems(block, 0, scopeOf([block]), true);
-    assert.equal(body?.kind, 'hole');
+    assert.equal(body?.kind, 'rect');
+    assert.equal(body.fill, 'transparent');
     assert.equal(isAlwaysLive(element({ type: 'html', id: 'h1', x: 0, y: 0, w: 100, h: 100, html: '<p>Hi</p>' })), true);
     assert.equal(isAlwaysLive(block), false);
   });

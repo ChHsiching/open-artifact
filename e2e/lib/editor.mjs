@@ -37,10 +37,30 @@ export const buttonNamed = name =>
 export const middleOf = (page, element) =>
   page.evaluate(`(() => { const r = (${element})?.getBoundingClientRect(); return r?.width ? { x: r.x + r.width / 2, y: r.y + r.height / 2 } : null; })()`);
 
-/** Click `element` (an expression) with the real mouse, once it has a box. */
+/** The middle of `element` when it is the topmost thing there (nothing covers it), else null. */
+const hittableMiddleOf = (page, element) =>
+  page.evaluate(`(() => {
+    const el = (${element});
+    const r = el?.getBoundingClientRect();
+    if (!r?.width) return null;
+    const x = r.x + r.width / 2, y = r.y + r.height / 2;
+    const hit = document.elementFromPoint(x, y);
+    return hit && (hit === el || el.contains(hit)) ? { x, y } : null;
+  })()`);
+
+/**
+ * Click `element` (an expression) with the real mouse, once it has a box that holds still and nothing covers it. A
+ * menu that is still opening moves its rows between reading a row's box and the click, which then lands on another
+ * row (more so on a busy machine, with another suite running).
+ */
 export async function clickOn(page, element, what = element) {
-  let at;
-  assert.ok(await until(async () => (at = await middleOf(page, element)), 10000), `nothing to click: ${what}`);
+  let at = null;
+  const settled = async () => {
+    const was = at;
+    at = await hittableMiddleOf(page, element);
+    return at && was && at.x === was.x && at.y === was.y;
+  };
+  assert.ok(await until(settled, 10000), `nothing to click: ${what}`);
   await page.click(at.x, at.y);
 }
 
@@ -322,9 +342,11 @@ export function editorSuite(spec) {
       const image = path.join(ctx.work, 'e2e-upload.png');
       const bytes = png([12, 34, 56]);
       fs.writeFileSync(image, bytes);
-      const r = await ctx.cli.run(['upload', ctx.root, image]);
+      const grouped = ctx.spec.type === 'design-system';
+      const r = await ctx.cli.run(['upload', ctx.root, image, ...(grouped ? ['--group', 'Logos'] : [])]);
       assert.equal(r.code, 0, r.stderr);
-      const [url, type, size, name] = r.stdout.trim().split('\t');
+      const upload = grouped ? JSON.parse(r.stdout) : null;
+      const [url, type, size, name] = upload ? [upload.url, upload.record.type, upload.record.size, upload.record.name] : r.stdout.trim().split('\t');
       assert.match(url, /^\/_blob\/[0-9a-f]{32}$/, r.stdout);
       assert.deepEqual([type, Number(size), name], ['image/png', bytes.length, 'e2e-upload.png']);
       const id = url.split('/').pop();
@@ -385,7 +407,7 @@ export function editorSuite(spec) {
 
       it('the page opens with no errors and asks no outside host', T, async () => {
         const b = await ctx.browser();
-        page = await b.load(ctx.url, { ready: textIn(spec.pageText), settle: 1500, ignore: spec.ignore ?? [] });
+        page = await b.load(spec.type === 'design' ? new URL('index.html', ctx.url).href : ctx.url, { ready: textIn(spec.pageText), settle: 1500, ignore: spec.ignore ?? [] });
         assert.deepEqual(page.problems, [], `problems on ${ctx.url}`);
         const outside = [...page.urls].filter(u => /^(https?|wss?):/.test(u) && !ALLOWED_HOSTS.has(new URL(u).hostname));
         assert.deepEqual(outside, [], 'the page asked hosts outside this computer');

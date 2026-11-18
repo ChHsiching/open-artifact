@@ -2,12 +2,12 @@
  * Copy as PNG / SVG / HTML: captures one rendered element of an artboard.
  *
  * SVG is a real vector drawing (dom-to-svg: boxes, text and images as SVG
- * shapes, no `<foreignObject>`), so it pastes into design tools. PNG is that
- * drawing rasterized at 2×. HTML is a self-contained copy of the element
+ * shapes, no `<foreignObject>`), so it pastes into design tools. PNG captures
+ * at 2×, using browser paint for CSS masks and SVG symbols. HTML copies the element
  * with its computed styles inlined (trimmed against browser defaults).
  */
 
-import { blobToDataUrl, elementSvg, maxCaptureScale, SVG_NS, type CaptureLimits } from '@open-artifact/export-kit';
+import { cssUrls, blobToDataUrl, elementSvg, foreignObjectSvg, loadSvgImage, maxCaptureScale, SVG_NS, type CaptureLimits } from '@open-artifact/export-kit';
 import { toast } from '@open-artifact/ui';
 import { useView, type ElementSelection } from '../state/view.ts';
 import { frameOf } from './frames.ts';
@@ -104,6 +104,37 @@ function cleanSvg(root: Element): void {
   root.removeAttribute('aria-owns');
 }
 
+/** Figma's Chrome capture reads paint from the definition, losing the
+ * currentColor inherited through a use. Specialise simple geometry symbols
+ * per instance, keeping the original for other uses and referenced IDs. */
+function portableSymbolPaints(source: Element, copy: SVGElement): void {
+  const originals = source.querySelectorAll('use');
+  for (const [i, use] of [...copy.querySelectorAll('use')].entries()) {
+    const href = use.getAttribute('href') ?? use.getAttribute('xlink:href');
+    if (!href?.startsWith('#')) continue;
+    const symbol = copy.querySelector<SVGSymbolElement>('symbol#' + CSS.escape(href.slice(1)));
+    if (!symbol || symbol.querySelector('[id], use') || !/currentcolor/i.test(symbol.outerHTML)) continue;
+    const instance = symbol.cloneNode(true) as SVGSymbolElement;
+    instance.id = 'export-symbol-' + crypto.getRandomValues(new Uint32Array(4)).join('-');
+    const paint = source.ownerDocument.defaultView!.getComputedStyle(originals[i]!).color;
+    for (const shape of [instance, ...instance.querySelectorAll<SVGElement>('*')]) {
+      let color = paint;
+      for (let ancestor: SVGElement | null = shape; ancestor; ancestor = ancestor.parentElement as SVGElement | null) {
+        const own = ancestor.style.color || ancestor.getAttribute('color');
+        if (own && !/^(currentcolor|inherit|unset)$/i.test(own)) { color = own; break; }
+      }
+      for (const name of ['fill', 'stroke']) {
+        if ((shape.style.getPropertyValue(name) || shape.getAttribute(name))?.toLowerCase() === 'currentcolor') {
+          shape.style.setProperty(name, color);
+          shape.setAttribute(name, color);
+        }
+      }
+    }
+    symbol.after(instance);
+    use.setAttribute('href', '#' + instance.id);
+  }
+}
+
 /** The element as SVG markup and its size. */
 async function captureSvg(element: Element): Promise<{ svg: string; width: number; height: number }> {
   return withoutTransform(element, async () => {
@@ -134,33 +165,56 @@ async function rasterize(svg: string, width: number, height: number, { scale = P
   const canvas = document.createElement('canvas');
   canvas.width = Math.max(1, Math.round(width * scale));
   canvas.height = Math.max(1, Math.round(height * scale));
-  const image = new Image();
-  image.decoding = 'sync';
-  const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
-  try {
-    await new Promise<void>((resolve, reject) => {
-      image.onload = () => resolve();
-      image.onerror = () => reject(new Error('The drawing could not be rendered.'));
-      image.src = url;
-    });
-    const context = canvas.getContext('2d')!;
-    if (background) {
-      context.fillStyle = background;
-      context.fillRect(0, 0, canvas.width, canvas.height);
-    }
-    context.drawImage(image, 0, 0, canvas.width, canvas.height);
-    if (keep) {
-      context.fillStyle = background ?? '#ffffff';
-      const k = canvas.height / height;
-      const from = Math.max(0, Math.round(keep.from * k));
-      const to = Math.min(canvas.height, Math.round(keep.to * k));
-      if (from > 0) context.fillRect(0, 0, canvas.width, from);
-      if (to < canvas.height) context.fillRect(0, to, canvas.width, canvas.height - to);
-    }
-  } finally {
-    URL.revokeObjectURL(url);
+  const image = await loadSvgImage(svg, { error: 'The drawing could not be rendered.', decoding: 'sync' });
+  const context = canvas.getContext('2d')!;
+  if (background) {
+    context.fillStyle = background;
+    context.fillRect(0, 0, canvas.width, canvas.height);
+  }
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  if (keep) {
+    context.fillStyle = background ?? '#ffffff';
+    const k = canvas.height / height;
+    const from = Math.max(0, Math.round(keep.from * k));
+    const to = Math.min(canvas.height, Math.round(keep.to * k));
+    if (from > 0) context.fillRect(0, 0, canvas.width, from);
+    if (to < canvas.height) context.fillRect(0, to, canvas.width, canvas.height - to);
   }
   return new Promise((resolve, reject) => canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('The image is empty.'))), type, 0.92));
+}
+
+/** dom-to-svg cannot paint CSS masks or SVG use shadow trees. */
+function needsBrowserPaint(element: Element): boolean {
+  const selector = 'svg use, [style*="mask"]';
+  return element.matches(selector) || !!element.querySelector(selector) || [...element.ownerDocument.styleSheets].some(sheet => {
+    try { return [...sheet.cssRules].some(rule => /mask(?:-image)?\s*:/.test(rule.cssText)); } catch { return false; }
+  });
+}
+
+/** Paint the computed HTML, with embedded images, so masks and ::before survive. */
+async function browserDrawing(element: Element, width: number, height: number, top = 0): Promise<string> {
+  const holder = document.createElement('div');
+  holder.innerHTML = await captureHtml(element, 'raster');
+  const root = holder.firstElementChild as HTMLElement | SVGElement | null;
+  if (root && element !== element.ownerDocument.body) {
+    Object.assign(root.style, { position: 'relative', inset: 'auto', margin: '0' });
+  }
+  holder.style.marginTop = `-${top}px`;
+  return foreignObjectSvg(new XMLSerializer().serializeToString(holder), '', { width, height });
+}
+
+async function selectionPng(element: Element): Promise<Blob> {
+  if (needsBrowserPaint(element)) {
+    try {
+      return await withoutTransform(element, async () => {
+        const { width, height } = element.getBoundingClientRect();
+        return rasterize(await browserDrawing(element, width, height), width, height);
+      });
+    } catch { /* Fall back to native SVG shapes when foreignObject is unavailable. */ }
+  }
+  const { svg, width, height } = await captureSvg(element);
+  if (width < 1 || height < 1) throw new Error('The element has no size.');
+  return rasterize(svg, width, height);
 }
 
 /**
@@ -182,13 +236,19 @@ export async function pageImage(
     keep?: { from: number; to: number };
   },
 ): Promise<Blob> {
+  const rasterOptions = { ...options, background: options.background ?? '#ffffff' };
+  if (needsBrowserPaint(doc.body)) {
+    const svg = await browserDrawing(doc.body, width, height, options.top ?? 0);
+    try { return await rasterize(svg, width, height, rasterOptions); }
+    catch { /* Some browsers disallow reading a foreignObject canvas. */ }
+  }
   const svgDoc = await elementSvg(doc.documentElement, { x: 0, y: options.top ?? 0, width, height });
   const root = svgDoc.documentElement;
   cleanSvg(root);
   root.setAttribute('width', String(width));
   root.setAttribute('height', String(height));
   for (const node of [...root.childNodes]) if (node.nodeType === Node.COMMENT_NODE) node.remove();
-  return rasterize(new XMLSerializer().serializeToString(svgDoc), width, height, { scale: options.scale, type: options.type, background: options.background ?? '#ffffff', keep: options.keep });
+  return rasterize(new XMLSerializer().serializeToString(svgDoc), width, height, rasterOptions);
 }
 
 /* ---------------------------------- HTML ---------------------------------- */
@@ -253,6 +313,8 @@ async function dataUrl(url: string): Promise<string | null> {
   }
 }
 
+type CaptureHtmlMode = 'clipboard' | 'raster' | 'figma';
+
 const IMAGE_TOKEN = /\u0000img:([\s\S]*?)\u0000/g;
 
 /**
@@ -260,32 +322,41 @@ const IMAGE_TOKEN = /\u0000img:([\s\S]*?)\u0000/g;
  * against browser defaults). Image sources come back as tokens, with the
  * set of sources they stand for.
  */
-function standalone(element: Element): { html: string; images: Set<string> } {
+function standalone(element: Element, mode: CaptureHtmlMode = 'clipboard'): { html: string; images: Set<string> } {
+  const keepPosition = mode !== 'clipboard';
   const view = element.ownerDocument.defaultView!;
   const images = new Set<string>();
   const imageToken = (src: string) => {
     images.add(src);
-    return `\u0000img:${src}\u0000`;
+    return `\u0000img:${encodeURIComponent(src)}\u0000`;
   };
 
-  const styleOf = (node: Element, tag: string, parent: CSSStyleDeclaration | null, root: boolean): string => {
-    const computed = view.getComputedStyle(node);
+  const styleOf = (node: Element, tag: string, parent: CSSStyleDeclaration | null, root: boolean, pseudo?: string): string => {
+    const computed = view.getComputedStyle(node, pseudo);
     const defaults = defaultsOf(tag);
     const out: string[] = [];
     for (const name of computed) {
       if (name.startsWith('--') || SKIPPED.test(name)) continue;
-      const value = computed.getPropertyValue(name);
-      if (!value || !portable(value)) continue;
+      let value = computed.getPropertyValue(name);
+      if (!value) continue;
+      if (keepPosition && value.includes('url(')) {
+        for (const { match, url } of cssUrls(value)) {
+          if (url.startsWith('data:') || url.startsWith('#')) continue;
+          const resolved = new URL(url, node.baseURI);
+          if (resolved.origin === location.origin || resolved.protocol === 'blob:') value = value.replace(match, () => `url('${imageToken(resolved.href)}')`);
+        }
+      }
+      if (!portable(value.replace(IMAGE_TOKEN, 'data:image/embedded'))) continue;
       if (INHERITED.has(name) && parent) {
         if (parent.getPropertyValue(name) === value) continue;
       } else if (defaults.get(name) === value) continue;
-      if (root && /^(margin-|top$|left$|right$|bottom$|transform$|rotate$|scale$|translate$)/.test(name)) continue;
+      if (root && !keepPosition && /^(margin-|top$|left$|right$|bottom$|transform$|rotate$|scale$|translate$)/.test(name)) continue;
       // A side or outline that is not drawn needs no color or width.
       const side = /^(border-(?:top|right|bottom|left)|outline)-(?:color|width)$/.exec(name);
       if (side && computed.getPropertyValue(`${side[1]}-style`) === 'none') continue;
       out.push(`${name}: ${value}`);
     }
-    if (root) {
+    if (root && !keepPosition) {
       if (computed.position === 'static' || computed.position === 'absolute' || computed.position === 'fixed') out.push('position: relative');
       out.push('margin: 0');
     }
@@ -300,20 +371,54 @@ function standalone(element: Element): { html: string; images: Set<string> } {
     const computed = view.getComputedStyle(el);
     if (computed.display === 'none') return '';
     if (el.namespaceURI === SVG_NS) {
-      const copy = el.cloneNode(true) as Element;
+      const copy = el.cloneNode(true) as SVGElement;
+      // A symbol is styled in the shadow tree of each <use>. Keep inherited
+      // paints as currentColor so the same definition can serve different colours.
+      const originals = [el, ...el.querySelectorAll('*')];
+      const twins = [copy, ...copy.querySelectorAll<SVGElement>('*')];
+      for (const [i, original] of originals.entries()) {
+        const source = original as SVGElement;
+        const styles = view.getComputedStyle(source);
+        const inherited = source.parentElement && view.getComputedStyle(source.parentElement);
+        for (const name of ['fill', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin', 'stroke-dasharray', 'fill-rule', 'fill-opacity', 'stroke-opacity', 'opacity', 'color', 'stop-color', 'stop-opacity']) {
+          let value = styles.getPropertyValue(name);
+          if (!value || (name !== 'opacity' && inherited?.getPropertyValue(name) === value)) continue;
+          if ((name === 'fill' || name === 'stroke') && value === styles.color) {
+            const color = source.style.getPropertyValue('color'), priority = source.style.getPropertyPriority('color');
+            const probe = value === 'rgb(1, 2, 3)' ? 'rgb(3, 2, 1)' : 'rgb(1, 2, 3)';
+            try {
+              source.style.setProperty('color', probe, 'important');
+              if (styles.getPropertyValue(name) === probe) value = 'currentColor';
+            } finally {
+              if (color) source.style.setProperty('color', color, priority);
+              else source.style.removeProperty('color');
+            }
+          }
+          twins[i]!.style.setProperty(name, value);
+        }
+      }
+      if (mode === 'figma') portableSymbolPaints(el, copy);
       cleanSvg(copy);
       if (el.localName === 'svg') {
         copy.setAttribute('xmlns', SVG_NS);
-        if (!root) copy.setAttribute('style', styleOf(el, 'svg', parent, false));
+        if (!root || keepPosition) copy.setAttribute('style', styleOf(el, 'svg', parent, false));
       }
       return new XMLSerializer().serializeToString(copy).replace(/ xmlns="http:\/\/www\.w3\.org\/1999\/xhtml"/g, '');
     }
-    let tag = el.localName;
+    let tag = keepPosition && el.localName === 'body' ? 'div' : el.localName;
     if (DROPPED_TAGS.has(tag)) return '';
     if (computed.display === 'contents') return [...el.childNodes].map((child) => walk(child, parent, root)).join('');
-    const children = () => [...el.childNodes].map((child) => walk(child, computed, false)).join('');
+    const pseudo = (name: string): string => {
+      if (!keepPosition) return '';
+      const css = view.getComputedStyle(el, name);
+      const content = css.content;
+      if (!content || content === 'none' || content === 'normal' || css.display === 'none') return '';
+      const text = /^["'].*["']$/.test(content) ? content.slice(1, -1) : '';
+      return `<span aria-hidden="true" style="${escapeAttr(styleOf(el, 'span', computed, false, name))}">${escapeText(text)}</span>`;
+    };
+    const children = () => pseudo('::before') + [...el.childNodes].map((child) => walk(child, computed, false)).join('') + pseudo('::after');
     let inner: string | null = null;
-    let attrs = '';
+    let attrs = keepPosition && el.id ? ` id="${escapeAttr(el.id)}"` : '';
     switch (tag) {
       case 'input': {
         const input = el as HTMLInputElement;
@@ -371,14 +476,51 @@ function standalone(element: Element): { html: string; images: Set<string> } {
 
 /** The element as standalone HTML, images by URL (for a synchronous clipboard write). */
 export function standaloneHtml(element: Element): string {
-  return standalone(element).html.replace(IMAGE_TOKEN, (_m, src: string) => escapeAttr(src));
+  return standalone(element).html.replace(IMAGE_TOKEN, (_m, encoded: string) => escapeAttr(decodeURIComponent(encoded)));
 }
 
 /** The element as standalone HTML, images inlined as data URLs. */
-export async function captureHtml(element: Element): Promise<string> {
-  const { html, images } = standalone(element);
+async function captureHtml(element: Element, mode: CaptureHtmlMode = 'clipboard'): Promise<string> {
+  const { html, images } = standalone(element, mode);
   const urls = new Map(await Promise.all([...images].map(async (src) => [src, await dataUrl(src)] as const)));
-  return html.replace(IMAGE_TOKEN, (_m, src: string) => escapeAttr(urls.get(src) ?? src));
+  return html.replace(IMAGE_TOKEN, (_m, encoded: string) => {
+    const src = decodeURIComponent(encoded);
+    return escapeAttr(urls.get(src) ?? src);
+  });
+}
+
+/** The extension paints a centred SVG mask at its intrinsic size. Give fitted
+ * masks that size in the asset itself, keeping the paths and the CSS mask. */
+export async function captureFigmaHtml(element: Element): Promise<string> {
+  const html = await captureHtml(element, 'figma');
+  if (!html.includes('mask-image:')) return html;
+  const template = document.createElement('template');
+  template.innerHTML = html;
+  for (const node of template.content.querySelectorAll<HTMLElement>('[style*="mask-image:"]')) {
+    const style = node.style;
+    if (style.maskSize !== 'contain' || style.maskRepeat !== 'no-repeat' || style.maskPosition !== '50% 50%') continue;
+    const urls = cssUrls(style.maskImage);
+    if (urls.length !== 1 || !urls[0]!.url.startsWith('data:image/svg+xml')) continue;
+    const w = parseFloat(style.width), h = parseFloat(style.height);
+    if (!(w > 0 && h > 0) || !style.width.endsWith('px') || !style.height.endsWith('px')) continue;
+    try {
+      const data = await (await fetch(urls[0]!.url)).text();
+      const svg = new DOMParser().parseFromString(data, 'image/svg+xml').documentElement;
+      if (svg.localName !== 'svg') continue;
+      const sw = svg.getAttribute('width'), sh = svg.getAttribute('height');
+      if (!sw || !sh || !/^\d+(?:\.\d+)?(?:px)?$/.test(sw) || !/^\d+(?:\.\d+)?(?:px)?$/.test(sh)) continue;
+      const intrinsicW = parseFloat(sw), intrinsicH = parseFloat(sh);
+      if (!intrinsicH || Math.abs(intrinsicW / intrinsicH - w / h) > 0.0001) continue;
+      if (!svg.hasAttribute('viewBox')) svg.setAttribute('viewBox', `0 0 ${intrinsicW} ${intrinsicH}`);
+      svg.setAttribute('width', String(w));
+      svg.setAttribute('height', String(h));
+      const url = await blobToDataUrl(new Blob([new XMLSerializer().serializeToString(svg)], { type: 'image/svg+xml' }));
+      style.maskImage = `url("${url}")`;
+    } catch {
+      // Leave any mask we cannot resize in its original embedded form.
+    }
+  }
+  return template.innerHTML;
 }
 
 /* --------------------------------- command -------------------------------- */
@@ -403,13 +545,8 @@ export async function copyAs(format: CaptureFormat): Promise<void> {
   busy = true;
   try {
     if (format === 'png') {
-      const svg = captureSvg(element);
-      const blob = svg.then(({ svg: markup, width, height }) => {
-        if (width < 1 || height < 1) throw new Error('The element has no size.');
-        return rasterize(markup, width, height);
-      });
-      // The item is created synchronously (Safari needs the user's click); the image follows.
-      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+      // Start the clipboard write in the click handler; the image can finish later.
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': selectionPng(element) })]);
     } else if (format === 'svg') {
       const { svg } = await captureSvg(element);
       const items: Record<string, Blob> = { 'text/plain': new Blob([svg], { type: 'text/plain' }) };

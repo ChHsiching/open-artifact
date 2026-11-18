@@ -9,7 +9,7 @@ import { pressReactionThread, reply } from './actions.ts';
 import { Composer, Initial } from './Composer.tsx';
 import { Message } from './Message.tsx';
 import { type Hold, agentName, canComment, canRemoveAny, docComments, myName, setActive, useCommentUi } from './store.ts';
-import { canDeleteThread, isOwn, reactionCount } from './threads.ts';
+import { canDeleteThread, isOwn, reactionCount, resolvedWords } from './threads.ts';
 
 export interface ThreadCardProps {
   thread: CommentThread;
@@ -24,11 +24,17 @@ export interface ThreadCardProps {
   onOpen(): void;
 }
 
+/** Whether a thread hangs on table cells rather than words. */
+const onCells = (thread: CommentThread): boolean => {
+  const kind = docComments.anchorOf(thread).kind;
+  return kind === 'cell' || kind === 'cells';
+};
+
 function Quote({ thread, hold }: { thread: CommentThread; hold: Hold | undefined }): ReactNode {
   if (!thread.label) return null;
   if (hold === 'detached')
     return (
-      <div className="mb-2 truncate text-[12px] text-chrome-muted" title="The words this was on were deleted">
+      <div className="mb-2 truncate text-[12px] text-chrome-muted" title={onCells(thread) ? 'The cells this was on were deleted' : 'The words this was on were deleted'}>
         <span className="font-medium">was on:</span> <span className="line-through">{thread.label}</span>
       </div>
     );
@@ -172,7 +178,7 @@ export function ThreadCard({ thread, hold, open, inList = false, tabName, remova
       {resolved ? (
         <div className="mb-2 flex items-center gap-1 text-[12px] text-chrome-muted">
           <CircleCheck className="size-3.5 text-chrome-accent" />
-          Resolved
+          {resolvedWords(thread, myName(), agentName())}
         </div>
       ) : null}
       <Message thread={thread} message={root} root open={open} removablePlace={removablePlace} />

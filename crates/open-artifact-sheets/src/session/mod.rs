@@ -66,6 +66,8 @@ enum Next {
 #[derive(Clone, Debug)]
 struct Queued {
     op_id: String,
+    /// The request that queued these parts stays reserved until all parts are confirmed.
+    group_id: Option<String>,
     /// The action the edit takes back, for an edit that takes back others (`queueEditsThatTakeBack`).
     action_id: Option<String>,
     recorded: Recorded,
@@ -907,7 +909,7 @@ fn same_ops(a: &[Op], b: &[Op]) -> bool {
 /// sheet, row and column id). Sheets, deleted, undeleted and moved rows and columns change it all. Rows or columns
 /// inserted change it all only when cells move to make room; inserted after every cell, they change what formulas
 /// whose references reach the insertion read: a range or a whole row or column over it, or a cell past it.
-fn shape_change(after: &Workbook, ops: &[Op]) -> (bool, Vec<(String, String, String)>) {
+fn shape_change(before: &Workbook, after: &Workbook, ops: &[Op]) -> (bool, Vec<(String, String, String)>) {
     let mut touched = Vec::new();
     for op in ops {
         let (sheet_id, run, is_rows) = match op {
@@ -922,10 +924,13 @@ fn shape_change(after: &Workbook, ops: &[Op]) -> (bool, Vec<(String, String, Str
         let first = after.bases.find(&run.base).and_then(|base| axis.position(crate::ids::LineId { base, n: run.first }));
         let Some(at) = first else { return (true, Vec::new()) };
         let past = at + run.count as usize;
-        // Cells in deleted rows or columns are not there to move.
-        let moves = sheet.cells.keys().any(|&(r, c)| match (sheet.rows.position(r), sheet.columns.position(c)) {
-            (Some(row), Some(column)) => (if is_rows { row } else { column }) >= past,
-            _ => false,
+        // An insertion moves cells that were present before the edit. A grouped paste
+        // may create values farther down an otherwise empty sheet in the same request.
+        let moves = before.sheet_index(sheet_id).is_some_and(|i| {
+            before.sheets[i].cells.keys().any(|&(r, c)| match (sheet.rows.position(r), sheet.columns.position(c)) {
+                (Some(row), Some(column)) => (if is_rows { row } else { column }) >= past,
+                _ => false,
+            })
         });
         if moves {
             return (true, Vec::new());
@@ -1184,6 +1189,7 @@ impl WorkbookSession {
             } => {
                 self.start_syncing();
                 let context = edits::Context {
+                    is_among_several: !edits_before.is_empty() || !edits_that_go_along.is_empty(),
                     code: &new_id_code,
                     browser_zone: time_zone_of_the_browser.as_deref(),
                     shown_to_the_person: shown_to_the_person.as_deref(),
@@ -1304,13 +1310,13 @@ impl WorkbookSession {
         // The edits made before it, each on the workbook the ones before it leave: one refused, none is made.
         let (mut places_before, mut place_of_befores, mut any_pointed) = (Vec::new(), place::Place::Nowhere, false);
         for (index, (before, is_pointed_at, code)) in befores.into_iter().enumerate() {
-            let is_held = before.is_held_to_most_cells();
+            let limits = before.limits();
             let follow_up = before.follow_up(&code);
             self.work_out_between(&before, &made_units, &start, &mut worked_out);
             let refusal = match edits::make(&self.workbook, before, &edits::Context { code: &code, ..*context }) {
                 Ok(made) if made.ops.is_empty() => continue,
                 Ok(made) if moves_among_several(&made) => json!("moveAmongSeveralEdits"),
-                Ok(made) => match self.apply_unit(made, is_held, follow_up) {
+                Ok(made) => match self.apply_unit(made, limits, follow_up) {
                     Ok(unit) => {
                         // Only an edit before made counts as pointed at.
                         any_pointed |= is_pointed_at;
@@ -1338,7 +1344,7 @@ impl WorkbookSession {
 
         // The edit itself.
         let redrawn = edits::refusals_that_redraw(&edit);
-        let is_held = edit.is_held_to_most_cells();
+        let limits = edit.limits();
         let follow_up = edit.follow_up(context.code);
         self.work_out_between(&edit, &made_units, &start, &mut worked_out);
         let made = match edits::make(&self.workbook, edit, context) {
@@ -1355,7 +1361,7 @@ impl WorkbookSession {
         let mut place_changed = None;
         let others = made_units.len();
         if !made.ops.is_empty() {
-            match self.apply_unit(made, is_held, follow_up) {
+            match self.apply_unit(made, limits, follow_up) {
                 Ok(units) => {
                     place_changed = Some(place::Told::of(&units.place, &self.workbook));
                     roles.push(history::Role::Asked);
@@ -1375,7 +1381,7 @@ impl WorkbookSession {
         // The edits that go along with it, each made if it can be and left out if not.
         let mut went_along = Vec::with_capacity(along.len());
         for (edit, code) in along {
-            let is_held = edit.is_held_to_most_cells();
+            let limits = edit.limits();
             let follow_up = edit.follow_up(&code);
             self.work_out_between(&edit, &made_units, &start, &mut worked_out);
             let refusal = match edits::make(&self.workbook, edit, &edits::Context { code: &code, ..*context }) {
@@ -1384,7 +1390,7 @@ impl WorkbookSession {
                     continue;
                 }
                 Ok(made) if moves_among_several(&made) => json!("moveAmongSeveralEdits"),
-                Ok(made) => match self.apply_unit(made, is_held, follow_up) {
+                Ok(made) => match self.apply_unit(made, limits, follow_up) {
                     Ok(unit) => {
                         went_along.push(WentAlong::Made(place::Told::of(&unit.place, &self.workbook)));
                         roles.push(history::Role::Along(made_units.len()));
@@ -1416,6 +1422,7 @@ impl WorkbookSession {
             step.parts.push(history::Part { op_id: id.clone(), ops: ops.clone(), reverse: Some(reverse.clone()) });
             self.queue.push(Queued {
                 op_id: id,
+                group_id: several.then(|| op_id.clone()),
                 // Parts of one edit too large to send whole are one action; the edits of a step are not.
                 action_id: is_split.then(|| op_id.clone()),
                 recorded: Recorded { v: version::of_ops(&ops), base: self.confirmed_revision, ops },
@@ -1528,7 +1535,7 @@ impl WorkbookSession {
 
     /// Applies an edit made, and what it adds once made as a part of its own, to the workbook shown. Refused, the
     /// workbook is left as it was.
-    fn apply_unit(&mut self, made: edits::Made, is_held_to_most_cells: bool, follow_up: Option<edits::FollowUp>)
+    fn apply_unit(&mut self, made: edits::Made, limits: edits::EditLimits, follow_up: Option<edits::FollowUp>)
         -> Result<Unit, Json> {
         if !new_ids::are_well_formed(&made.ops) {
             return Err(json!("idNotWellFormed"));
@@ -1544,14 +1551,19 @@ impl WorkbookSession {
         // An edit that leaves the workbook holding more cells than it did, and more than the most it may hold, is
         // refused. The cells of deleted sheets, rows and columns count (they are kept to be undeleted); cleared ones
         // do not.
-        if is_held_to_most_cells {
+        if limits.check_cell_count {
             let held = cells_kept(&self.workbook);
             if held > MOST_CELLS && held > cells_kept(&before) {
                 self.workbook = before;
                 return Err(json!("tooManyCells"));
             }
         }
-        let mut parts = match parts_to_send(&before, &made.ops, reverse) {
+        let split = if limits.send_whole {
+            Ok(vec![(made.ops.clone(), reverse, false)])
+        } else {
+            parts_to_send(&before, &made.ops, reverse)
+        };
+        let mut parts = match split {
             Ok(parts) => parts,
             Err(refusal) => {
                 self.workbook = before;
@@ -1818,7 +1830,7 @@ impl WorkbookSession {
         self.report.touched |= touched;
         self.forget_told(retold);
         self.cells_changed(changed);
-        let (reshaped, touched) = shape_change(&self.confirmed, &ops);
+        let (reshaped, touched) = shape_change(&before, &self.confirmed, &ops);
         self.report.reshaped |= reshaped;
         self.report.touched |= !touched.is_empty();
         self.anything_changed(!touched.is_empty());
@@ -1952,6 +1964,24 @@ impl WorkbookSession {
 
     /// Notes what operations applied to the workbook shown leave to work out.
     fn applied(&mut self, before: &Workbook, ops: &[Op]) {
+        // A pending formula can already be visible in the formula bar before its
+        // first value exists. Moving its references must redraw that text too.
+        if self.answer_before_calculating && reshapes(ops) {
+            for (index, sheet) in before.sheets.iter().enumerate() {
+                let Some(next) = self.workbook.sheet_index(&sheet.id) else { continue };
+                let after = &self.workbook.sheets[next];
+                for (&(r, c), cell) in &sheet.cells {
+                    let crate::workbook::Input::Formula { formula } = &cell.input else { continue };
+                    if !after.rows.contains(r) || !after.columns.contains(c) || before.outcome(&sheet.id, r, c).is_some() {
+                        continue;
+                    }
+                    if after.cells.get(&(r, c)).is_some_and(|now| now.input == cell.input)
+                        && before.formula_text(index, formula) != self.workbook.formula_text(next, formula) {
+                        self.report.changes.cell(&sheet.id, &before.bases.text(r), &before.bases.text(c));
+                    }
+                }
+            }
+        }
         // An array worked out whose formula is taken out: the cells the page was told it fills are told with the edit,
         // emptied before the formulas are worked out (when the page was told of any cell an array fills).
         let told_filled = self.told.values().any(|told| told.4);
@@ -1987,7 +2017,7 @@ impl WorkbookSession {
                 self.forget_told(cells.map(|cell| (sheet_id.clone(), cell.r.clone(), cell.c.clone())).collect());
             }
         }
-        let (reshaped, touched) = shape_change(&self.workbook, ops);
+        let (reshaped, touched) = shape_change(before, &self.workbook, ops);
         self.report.reshaped |= reshaped;
         // Formulas reading past rows or columns inserted after every cell wait, until they are worked out or set to
         // something else (and those reading them, as they read a formula waiting).
@@ -2135,6 +2165,13 @@ impl WorkbookSession {
         let values = formula_values(&self.workbook);
         let mut changed = Vec::new();
         for (key, value) in &values {
+            // A structural change can give an existing circular reference a different
+            // route through the same cycle without changing what the cell displays.
+            if self.report.reshaped {
+                if let Some(old) = self.told.get_mut(key) {
+                    old.2.clone_from(&value.2);
+                }
+            }
             if self.told.get(key) != Some(value) {
                 changed.push(key.clone());
             }
@@ -2213,7 +2250,8 @@ impl WorkbookSession {
     /// text, even those whose reference has lost its cells.
     fn tell_formulas_reading(&mut self) {
         let renamed = std::mem::take(&mut self.report.changes.renamed);
-        if renamed.is_empty() {
+        let deferred_lines = self.is_calculation_due && self.report.changes.lines_changed();
+        if renamed.is_empty() && !deferred_lines {
             return;
         }
         let workbook = &self.workbook;
@@ -2222,13 +2260,18 @@ impl WorkbookSession {
             for (&(r, c), cell) in &sheet.cells {
                 let crate::workbook::Input::Formula { formula } = &cell.input else { continue };
                 let reads = |id: &String| *id != sheet.id && formula.references.iter().any(|f| f.sheet_id() == id);
-                if !renamed.iter().any(reads) || !sheet.rows.contains(r) || !sheet.columns.contains(c) {
+                if !sheet.rows.contains(r) || !sheet.columns.contains(c) {
                     continue;
                 }
                 let key = (sheet.id.clone(), workbook.bases.text(r), workbook.bases.text(c));
+                let text = workbook.formula_text(i, formula);
+                let text_changed = deferred_lines && self.told.get(&key).and_then(|v| v.6.as_ref()).is_some_and(|old| old != &text);
+                if !text_changed && !renamed.iter().any(reads) {
+                    continue;
+                }
                 // Told with their text as it reads now: not told again for it.
                 if let Some(told) = self.told.get_mut(&key) {
-                    told.6 = Some(workbook.formula_text(i, formula));
+                    told.6 = Some(text);
                 }
                 cells.push(key);
             }

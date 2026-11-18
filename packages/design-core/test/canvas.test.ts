@@ -43,6 +43,20 @@ describe('canvas', () => {
     assert.deepEqual(canvas.extra, { keep: true });
   });
 
+  it('round trips endpoints after moving a line and preserves link and guide metadata', () => {
+    const canvas = normalizeCanvas({
+      boards: { 'Main.dc.html': { guides: [{ kind: 'grid', hidden: true, extra: 3 }] } },
+      notes: { line: { x: 50, y: 80, x2: 10, y2: -10, headStart: 'open', kind: 'arrow' }, card: { x: 3, y: 4, kind: 'link', title: 'Deck', href: 'deck', linkKind: 'slides' } },
+    });
+    assert.deepEqual(canvas.notes.line!.points, [[0, 0], [-40, -90]]);
+    canvas.notes.line!.x += 5;
+    const saved = JSON.parse(serializeCanvas(canvas));
+    assert.deepEqual(saved.notes.line, { x: 55, y: 80, x2: 15, y2: -10, headStart: 'open', kind: 'arrow' });
+    assert.equal(saved.notes.card.title, 'Deck');
+    assert.deepEqual(saved.boards['Main.dc.html'].guides, [{ kind: 'grid', hidden: true, extra: 3 }]);
+    assert.deepEqual(normalizeCanvas(saved), canvas);
+  });
+
   it('places and lays out boards with the standard gaps', () => {
     const canvas = normalizeCanvas({ boards: { 'A.dc.html': { x: 0, y: 0, w: 400, h: 300 } } });
     assert.deepEqual(placeNewBoard(canvas, null, { w: 400, h: 300 }), { x: 480, y: 0 });
@@ -119,6 +133,27 @@ describe('project check', () => {
     return new Map<string, string>([['canvas.json', JSON.stringify(index)], ['Main.dc.html', MAIN], ...extra]);
   };
   const of = (diagnostics: { level: string; file: string; message: string }[], level: string) => diagnostics.filter((d) => d.level === level);
+
+  it('reports clearance once per title and respects both text size and canvas page', () => {
+    const files = project();
+    const index = JSON.parse(files.get('canvas.json')!);
+    index.pages = [{ id: 'one', name: 'One' }, { id: 'two', name: 'Two' }];
+    index.notes = { t: { kind: 'title1', x: 0, y: -140, maxW: 1000, text: 'Title' } };
+    const titles = () => {
+      files.set('canvas.json', JSON.stringify(index));
+      return checkDesignProject(files).filter(f => f.message.startsWith('Title "t"'));
+    };
+    assert.equal(titles().length, 1);
+    assert.match(titles()[0]!.message, /223/);
+    index.notes.t.y = -223;
+    assert.deepEqual(titles(), []);
+    index.notes.t.y = 10;
+    assert.match(titles()[0]!.message, /sits over/);
+    index.notes.t.page = 'two';
+    assert.deepEqual(titles(), []);
+    Object.assign(index.notes.t, { page: 'one', size: 24 });
+    assert.deepEqual(titles(), []);
+  });
 
   it('passes a clean project', () => {
     assert.deepEqual(of(checkDesignProject(project()), 'error'), []);

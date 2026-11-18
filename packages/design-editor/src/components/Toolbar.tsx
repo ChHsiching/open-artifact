@@ -16,7 +16,6 @@ import {
   CloudOff,
   Ellipsis,
   Hand,
-  Link,
   Loader2,
   Lock,
   Play,
@@ -32,23 +31,21 @@ import { PEN_WEIGHTS, useView, type PenStyle, type Tool } from '../state/view.ts
 import { useAgent } from '../services/agent.ts';
 import { session } from '../services/session.ts';
 import { addPage, deletePage, redo, renamePage, undo } from '../services/commands.ts';
-import { copyPageLink } from '../services/page-link.ts';
 import { ZOOM_PRESETS, zoomStep, zoomTo, zoomToBoards, zoomToFit } from '../services/viewport.ts';
 import { MAX_ZOOM, MIN_ZOOM } from '../state/view.ts';
 import { Card, ChromeButton, ChromeDivider, ChromeMenu, ChromeMenuItem, ChromeMenuLabel, ChromeMenuSeparator, MOD, Tip, useShellDraw } from '@open-artifact/editor-kit/react';
-import { CommentToolButton } from './Collab.tsx';
 import { ArrowIcon, CursorIcon, FrameIcon, LineIcon, NoteIcon, OvalIcon, PencilIcon, RectIcon, TextIcon } from './tool-icons.tsx';
 
 /* ================================ top left ================================ */
 
 /** Top-left card: the page switcher, with the title when no Shell shows it. */
-export function StartCard() {
+export function StartCard({ compact = false }: { compact?: boolean }) {
   const framed = Boolean(session().shell);
   const readOnly = useDocument((s) => s.readOnly);
   const title = useDocument((s) => s.title);
   return (
     <Card className="h-9 px-1 py-px">
-      {framed ? null : (
+      {framed || compact ? null : (
         <>
           {readOnly ? (
             <span className="max-w-56 truncate px-[9px] text-[14px] font-control">{title || 'Untitled design'}</span>
@@ -69,12 +66,15 @@ export function StartCard() {
         </>
       )}
       <PagePill />
+      {compact && <><ChromeDivider /><FootToolbar compact /></>}
     </Card>
   );
 }
 
 /** "Page 1 ⌄": opens the page list. */
 function PagePill() {
+  const shellActions = useShellDraw(session().shell, 'actions');
+  const title = useDocument(s => s.title);
   const pages = useDocument((s) => s.canvas.pages);
   const readOnly = useDocument((s) => s.readOnly);
   const page = useView((s) => s.page);
@@ -113,6 +113,11 @@ function PagePill() {
         <Popover.Portal>
           <Popover.Positioner side="bottom" align="start" sideOffset={6} className="z-[1000]">
             <Popover.Popup className="min-w-60 max-w-[28rem] rounded-[12px] bg-chrome p-1 text-[14px] font-control leading-5 text-chrome-fg shadow-chrome-popup outline-none transition-[opacity,transform] duration-100 data-[ending-style]:opacity-0 data-[starting-style]:scale-95 data-[starting-style]:opacity-0">
+              {!shellActions && <CommitInput aria-label="Design title" value={title} disabled={readOnly} className="mb-1 w-full px-2 py-1 text-[13px] font-medium" onCommit={value => {
+                const clean = value.trim().slice(0, 200);
+                useDocument.getState().setTitle(clean);
+                useDocument.getState().updateCanvas(c => ({ ...c, title: clean || undefined }));
+              }} />}
               {list.map((p) => (
                 <div key={p.id || 'implicit'} className="group flex items-center gap-0.5">
                   <button
@@ -150,14 +155,6 @@ function PagePill() {
                         Rename
                       </ChromeMenuItem>
                       <ChromeMenuItem
-                        onSelect={() => {
-                          setOpen(false);
-                          void copyPageLink(p.id);
-                        }}
-                      >
-                        Copy link
-                      </ChromeMenuItem>
-                      <ChromeMenuItem
                         danger
                         disabled={pages.length <= 1}
                         title={pages.length <= 1 ? 'A canvas needs at least one page.' : undefined}
@@ -173,17 +170,6 @@ function PagePill() {
                 </div>
               ))}
               <div className="mx-2 my-1 h-px bg-chrome-line" />
-              <button
-                type="button"
-                className="flex h-7 w-full items-center gap-2 rounded-[8px] px-2.5 text-left outline-none hover:bg-chrome-hover focus-visible:bg-chrome-hover"
-                onClick={() => {
-                  void copyPageLink(current.id || null);
-                  setOpen(false);
-                }}
-              >
-                <Link className="size-4 text-chrome-muted" />
-                Copy page link
-              </button>
               {readOnly ? null : (
                 <>
                   <button
@@ -439,9 +425,7 @@ interface ToolSpec {
 
 const ICON = { className: 'size-5', strokeWidth: 1.5 } as const;
 
-
-// last shape, Comment, then Ask. The Pen (⇧P) and Image (⇧I) tools have no
-// button there; they stay on their shortcuts (images also drop and paste in).
+// The pen and image tools are also available from the keyboard.
 const SELECT: ToolSpec = { tool: 'select', label: 'Select', key: 'V', icon: <CursorIcon /> };
 const HAND: ToolSpec = { tool: 'hand', label: 'Hand, or hold Space', key: 'H', icon: <Hand {...ICON} /> };
 const CREATE: ToolSpec[] = [
@@ -587,6 +571,7 @@ function AskButton() {
   const status = useAgent((s) => s.status);
   const composer = useView((s) => s.composer);
   const setComposer = useView((s) => s.setComposer);
+  const compact = useView(s => s.toolbarTop);
   const name = status.available ? status.name : 'agent';
   return (
     <Tip
@@ -597,22 +582,23 @@ function AskButton() {
       <ChromeButton
         size="lg"
         pressed={composer}
-        className={cn('ml-1 min-w-[100px] gap-1.5 bg-chrome-hover px-3 hover:bg-chrome-line', !status.available && !composer && 'text-chrome-muted')}
+        className={cn(compact ? 'px-1.5' : 'ml-1 min-w-[100px] gap-1.5 bg-chrome-hover px-3 hover:bg-chrome-line', !status.available && !composer && 'text-chrome-muted')}
         onClick={() => setComposer(!composer)}
       >
         {status.busy ? <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-warning" /> : null}
-        Ask {name}
+        <span className={compact && !status.available ? 'sr-only' : undefined}>Ask {name}</span>
+        {compact && !status.available ? <Ellipsis className="size-4" /> : null}
       </ChromeButton>
     </Tip>
   );
 }
 
 /** The foot toolbar. */
-export function FootToolbar() {
+export function FootToolbar({ compact = false }: { compact?: boolean }) {
   const readOnly = useDocument((s) => s.readOnly);
   const tool = useView((s) => s.tool);
   return (
-    <div role="toolbar" aria-label="Canvas tools" className="pointer-events-auto flex items-center gap-1 rounded-[12px] bg-chrome p-1 text-chrome-fg shadow-chrome">
+    <div role="toolbar" aria-label="Canvas tools" className={cn("pointer-events-auto flex items-center text-chrome-fg", compact ? "dc-compact-tools gap-0.5" : "gap-1 rounded-[12px] bg-chrome p-1 shadow-chrome")}>
       <ToolButton spec={SELECT} />
       <ToolButton spec={HAND} />
       {readOnly ? null : (
@@ -626,7 +612,6 @@ export function FootToolbar() {
           <ShapesButton />
         </>
       )}
-      <CommentToolButton />
       {readOnly ? null : <AskButton />}
     </div>
   );

@@ -14,7 +14,7 @@ export function useAgentName(): string {
 
 /** The artifact's title: the library's (it follows renames), else the boot's. */
 export function useTitle(): string {
-  return useShell((state) => state.artifact?.title || state.boot?.title || '');
+  return useShell((state) => (state.boot?.type === 'docs' && state.report.title) || state.artifact?.title || state.boot?.title || '');
 }
 
 /** The owner session, as the library reports it. */

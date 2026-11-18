@@ -12,6 +12,7 @@ import { useDocument, type SaveState } from '../state/document.ts';
 import { useView } from '../state/view.ts';
 import { useAgent } from './agent.ts';
 import { exportBusy, pageArtboards, pageOfBoard, pngOptions, runJob } from './export.ts';
+import { useComments, canComment } from './comments.ts';
 import { session } from './session.ts';
 import { collabChromeReport, handleCollabCommand, subscribeCollab } from './collab.ts';
 
@@ -23,8 +24,12 @@ function exportScene(): ExportScene {
   const entry = path ? boards[path] : undefined;
   const page = path ? pageOfBoard(path) : view.page;
   const sizes = entry ? pngOptions(entry.w, entry.h) : null;
+  const width = view.mode === 'focused' ? view.focusedExportWidth : null;
+  const preview = entry && width ? pngOptions(width, entry.h) : null;
   return {
-    artboard: path && sizes ? { path, png: [sizes[0]!.fits, sizes[1]!.fits] } : null,
+    artboard: path && sizes ? { path, png: [sizes[0]!.fits, sizes[1]!.fits],
+      ...(preview && width ? { preview: { width, fits: [preview[0]!.fits, preview[1]!.fits] } } : {}),
+    } : null,
     page,
     pageArtboards: pageArtboards(page).length,
     canvasArtboards: Object.keys(boards).length,
@@ -50,6 +55,7 @@ function savedOf(save: SaveState): NonNullable<ChromeReport['saved']> {
 
 /** Runs one `export_format` from the Shell and tells it what became of it. */
 async function runFormat(shell: ShellConnection, request: string, format: string, variant: string | undefined): Promise<void> {
+  if (session().viewer.role !== 'owner') return shell.exportState(request, 'unsupported');
   if (exportBusy()) return shell.exportState(request, 'busy');
   const job = exportJob(exportScene(), format, variant);
   if (!job) return shell.exportState(request, 'unsupported');
@@ -65,22 +71,27 @@ export function startShellBridge(): void {
   if (!shell) return;
   const report = chromeReporter(shell, () => {
     const doc = useDocument.getState();
+    const { mode, selection } = useView.getState();
+    const hasSelection = selection.kind === 'elements' || (selection.kind === 'objects' && (selection.notes.length || selection.boards.length));
     return {
+      actions: mode === 'canvas' && hasSelection && useComments.getState().available && canComment() ? [{ id: 'comment_selection' }] : [],
       agent: agentChrome(useAgent.getState().status),
       exports: false,
-      formats: exportFormats(exportScene()),
+      formats: session().viewer.role === 'owner' ? exportFormats(exportScene()) : [],
       hasContent: doc.status === 'ready' && Object.keys(doc.canvas.boards).length > 0,
       ...(doc.status === 'ready' ? { saved: savedOf(doc.save) } : {}),
       ...collabChromeReport(),
     };
   });
   report();
+  shell.currentDesignPage(useView.getState().page);
   useAgent.subscribe(report);
   useDocument.subscribe(report);
   subscribeCollab(report);
   // Not on every camera move: only what changes which artboards the tab exports.
   useView.subscribe((state, previous) => {
-    if (state.selection !== previous.selection || state.page !== previous.page || state.mode !== previous.mode || state.focused !== previous.focused) report();
+    if (state.page !== previous.page) shell.currentDesignPage(state.page);
+    if (state.selection !== previous.selection || state.page !== previous.page || state.mode !== previous.mode || state.focused !== previous.focused || state.focusedExportWidth !== previous.focusedExportWidth) report();
   });
   // The sync service merges remote changes live.
   shell.onFilesChanged(() => true);

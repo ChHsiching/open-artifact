@@ -13,7 +13,8 @@ export interface LoadPage {
 export type LoadPageOutcome = LoadPage | 'pageOutOfDate' | 'calledOff' | { busyForMs: number } | null;
 
 const OPS_PER_PAGE = 8;
-const PAGES_BEFORE_YIELDING = 64;
+/** As the reference page: the page runs between pages every 64 operations (each eighth page). */
+const OPS_BEFORE_YIELDING = 64;
 
 /**
  * Loads the workbook's operations in one call and hands them to the engine a few at a time, letting the page run
@@ -43,7 +44,7 @@ export function createPagedLoader({
       const loadAtStart = loadCount;
       if (start > 0) {
         if (loaded === null) throw Error('a later page of a load with no operations');
-        if ((start / OPS_PER_PAGE) % PAGES_BEFORE_YIELDING === 0) await letOthersRun();
+        if (start % OPS_BEFORE_YIELDING === 0) await letOthersRun();
         return loadCount === loadAtStart && loaded !== null ? pageOf(start, loaded) : 'calledOff';
       }
       loaded = null;

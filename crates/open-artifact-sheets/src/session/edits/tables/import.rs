@@ -344,17 +344,13 @@ pub fn look_ops(workbook: &Workbook, look: LookToGive) -> Vec<Op> {
     let reached = sheet.cells.keys().filter_map(|&(_, c)| sheet.columns.position(c)).max().map_or(0, |c| c + 1);
     let columns: Vec<LineId> = (0..least.len().min(reached)).filter_map(|i| sheet.columns.line(i)).collect();
     let needed = fit::widths_needed_with_texts_held_to(workbook, sheet, &columns, widest);
-    let widths: Vec<Json> = columns
-        .iter()
-        .enumerate()
-        .map(|(i, column)| {
-            let width = least[i].max(needed.get(column).copied().unwrap_or(0));
-            json!({"columns": {"base": column_base, "first": i, "count": 1}, "widthInPixels": width})
-        })
-        .collect();
+    let sizes = columns.into_iter().enumerate().map(|(i, column)| {
+        let width = least[i].max(needed.get(&column).copied().unwrap_or(0));
+        (column, width.clamp(super::super::lines::NARROWEST_COLUMN, super::super::lines::WIDEST_COLUMN))
+    });
+    let widths = super::super::lines::column_width_runs(workbook, sizes);
     if !widths.is_empty() {
-        ops.push(serde_json::from_value(json!({"kind": "setColumnWidths", "sheetId": sheet_id, "widths": widths}))
-            .expect("widths read"));
+        ops.push(Op::SetColumnWidths { sheet_id, widths });
     }
     ops
 }

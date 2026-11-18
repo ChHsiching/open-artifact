@@ -359,6 +359,19 @@ export const csvFileMessages = {
       defaultMessage: 'Save it as a CSV file, then import it.',
       id: 'A5U52TLQvW',
     }),
+  excelNotDropped: () =>
+    translateMessage({
+      defaultMessage: 'Excel files can’t be dropped here.',
+      id: 'rIXwegh7dm',
+    }),
+  useButtonInstead: (button: string) =>
+    translateMessage(
+      {
+        defaultMessage: 'Use “{button}” instead.',
+        id: '4Q65pTJgJo',
+      },
+      { button },
+    ),
   isEmpty: () =>
     translateMessage({
       defaultMessage: 'That file is empty.',

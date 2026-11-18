@@ -3,38 +3,47 @@ import type { CommentMessage, CommentThread } from '@open-artifact/runtime';
 import { ChromeButton, ChromeMenu, ChromeMenuItem, ChromeMenuSeparator, Tip } from '@open-artifact/editor-kit/react';
 import { ConfirmDialog, cn } from '@open-artifact/ui';
 import { Check, Ellipsis, RotateCcw } from 'lucide-react';
-import { type ReactNode, useLayoutEffect, useRef, useState } from 'react';
+import { type ReactNode, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { copyLink, editMessage, remove, removePlace, resolve } from './actions.ts';
 import { Composer, Initial, useMentionCandidates } from './Composer.tsx';
+import { hasMarkdown, inlineOnly, parseCommentMarkdown } from './markdown.ts';
+import { MarkdownBlocks, MarkdownInline, MentionChip } from './markdown-view.tsx';
 import { splitMentions } from './mentions.ts';
 import { ReactionButton, ReactionPills } from './Reactions.tsx';
 import { canComment, canRemoveAny, myName, setCommentUi, useCommentUi } from './store.ts';
 import { canDeleteMessage, canDeleteThread, canEditMessage } from './threads.ts';
 import { commentDate, commentTime } from './time.ts';
 
-/** The text of a message, its @mentions marked; past a few lines it folds behind "Show more". */
+/**
+ * The text of a message: its Markdown drawn (marks, links, lists, quotes, code) and its @mentions marked; past a few
+ * lines it folds behind "Show more". A comment too big or too deep for Markdown shows as plain text.
+ */
 export function MessageText({ text, lines = 6 }: { text: string; lines?: number }): ReactNode {
   const candidates = useMentionCandidates();
   const box = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [long, setLong] = useState(false);
+  const names = candidates.map(candidate => candidate.name);
+  const namesKey = names.join('\n');
+  const blocks = useMemo(() => (hasMarkdown(text) ? parseCommentMarkdown(text, namesKey ? namesKey.split('\n') : []) : null), [text, namesKey]);
+  const inline = blocks ? inlineOnly(blocks) : null;
+  // Blocks (lists, quotes, code) fold by height; one run of text by lines, with its ellipsis.
+  const byHeight = blocks !== null && inline === null;
   useLayoutEffect(() => {
     const element = box.current;
     if (!element || open) return;
     setLong(element.scrollHeight > element.clientHeight + 1);
-  }, [text, lines, open]);
-  const pieces = splitMentions(text, candidates.map(candidate => candidate.name));
+  }, [text, lines, open, blocks]);
+  const folded = open ? undefined : byHeight ? { maxHeight: lines * 20, overflow: 'hidden' } : { display: '-webkit-box', WebkitBoxOrient: 'vertical' as const, WebkitLineClamp: lines, overflow: 'hidden' };
   return (
     <div>
-      <div ref={box} className="whitespace-pre-wrap break-words text-[13px] leading-5 text-chrome-fg" style={open ? undefined : { display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: lines, overflow: 'hidden' }}>
-        {pieces.map((piece, index) =>
-          piece.mention ? (
-            <span key={index} className="font-medium text-chrome-accent">
-              {piece.text}
-            </span>
-          ) : (
-            piece.text
-          ),
+      <div ref={box} className="whitespace-pre-wrap break-words text-[13px] leading-5 text-chrome-fg" data-comment-markdown={blocks ? '' : undefined} style={folded}>
+        {blocks === null ? (
+          splitMentions(text, names).map((piece, index) => (piece.mention ? <MentionChip key={index} text={piece.text} /> : piece.text))
+        ) : inline ? (
+          <MarkdownInline nodes={inline} />
+        ) : (
+          <MarkdownBlocks blocks={blocks} />
         )}
       </div>
       {long || open ? (
@@ -52,6 +61,8 @@ export function MessageText({ text, lines = 6 }: { text: string; lines?: number 
     </div>
   );
 }
+
+export const JOINED_NOTE = 'joined without being asked';
 
 export interface MessageProps {
   thread: CommentThread;
@@ -89,6 +100,11 @@ export function Message({ thread, message, root, open, removablePlace }: Message
         <Initial name={message.author.name} agent={agent} size="md" />
         <div className="flex min-w-0 flex-1 items-baseline gap-1.5">
           <span className="truncate text-[13px] font-medium text-chrome-fg">{name}</span>
+          {agent && message.joined ? (
+            <Tip label="No one @mentioned it: it answered a reply in a thread it was part of" side="top">
+              <span className="shrink-0 text-[12px] text-chrome-muted">{JOINED_NOTE}</span>
+            </Tip>
+          ) : null}
           <Tip label={commentDate(message.editedAt ?? message.at)} side="top">
             <span className="shrink-0 text-[12px] text-chrome-muted">
               {commentTime(message.at)}
