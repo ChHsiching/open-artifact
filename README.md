@@ -148,7 +148,7 @@ JavaScript with type declarations), `@open-artifact/cli` (the `open-artifact` co
 `dsh-open-artifact`. To release, raise the versions you want out and push a tag (`v0.2.0`); the
 [Publish to npm](.github/workflows/publish-npm.yml) workflow builds and publishes every version npm does not have yet,
 by trusted publishing. A package npm doesn't have yet is claimed once from a computer before its first release:
-`node scripts/publish-npm.mjs --claim` publishes a placeholder and sets the workflow as its trusted publisher.
+`node scripts/publish-npm.mjs --claim` sets the workflow as its trusted publisher, and npm creates it with a placeholder.
 `node scripts/publish-npm.mjs` publishes from a computer too (`--dry-run` to look first).
 
 ## Repository layout
