@@ -11,7 +11,7 @@ The person started this message with `/open-artifact`. The first word after it i
 1. Take the type id from the first word. If there is none, or it is not one of the installed types listed below, ask
    which type they want (list the installed ones) and stop until they answer. Words like "deck" or "presentation"
    mean `slides`; "canvas", "UI" or "mockup" mean `design`; "board" means `whiteboard`; "dashboard", "report",
-   "metrics" or "chart" mean `data`.
+   "metrics" or "chart" mean `data`; "brand", "tokens" or "design system" mean `design-system`.
 2. If the request needs details only the person has (the topic, the content, the brand) and the message gives none,
    ask in one short question. Otherwise go ahead.
 3. Create it: `Artifact {action: "publish", type_url: "open-artifact://type/<type id>", title: "<a short title>", open: "after_first_write"}`.

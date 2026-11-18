@@ -32,6 +32,18 @@ import {
   type ToolDefinition,
 } from '@open-artifact/protocol';
 import { files, readJson } from './paths.ts';
+import pkg from '../package.json' with { type: 'json' };
+
+/** This client's daemon version, the one {@link ensureDaemon} starts. */
+const VERSION: string = (pkg as { version?: string }).version ?? '0.0.0';
+
+/** Whether version `a` is older than `b` (`x.y.z`, ignoring any pre-release part). */
+export function isOlderVersion(a: string, b: string): boolean {
+  const parts = (v: string) => v.split('-')[0]!.split('.').map((n) => Number.parseInt(n, 10) || 0);
+  const [x, y] = [parts(a), parts(b)];
+  for (let i = 0; i < 3; i++) if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) < (y[i] ?? 0);
+  return false;
+}
 
 /**
  * The `open-artifact` entry the client starts when no daemon runs: `$OPEN_ARTIFACT_DAEMON_BIN`,
@@ -75,11 +87,26 @@ export interface EnsureDaemonOptions {
   bin?: string;
 }
 
-/** The running daemon, started in the background when there is none. */
+/** Stops a running daemon and waits until it has gone, so a new one can take its port. */
+async function replaceDaemon(state: DaemonState, timeoutMs: number): Promise<void> {
+  try {
+    process.kill(state.pid, 'SIGTERM');
+  } catch {
+    return;
+  }
+  const deadline = Date.now() + timeoutMs;
+  while (alive(state.pid) && Date.now() < deadline) await new Promise((done) => setTimeout(done, 100));
+}
+
+/**
+ * The running daemon, started in the background when there is none. A daemon older than this client is replaced, so
+ * an upgraded harness gets its own types and tools; the harnesses connected to the old one reconnect.
+ */
 export async function ensureDaemon(options: EnsureDaemonOptions = {}): Promise<DaemonState> {
-  const running = await readDaemon();
-  if (running) return running;
   const { timeoutMs = 15_000, env = process.env, bin = defaultDaemonBin() } = options;
+  const running = await readDaemon();
+  if (running && !isOlderVersion(running.version ?? '0.0.0', VERSION)) return running;
+  if (running) await replaceDaemon(running, 5_000);
   mkdirSync(files.logs(), { recursive: true });
   const logFile = join(files.logs(), 'daemon.out');
   const fd = openSync(logFile, 'a');

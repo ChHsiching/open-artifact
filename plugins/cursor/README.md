@@ -1,6 +1,6 @@
 # Open Artifact for Cursor
 
-Slide decks, design canvases, whiteboards and data dashboards as folders of files that open in one local page where you view, edit
+Slide decks, design canvases, whiteboards, data dashboards and design systems as folders of files that open in one local page where you view, edit
 and comment. Type `/open-artifact slides …`, `design …`, `whiteboard …` or `data …` in the agent chat.
 
 ## Install

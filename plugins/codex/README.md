@@ -1,6 +1,6 @@
 # Open Artifact for Codex and ChatGPT desktop
 
-Slide decks, design canvases, whiteboards and data dashboards as folders of files that open in one local page where you view, edit
+Slide decks, design canvases, whiteboards, data dashboards and design systems as folders of files that open in one local page where you view, edit
 and comment. Ask for `/open-artifact slides …`, `design …`, `whiteboard …` or `data …` (the skill is `open-artifact:open-artifact`).
 
 ## Install

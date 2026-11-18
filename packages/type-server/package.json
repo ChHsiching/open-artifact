@@ -1,6 +1,6 @@
 {
   "name": "@open-artifact/type-server",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
   "type": "module",
   "description": "Local type server and command line of the Design, Design System, Slides, Whiteboard and Data artifact types.",
@@ -11,14 +11,14 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@open-artifact/protocol": "0.2.1",
-    "@open-artifact/server-sdk": "0.2.1",
-    "@open-artifact/runtime": "0.2.1",
-    "@open-artifact/design-core": "0.2.1",
-    "@open-artifact/design-system-core": "0.2.1",
-    "@open-artifact/slides-core": "0.2.1",
-    "@open-artifact/whiteboard-core": "0.2.1",
-    "@open-artifact/data-core": "0.2.1"
+    "@open-artifact/protocol": "0.2.2",
+    "@open-artifact/server-sdk": "0.2.2",
+    "@open-artifact/runtime": "0.2.2",
+    "@open-artifact/design-core": "0.2.2",
+    "@open-artifact/design-system-core": "0.2.2",
+    "@open-artifact/slides-core": "0.2.2",
+    "@open-artifact/whiteboard-core": "0.2.2",
+    "@open-artifact/data-core": "0.2.2"
   },
   "license": "Apache-2.0"
 }

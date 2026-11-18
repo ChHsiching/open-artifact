@@ -57,3 +57,13 @@ test('only the first 64 KB of index.html are read', () => {
   assert.equal(hasInlineDeclaration(typeFolder('early', ORIGINAL)), true);
   assert.equal(hasInlineDeclaration(join(late, 'missing')), false);
 });
+
+test('a daemon older than the client is the one to replace', async () => {
+  const { isOlderVersion } = await import('../src/client.ts');
+  assert.ok(isOlderVersion('0.1.0', '0.2.1'));
+  assert.ok(isOlderVersion('0.2.0', '0.2.1'));
+  assert.ok(isOlderVersion('0.9.9', '1.0.0'));
+  assert.ok(!isOlderVersion('0.2.1', '0.2.1'));
+  assert.ok(!isOlderVersion('0.3.0', '0.2.1'));
+  assert.ok(!isOlderVersion('0.2.1-beta', '0.2.1'));
+});
