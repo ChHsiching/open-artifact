@@ -147,14 +147,15 @@ node scripts/build-wasm.mjs   # needs cargo + wasm32-unknown-unknown, wasm-bindg
 JavaScript with type declarations), `@open-artifact/cli` (the `open-artifact` command with the daemon vendored) and
 `dsh-open-artifact`. To release, raise the versions you want out and push a tag (`v0.2.0`); the
 [Publish to npm](.github/workflows/publish-npm.yml) workflow builds and publishes every version npm does not have yet,
-by trusted publishing. `node scripts/publish-npm.mjs` does the same from a computer (`--dry-run` to look first), and
-`--trust` sets the workflow as a new package's trusted publisher after its first publish.
+by trusted publishing. A package npm doesn't have yet is claimed once from a computer before its first release:
+`node scripts/publish-npm.mjs --claim` publishes a placeholder and sets the workflow as its trusted publisher.
+`node scripts/publish-npm.mjs` publishes from a computer too (`--dry-run` to look first).
 
 ## Repository layout
 
 | Path | Contents |
 |---|---|
-| `artifact-types/` | The four types as skills: `SKILL.md`, `reference/`, `artifact-type.json`. |
+| `artifact-types/` | The five types as skills: `SKILL.md`, `reference/`, `artifact-type.json`. |
 | `skills/open-artifact/` | The one `/open-artifact <type>` skill; `vendor/` (built) carries the daemon. |
 | `plugins/` | The skill packaged per agent app, with hooks and MCP config ([README](plugins/README.md)). |
 | **Platform** | |
@@ -168,9 +169,11 @@ by trusted publishing. `node scripts/publish-npm.mjs` does the same from a compu
 | `packages/design-core`, `design-editor`, `dc` | Design model (`canvas.json`), editor, and the `.dc.html` artboard format. |
 | `packages/design-system-core`, `design-system-editor` | Design System model (token grammar, CSS compiler) and editor. |
 | `packages/whiteboard-core`, `whiteboard-editor` | Whiteboard model (schema, live sync, geometry) and editor. |
+| `packages/data-core`, `data-editor` | Data model (datasets, queries, rules, the dashboard page) and editor. |
 | **Shared** | |
+| `packages/live-store` | Live document sync shared by Whiteboard and Data. |
 | `packages/ui`, `editor-kit`, `export-kit` | UI kit (Base UI + Tailwind), what editors share (comments, history, presence…), browser-side exports. |
-| `packages/canvas-engine`, `wasm-*`, `crates/` | WebGL2 canvas engine and the Rust/WebAssembly crates behind it, exports and whiteboard geometry. |
+| `packages/canvas-engine`, `wasm-*`, `crates/` | WebGL2 canvas engine and the Rust/WebAssembly crates behind it, exports, whiteboard geometry and data rules. |
 | `e2e/` | End-to-end tests. |
 | `scripts/` | `build.mjs`, `build-plugins.mjs`, `build-skill.mjs`, `build-wasm.mjs`. |
 
