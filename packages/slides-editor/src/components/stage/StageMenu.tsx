@@ -11,7 +11,7 @@ import {
   Crop,
   Group,
   ImageUp,
-  MessageSquarePlus,
+  MessageCircle,
   Paintbrush,
   Scissors,
   SendToBack,
@@ -74,7 +74,7 @@ export function StageMenuItems(): ReactNode {
           Select all
         </MenuItem>
         {canComment() ? (
-          <MenuItem icon={<MessageSquarePlus className="size-4" />} onSelect={() => useComments.getState().setDraft(elementAnchor(slide, null))}>
+          <MenuItem icon={<MessageCircle className="size-4" />} onSelect={() => useComments.getState().setDraft(elementAnchor(slide, null))}>
             Comment on slide
           </MenuItem>
         ) : null}
@@ -172,7 +172,7 @@ export function StageMenuItems(): ReactNode {
       {canComment() && single ? (
         <>
           <MenuSeparator />
-          <MenuItem icon={<MessageSquarePlus className="size-4" />} onSelect={() => useComments.getState().setDraft(elementAnchor(slide, single))}>
+          <MenuItem icon={<MessageCircle className="size-4" />} onSelect={() => useComments.getState().setDraft(elementAnchor(slide, single))}>
             Comment
           </MenuItem>
         </>

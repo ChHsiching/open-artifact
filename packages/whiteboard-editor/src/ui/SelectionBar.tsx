@@ -30,7 +30,7 @@
  * bar, the keyboard and the context menu refuse and announce alike.
  */
 
-import { AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignLeft, AlignCenter, AlignRight, AlignStartHorizontal, AlignStartVertical, ArrowUpRight, CircleDot, Crop, Ellipsis, Link2, Lock, MessageSquare, Minus, MoveLeft, MoveRight, Shapes, Trash2, Type } from 'lucide-react';
+import { AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignLeft, AlignCenter, AlignRight, AlignStartHorizontal, AlignStartVertical, ArrowUpRight, CircleDot, Crop, Ellipsis, Link2, Lock, MessageCircle, Minus, MoveLeft, MoveRight, Shapes, Trash2, Type } from 'lucide-react';
 import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import {
   INK_COLOR_NAMES,
@@ -1008,7 +1008,7 @@ export function SelectionBar(): ReactNode {
         label="Comment"
         tip="Comment on this element"
         tipSide={side}
-        icon={<MessageSquare aria-hidden="true" />}
+        icon={<MessageCircle aria-hidden="true" />}
         onClick={() => {
           leaveTyping();
           useTool.getState().setCommentMode(true);

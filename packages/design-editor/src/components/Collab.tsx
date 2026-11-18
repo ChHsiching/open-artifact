@@ -7,8 +7,7 @@
  */
 
 import type { ReactNode } from 'react';
-import { Eye, History } from 'lucide-react';
-import { CommentIcon } from './tool-icons.tsx';
+import { Eye, History, MessageCircle } from 'lucide-react';
 import { useComments, canComment, designComments } from '../services/comments.ts';
 import { toggleHistoryPanel, useCollabAsideKind } from '../services/collab.ts';
 import { useHistory } from '../services/history.ts';
@@ -72,7 +71,7 @@ export function CommentToolButton(): ReactNode {
   return (
     <Tip label={on ? 'Leave comment mode' : 'Comment'} shortcut="C" side="top">
       <ChromeButton size="lg" square pressed={on} aria-label="Comment" onClick={() => useComments.getState().setOn(!on)}>
-        <CommentIcon />
+        <MessageCircle {...ICON} />
       </ChromeButton>
     </Tip>
   );

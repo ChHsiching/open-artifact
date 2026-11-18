@@ -5,7 +5,7 @@
  */
 
 import { memo, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
-import { AlertTriangle, EyeOff, ListPlus, MessageSquare, MoreHorizontal, Plus, Trash2 } from 'lucide-react';
+import { AlertTriangle, EyeOff, ListPlus, MessageCircle, MoreHorizontal, Plus, Trash2 } from 'lucide-react';
 import { LIMITS, normalizeDescription, slideTitle, type SectionEntry } from '@open-artifact/slides-core';
 import { IconButton, Menu, MenuItem, cn } from '@open-artifact/ui';
 import { useDeck } from '../../state/deck.ts';
@@ -81,7 +81,7 @@ export const SlideTile = memo(function SlideTile({ id, index, comments, peers, d
             <PeerDots peers={peers} />
             {comments ? (
               <span className="flex items-center gap-0.5 rounded-full bg-surface px-1.5 text-[10px] text-fg shadow-popup">
-                <MessageSquare className="size-2.5" />
+                <MessageCircle className="size-2.5" />
                 {comments}
               </span>
             ) : null}

@@ -4,7 +4,7 @@
  * right.
  */
 
-import { ChevronDown, CloudAlert, History, LoaderCircle, Lock, MessageSquare, RotateCw, X } from 'lucide-react';
+import { ChevronDown, CloudAlert, History, LoaderCircle, Lock, MessageCircle, MessageSquare, RotateCw, X } from 'lucide-react';
 import { Button, IconButton, Menu, MenuItem, Tooltip, cn } from '@open-artifact/ui';
 import { StatusDot } from '../../components/OwnerBadge.tsx';
 import { t } from '../../lib/i18n.ts';
@@ -101,7 +101,7 @@ function CommentsButton() {
           onClick={() => command({ cmd: 'comments_mode', on: !on })}
         >
           <span className="relative inline-flex">
-            <MessageSquare className="size-4" fill={on ? 'currentColor' : 'none'} />
+            <MessageCircle className="size-4" fill={on ? 'currentColor' : 'none'} />
             {waiting ? <span aria-hidden data-comments-dot="" className="absolute -right-0.5 -top-px size-1.5 rounded-full bg-accent ring-[1.5px] ring-surface" /> : null}
           </span>
         </button>

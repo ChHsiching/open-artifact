@@ -15,7 +15,7 @@
 
 import { memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useStore } from 'zustand';
-import { AlertTriangle, EyeOff, Maximize, MessageSquare, Minus, Plus } from 'lucide-react';
+import { AlertTriangle, EyeOff, Maximize, MessageCircle, Minus, Plus } from 'lucide-react';
 import { slideTitle } from '@open-artifact/slides-core';
 import { cn } from '@open-artifact/ui';
 import { useDeck } from '../../state/deck.ts';
@@ -218,7 +218,7 @@ const Caption = memo(function Caption({ tile, slideH, comments, peers, dragging 
         <PeerDots peers={peers} />
         {comments ? (
           <span className="flex items-center gap-0.5 rounded-full bg-surface px-1.5 text-[10px] text-fg shadow-popup">
-            <MessageSquare className="size-2.5" />
+            <MessageCircle className="size-2.5" />
             {comments}
           </span>
         ) : null}

@@ -18,8 +18,8 @@ import {
   LayoutGrid,
   Link,
   List,
+  MessageCircle,
   MessageSquare,
-  MessageSquareText,
   Pencil,
   Pin,
   PinOff,
@@ -60,7 +60,7 @@ const ACTION_ICON: Record<string, ReactNode> = {
   redo: <Redo2 className="size-3.5" />,
   edit_page: <Pencil className="size-3.5" />,
   use_page: <Copy className="size-3.5" />,
-  comment_selection: <MessageSquareText className="size-3.5" />,
+  comment_selection: <MessageCircle className="size-3.5" />,
   open_page_list: <List className="size-3.5" />,
   hand_off_code: <Code className="size-3.5" />,
 };

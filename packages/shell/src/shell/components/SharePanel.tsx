@@ -28,7 +28,7 @@ import {
   Image,
   Link,
   Lock,
-  MessageSquare,
+  MessageCircle,
   MoreHorizontal,
   Network,
   Pencil,
@@ -56,7 +56,7 @@ const LINK_TITLE: Record<ShareRole, MessageKey> = { editor: 'linkEditor', commen
 const ROLE_NOTE: Record<ShareRole, MessageKey> = { editor: 'noteEditor', commenter: 'noteCommenter', viewer: 'noteViewer' };
 const ROLE_ICON: Record<ShareRole, ReactNode> = {
   editor: <Pencil className="size-4" />,
-  commenter: <MessageSquare className="size-4" />,
+  commenter: <MessageCircle className="size-4" />,
   viewer: <Eye className="size-4" />,
 };
 
