@@ -212,6 +212,103 @@ export interface CaptureArea {
   height: number;
 }
 
+export const XLINK_NS = 'http://www.w3.org/1999/xlink';
+
+/**
+ * Puts every `<image>` link under `root` in the XLink namespace.
+ *
+ * dom-to-svg writes an image's address with `setAttribute('xlink:href', …)`,
+ * which in its XML document makes an attribute in no namespace. Its
+ * `inlineResources` reads `href.baseVal`, which only sees a namespaced
+ * `xlink:href` (or a plain `href`), so every picture failed with "No URL
+ * passed", kept its web address, and came out blank once the address was
+ * dropped. Once namespaced, inlining's own `setAttribute('xlink:href', data)`
+ * updates that same attribute.
+ */
+export function linkImages(root: Element): void {
+  for (const image of Array.from(root.getElementsByTagNameNS(SVG_NS, 'image'))) {
+    const plain = image.getAttributeNodeNS(null, 'xlink:href');
+    if (!plain) continue;
+    image.removeAttributeNode(plain);
+    image.setAttributeNS(XLINK_NS, 'xlink:href', plain.value);
+  }
+}
+
+/** An `<img>`'s content box and how its picture fills it, as dom-to-svg places its `<image>`. */
+interface ImageFit {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  preserveAspectRatio: string;
+}
+
+/** `object-position` as an SVG alignment (`xMidYMid`); positions other than 0%, 50% and 100% are taken as the middle. */
+export function objectAlign(position: string): string {
+  const [x = '50%', y = '50%'] = position.trim().split(/\s+/);
+  const KEYWORDS: Record<string, number> = { left: 0, top: 0, center: 50, right: 100, bottom: 100 };
+  const axis = (value: string): string => {
+    const at = KEYWORDS[value] ?? (value.endsWith('%') || Number.parseFloat(value) === 0 ? Number.parseFloat(value) : Number.NaN);
+    return at === 0 ? 'Min' : at === 100 ? 'Max' : 'Mid';
+  };
+  return `x${axis(x)}Y${axis(y)}`;
+}
+
+/** `object-fit` (and `object-position`) as an SVG `preserveAspectRatio`; null where SVG has no match (`none`). */
+export function objectFitAspect(fit: string, position: string): string | null {
+  switch (fit) {
+    case 'fill':
+      return 'none';
+    case 'cover':
+      return `${objectAlign(position)} slice`;
+    case 'contain':
+    case 'scale-down':
+      return `${objectAlign(position)} meet`;
+    default:
+      return null;
+  }
+}
+
+/** How each `<img>` under `element` fills its box, measured where dom-to-svg measures it. */
+function imageFits(element: Element): ImageFit[] {
+  const view = element.ownerDocument.defaultView!;
+  const fits: ImageFit[] = [];
+  const images = element.localName === 'img' ? [element] : Array.from(element.querySelectorAll('img'));
+  for (const image of images) {
+    const style = view.getComputedStyle(image);
+    const preserveAspectRatio = objectFitAspect(style.objectFit, style.objectPosition);
+    if (!preserveAspectRatio) continue;
+    const rect = image.getBoundingClientRect();
+    const left = Number.parseFloat(style.paddingLeft) || 0;
+    const top = Number.parseFloat(style.paddingTop) || 0;
+    fits.push({
+      x: rect.x + left,
+      y: rect.y + top,
+      width: rect.width - left - (Number.parseFloat(style.paddingRight) || 0),
+      height: rect.height - top - (Number.parseFloat(style.paddingBottom) || 0),
+      preserveAspectRatio,
+    });
+  }
+  return fits;
+}
+
+/**
+ * Gives each `<image>` dom-to-svg made for an `<img>` the picture's
+ * `object-fit`: it leaves SVG's default (`xMidYMid meet`), which letterboxes
+ * a cropped (`cover`) or stretched (`fill`, HTML's default) picture. Images
+ * are matched by position and size; background images already carry their
+ * own `preserveAspectRatio` and are left alone.
+ */
+function fitImages(root: Element, fits: readonly ImageFit[]): void {
+  if (!fits.length) return;
+  const near = (a: string | null, b: number): boolean => a !== null && Math.abs(Number(a) - b) < 0.5;
+  for (const image of Array.from(root.getElementsByTagNameNS(SVG_NS, 'image'))) {
+    if (image.hasAttribute('preserveAspectRatio')) continue;
+    const fit = fits.find((f) => near(image.getAttribute('x'), f.x) && near(image.getAttribute('y'), f.y) && near(image.getAttribute('width'), f.width) && near(image.getAttribute('height'), f.height));
+    if (fit) image.setAttribute('preserveAspectRatio', fit.preserveAspectRatio);
+  }
+}
+
 /**
  * The element rebuilt as plain SVG by dom-to-svg (links dropped), its
  * resources inlined. `area` defaults to the element's own box.
@@ -219,7 +316,10 @@ export interface CaptureArea {
 export async function elementSvg(element: Element, area?: CaptureArea): Promise<XMLDocument> {
   const box = area ?? element.getBoundingClientRect();
   const view = element.ownerDocument.defaultView!;
+  const fits = imageFits(element);
   const doc = withCaptureSafeDom(element, () => elementToSVG(element, { captureArea: new view.DOMRect(box.x, box.y, box.width, box.height), keepLinks: false }));
+  linkImages(doc.documentElement);
+  fitImages(doc.documentElement, fits);
   await inlineResources(doc.documentElement);
   return doc;
 }
