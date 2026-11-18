@@ -162,9 +162,14 @@ export async function copyPath(): Promise<void> {
 
 // ---- sharing -----------------------------------------------------------------------------------------------------
 
+let shareReading = false;
+
 /** Loads the sharing state, or changes it first when `change` is given. */
 export async function refreshShare(change?: Omit<ShareRequest, 'id'>): Promise<void> {
+  // The panel polls every 4 s: while a read is still out, the next one waits its turn instead of piling up.
+  if (!change && shareReading) return;
   const store = useShell.getState();
+  if (!change) shareReading = true;
   try {
     const boot = bootOf();
     let view: ShareView;
@@ -180,7 +185,10 @@ export async function refreshShare(change?: Omit<ShareRequest, 'id'>): Promise<v
     store.patchShare({ view, error: '', unsupported: false });
   } catch (error) {
     if (error instanceof ApiError && error.code === 'unsupported') store.patchShare({ view: null, unsupported: true, error: '' });
+    else if (error instanceof ApiError && error.status === 0) store.patchShare({ error: t('shareNoAnswer') });
     else store.patchShare({ error: t('shareError', { error: errorText(error) }) });
+  } finally {
+    if (!change) shareReading = false;
   }
 }
 

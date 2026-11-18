@@ -17,6 +17,7 @@ import {
   type TypesResponse,
   type UpdateArtifactRequest,
 } from '@open-artifact/protocol';
+import { browserEnv, sharedStream, type SharedStreamEnv } from './shared-events.ts';
 
 /** A failed Library API call: the daemon's `{ code, message, fix? }` and the HTTP status. */
 export class ApiError extends Error {
@@ -116,6 +117,9 @@ async function bodyOf(response: Response): Promise<Record<string, unknown>> {
   }
 }
 
+/** How long a read (`GET`) waits for the daemon's answer. */
+export const READ_TIMEOUT_MS = 15_000;
+
 /** Creates the Library API helpers. */
 export function createLibraryApi(options: LibraryApiOptions = {}): LibraryApi {
   const base = (options.base ?? '').replace(/\/$/, '');
@@ -128,6 +132,10 @@ export function createLibraryApi(options: LibraryApiOptions = {}): LibraryApi {
       request.body === undefined
         ? { cache: 'no-store' }
         : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request.body) };
+    // A read that never answers (the browser's connections to the daemon all taken, a daemon stuck) fails
+    // after a while instead of leaving its caller waiting forever.
+    if (request.body === undefined && typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function')
+      init.signal = AbortSignal.timeout(READ_TIMEOUT_MS);
     let response: Response;
     try {
       response = await doFetch(url(route, request.query), init);
@@ -198,23 +206,30 @@ export type EventSourceLike = new (url: string) => {
 
 /**
  * Listens to the daemon's event stream (`GET /api/open-artifact.events`). Returns a
- * function that stops listening. Without `EventSource` it does nothing.
+ * function that stops listening. The pages of this origin share one stream
+ * (shared-events.ts), so they do not use up the browser's six connections to
+ * the daemon; a given `EventSource`, or a browser without Web Locks, gets a
+ * stream of its own. Without `EventSource` it does nothing.
  */
 export function subscribeLibraryEvents(
   onEvent: (event: LibraryEvent) => void,
-  options: { url?: string; EventSource?: EventSourceLike } = {},
+  options: { url?: string; EventSource?: EventSourceLike; shared?: SharedStreamEnv | null } = {},
 ): () => void {
+  const url = options.url ?? api.eventsUrl;
+  const onData = (data: string): void => {
+    const event = parseLibraryEvent(data);
+    if (event) onEvent(event);
+  };
+  const env = options.shared !== undefined ? options.shared : options.EventSource ? null : browserEnv();
+  if (env) return sharedStream(url, env).listen(onData);
   const Source = options.EventSource ?? (typeof EventSource === 'undefined' ? null : (EventSource as unknown as EventSourceLike));
   if (!Source) return () => {};
   let source: InstanceType<EventSourceLike>;
   try {
-    source = new Source(options.url ?? api.eventsUrl);
+    source = new Source(url);
   } catch {
     return () => {};
   }
-  source.onmessage = (message) => {
-    const event = parseLibraryEvent(message.data);
-    if (event) onEvent(event);
-  };
+  source.onmessage = (message) => onData(message.data);
   return () => source.close();
 }
