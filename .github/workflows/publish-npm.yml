@@ -2,6 +2,9 @@
 # @open-artifact/cli and dsh-open-artifact. Each version npm already has is skipped, so bump the versions you want
 # released, then push a tag (v0.2.0) or run the workflow by hand.
 #
+# On a tag, CHANGELOG.md must have that version's entry (written from `node scripts/changelog.mjs`): the run stops
+# before publishing without one, and after publishing makes the tag's GitHub release with the entry as its notes.
+#
 # npm signs in by trusted publishing (OIDC): each package names this repository and this file as its trusted
 # publisher on npmjs.com (`npm trust github <package> --file publish-npm.yml --repo JimLiu/open-artifact --allow-publish`).
 # No npm token is stored here, and npm adds provenance. A new package is claimed once from a computer first:
@@ -20,7 +23,7 @@ on:
         default: false
 
 permissions:
-  contents: read
+  contents: write # the GitHub release
   id-token: write
 
 concurrency:
@@ -32,6 +35,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Check the changelog
+        if: github.ref_type == 'tag'
+        run: node scripts/changelog.mjs --check "$GITHUB_REF_NAME"
 
       - uses: actions/setup-node@v4
         with:
@@ -52,3 +59,15 @@ jobs:
 
       - name: Publish
         run: node scripts/publish-npm.mjs ${{ inputs.dry-run && '--dry-run' || '' }}
+
+      - name: GitHub release
+        if: github.ref_type == 'tag' && !inputs.dry-run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node scripts/changelog.mjs --notes "$GITHUB_REF_NAME" > "$RUNNER_TEMP/notes.md"
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release edit "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md"
+          else
+            gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md" --verify-tag
+          fi

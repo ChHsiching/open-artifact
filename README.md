@@ -145,14 +145,22 @@ so you only need Rust when you change a crate:
 node scripts/build-wasm.mjs   # needs cargo + wasm32-unknown-unknown, wasm-bindgen, wasm-opt
 ```
 
-### Releasing to npm
+### Releasing
 
 `node scripts/build-npm.mjs` stages the npm packages in `dist/npm/`: the `@open-artifact/*` libraries (compiled to
 JavaScript with type declarations), `@open-artifact/cli` (the `open-artifact` command with the daemon vendored) and
-`dsh-open-artifact`. To release, raise the versions you want out and push a tag (`v0.2.0`); the
-[Publish to npm](.github/workflows/publish-npm.yml) workflow builds and publishes every version npm does not have yet,
-by trusted publishing. A package npm doesn't have yet is claimed once from a computer before its first release:
-`node scripts/publish-npm.mjs --claim` sets the workflow as its trusted publisher, and npm creates it with a placeholder.
+`dsh-open-artifact`. To release:
+
+1. Raise the versions (every package and plugin manifest shares one version).
+2. Run `node scripts/changelog.mjs` for the commits since the last tag, and add a `## [x.y.z] - date` entry at the top
+   of [CHANGELOG.md](CHANGELOG.md) that says what changed for people using it (Added / Changed / Fixed), plus its
+   compare link at the bottom.
+3. Commit, then push a tag (`v0.9.0`). The [Publish to npm](.github/workflows/publish-npm.yml) workflow stops if
+   CHANGELOG.md has no entry for the tag; otherwise it builds and publishes every version npm does not have yet, by
+   trusted publishing, and makes the tag's GitHub release with the entry as its notes.
+
+A package npm doesn't have yet is claimed once from a computer before its first release:
+`node scripts/publish-npm.mjs --claim` publishes its staged version and sets the workflow as its trusted publisher.
 `node scripts/publish-npm.mjs` publishes from a computer too (`--dry-run` to look first).
 
 ## Repository layout

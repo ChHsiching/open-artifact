@@ -137,12 +137,18 @@ npm run e2e          # 端到端测试：用 CLI 和 Chrome 驱动构建好的�
 node scripts/build-wasm.mjs   # 需要 cargo + wasm32-unknown-unknown、wasm-bindgen、wasm-opt
 ```
 
-### 发布到 npm
+### 发布
 
 `node scripts/build-npm.mjs` 把要发布的包整理到 `dist/npm/`：`@open-artifact/*` 库包（编译成 JavaScript，带类型声明）、
-`@open-artifact/cli`（自带 daemon 的 `open-artifact` 命令）和 `dsh-open-artifact`。发布新版时，先把要发的包的版本号改高，
-再推送一个 tag（如 `v0.2.0`），[Publish to npm](.github/workflows/publish-npm.yml) 工作流就会构建并发布 npm 上还没有的
-版本，用的是 trusted publishing。在本机运行 `node scripts/publish-npm.mjs` 效果相同（可以先加 `--dry-run` 看看）；
+`@open-artifact/cli`（自带 daemon 的 `open-artifact` 命令）和 `dsh-open-artifact`。发布新版的步骤：
+
+1. 改高版本号（所有包和插件清单共用一个版本号）。
+2. 运行 `node scripts/changelog.mjs` 列出上一个 tag 以来的提交，据此在 [CHANGELOG.md](CHANGELOG.md) 顶部加一节
+   `## [x.y.z] - 日期`，按 Added / Changed / Fixed 写清用户能感知的变化，并在文末补上对比链接。
+3. 提交后推送 tag（如 `v0.9.0`）。CHANGELOG.md 里没有这个版本的条目时，[Publish to npm](.github/workflows/publish-npm.yml)
+   工作流会直接停下；有的话就构建并发布 npm 上还没有的版本（trusted publishing），再用这一节创建该 tag 的 GitHub Release。
+
+在本机运行 `node scripts/publish-npm.mjs` 效果相同（可以先加 `--dry-run` 看看）；
 新包第一次发布后，用 `--trust` 把这个工作流设为它的 trusted publisher。
 
 ## 仓库结构
