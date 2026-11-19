@@ -4,10 +4,13 @@
  */
 
 import {
+  CHROME_PEER_KEY,
+  MAX_CHROME_PEERS,
   SHELL_PARAMS,
   type ArtifactView,
   type ChromeAction,
   type ChromeFormat,
+  type ChromePeer,
   type ChromeReport,
   type ChromeSaved,
   type ChromeWhy,
@@ -239,6 +242,7 @@ const ACTION_ID = /^[a-z][a-z0-9_-]{0,31}$/;
 export const MAX_FORMATS = 8;
 export const MAX_VARIANTS = 16;
 const FORMAT = /^[a-z0-9]{1,8}$/;
+const COLOR = /^#[0-9a-fA-F]{6}$/;
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -318,7 +322,70 @@ export function normalizeReport(raw: unknown): ChromeReport {
   if (isRecord(raw.shareNotice) && raw.shareNotice.tone === 'warning' && typeof raw.shareNotice.text === 'string' && raw.shareNotice.text.trim()) {
     out.shareNotice = { text: raw.shareNotice.text.slice(0, 2000), tone: 'warning' };
   }
+  if (Array.isArray(raw.peers)) out.peers = peersOf(raw.peers);
+  if (raw.following === null) out.following = null;
+  else if (typeof raw.following === 'string' && CHROME_PEER_KEY.test(raw.following)) out.following = raw.following;
   return out;
+}
+
+/** The peers of a report: valid keys, once each, at most {@link MAX_CHROME_PEERS}. */
+function peersOf(raw: unknown[]): ChromePeer[] {
+  const seen = new Set<string>();
+  const peers: ChromePeer[] = [];
+  for (const entry of raw) {
+    if (!isRecord(entry) || typeof entry.key !== 'string' || !CHROME_PEER_KEY.test(entry.key) || seen.has(entry.key)) continue;
+    const name = shortText(entry.name, 80);
+    if (!name) continue;
+    seen.add(entry.key);
+    peers.push({
+      key: entry.key,
+      name,
+      ...(typeof entry.color === 'string' && COLOR.test(entry.color) ? { color: entry.color.toLowerCase() } : {}),
+      ...(entry.self === true ? { self: true } : {}),
+      ...(entry.followsYou === true ? { followsYou: true } : {}),
+    });
+    if (peers.length === MAX_CHROME_PEERS) break;
+  }
+  return peers;
+}
+
+/** The page offers following someone's view. */
+export function offersFollow(report: ChromeReport): boolean {
+  return report.following !== undefined;
+}
+
+/** The peer this view follows, while they are still listed. */
+export function followedPeer(report: ChromeReport): ChromePeer | null {
+  const key = report.following;
+  return key ? (report.peers?.find((peer) => peer.key === key) ?? null) : null;
+}
+
+/** Peer colours, as the pages pick them (editor-kit's palette), for a peer the page gave none. */
+const PEER_COLORS = ['#dc3c3d', '#019c7f', '#fbb315', '#ce447d', '#10a122', '#257de0', '#d25f25', '#785ee8'];
+
+/** A peer's colour: theirs, else one picked from their key. */
+export function peerColorOf(peer: Pick<ChromePeer, 'key' | 'color'>): string {
+  if (peer.color) return peer.color;
+  let hash = 0;
+  for (const char of peer.key) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  return PEER_COLORS[hash % PEER_COLORS.length]!;
+}
+
+/** Text colour that reads on a peer colour. */
+export function inkOnColor(hex: string): '#0b0b0b' | '#ffffff' {
+  const channel = (at: number) => {
+    const c = parseInt(hex.slice(at, at + 2), 16) / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  const luminance = 0.2126 * channel(1) + 0.7152 * channel(3) + 0.0722 * channel(5);
+  return luminance > 0.4 ? '#0b0b0b' : '#ffffff';
+}
+
+/** Initials for a peer's avatar: the first letters of the first two words. */
+export function peerInitials(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  const letters = words.slice(0, 2).map((word) => [...word][0] ?? '');
+  return (letters.join('') || '?').toUpperCase();
 }
 
 /** The page offers exports: detailed formats, or v1 items. */

@@ -45,7 +45,11 @@ export interface ShellDrawsState {
   framed: boolean;
 }
 
-/** A handler of Shell commands; may answer an `exports` request with items. */
+/**
+ * A handler of Shell commands; may answer an `exports` request with items.
+ * Every command reaches every handler, `follow` too (sent where the report
+ * has `following`, with a key from its `peers` or `null` to stop).
+ */
 export type ShellCommandHandler = (command: ChromeCommand) => ChromeExportItem[] | void;
 
 /** A bridge made by {@link createShellBridge}. */

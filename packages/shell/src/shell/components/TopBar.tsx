@@ -1,7 +1,7 @@
 /**
  * The Shell's bar: the title menu, the working indicator and the page's save
- * state on the left; History, Share, comments, Ask agent and Close on the
- * right.
+ * state on the left; who else is here, History, Share, comments, Ask agent
+ * and Close on the right.
  */
 
 import { ChevronDown, CloudAlert, History, LoaderCircle, Lock, MessageCircle, MessageSquare, RotateCw, X } from 'lucide-react';
@@ -13,6 +13,7 @@ import { closeShell, openSession } from '../actions.ts';
 import { useAgentName, useCanOpenSession, useOwner, useOwnerState, useWorking } from '../hooks.ts';
 import { countText, saveIndicator, showsComments } from '../model.ts';
 import { useShell } from '../store.ts';
+import { Peers } from './Peers.tsx';
 import { SharePanel } from './SharePanel.tsx';
 import { TitleMenu } from './TitleMenu.tsx';
 
@@ -173,6 +174,7 @@ export function TopBar() {
         <SaveState />
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
+        <Peers />
         <HistoryButton />
         <SharePanel />
         <CommentsButton />

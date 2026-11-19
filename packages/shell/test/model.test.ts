@@ -360,3 +360,47 @@ describe('the Share tab', () => {
     assert.deepEqual(shownAddresses({ lan: true, links: {}, port: 80, addresses: ['100.64.0.7'], tailnet: { address: '100.64.0.7', links: {} } }), ['100.64.0.7:80']);
   });
 });
+
+describe('peers and following', async () => {
+  const { MAX_CHROME_PEERS } = await import('@open-artifact/protocol');
+  const { followedPeer, inkOnColor, normalizeReport, offersFollow, peerColorOf, peerInitials } = await import('../src/shell/model.ts');
+
+  it('keeps valid peers once each, and following as a key or null', () => {
+    const report = normalizeReport({
+      peers: [
+        { key: 'p1', name: '  Ada Lovelace ', color: '#DC3C3D', self: true, followsYou: true },
+        { key: 'p1', name: 'Again' },
+        { key: 'bad key', name: 'Spaces' },
+        { key: 'p2', name: '' },
+        { key: 'p3', name: 'Grace', color: 'red', self: 'yes' },
+      ],
+      following: 'p3',
+    });
+    assert.deepEqual(report.peers, [
+      { key: 'p1', name: 'Ada Lovelace', color: '#dc3c3d', self: true, followsYou: true },
+      { key: 'p3', name: 'Grace' },
+    ]);
+    assert.equal(report.following, 'p3');
+    assert.equal(offersFollow(report), true);
+    assert.equal(followedPeer(report)?.name, 'Grace');
+    assert.equal(normalizeReport({ following: null }).following, null);
+    assert.equal(offersFollow(normalizeReport({ following: null })), true);
+    assert.equal(offersFollow(normalizeReport({ following: 'no way' })), false);
+    assert.equal(followedPeer(normalizeReport({ peers: [], following: 'gone' })), null);
+  });
+
+  it('lists at most MAX_CHROME_PEERS', () => {
+    const peers = Array.from({ length: MAX_CHROME_PEERS + 5 }, (_, i) => ({ key: `p${i}`, name: `P ${i}` }));
+    assert.equal(normalizeReport({ peers }).peers?.length, MAX_CHROME_PEERS);
+  });
+
+  it('draws avatars from names and colours', () => {
+    assert.equal(peerInitials('ada lovelace byron'), 'AL');
+    assert.equal(peerInitials('宝玉'), '宝');
+    assert.equal(peerInitials('  '), '?');
+    assert.equal(peerColorOf({ key: 'x', color: '#123456' }), '#123456');
+    assert.equal(peerColorOf({ key: 'x' }), peerColorOf({ key: 'x' }));
+    assert.equal(inkOnColor('#fbb315'), '#0b0b0b');
+    assert.equal(inkOnColor('#257de0'), '#ffffff');
+  });
+});
