@@ -6,6 +6,22 @@ agent plugins. Since 0.9.0 they all share one version; before that `dsh-open-art
 Each entry is written from the commits since the previous tag (`node scripts/changelog.mjs` lists them); see
 [Releasing](README.md#releasing).
 
+## [0.9.2] - 2026-11-18
+
+Install agent plugins from a prebuilt download and read release notes in DeepSeek Harness.
+
+### Added
+
+- GitHub Releases includes `open-artifact-plugins.zip` with Codex, Claude Code, Cursor, GitHub Copilot, Antigravity
+  and the ChatGPT web connector. Download and extract the ZIP to install or upgrade without cloning or building.
+- DeepSeek Harness shows release notes before you update and a What's New panel after updating. Select the installed
+  version in the Open Artifact page footer to see the full changelog.
+
+### Changed
+
+- The installation guides explain how to move existing source-based installs to the release bundle or, for
+  DeepSeek Harness, to the prebuilt npm package.
+
 ## [0.9.1] - 2026-11-18
 
 Much smaller installs: the built-in types share one type server.
@@ -128,6 +144,7 @@ One version for every package, with Docs and Sheets in every plugin.
 - Plugins for Claude Code, Codex, Cursor, Copilot, ChatGPT and DeepSeek Harness.
 - English and Chinese READMEs, under Apache-2.0.
 
+[0.9.2]: https://github.com/JimLiu/open-artifact/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/JimLiu/open-artifact/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/JimLiu/open-artifact/compare/v0.2.2...v0.9.0
 [0.2.2]: https://github.com/JimLiu/open-artifact/compare/v0.2.1...v0.2.2
