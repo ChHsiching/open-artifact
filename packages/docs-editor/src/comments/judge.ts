@@ -41,6 +41,15 @@ export function judgeComment({ thread, to, edited = false }: JudgeCase): JudgeVe
   return { choice: 'wake', why: 'it goes on a thread with the agent' };
 }
 
+/**
+ * Whether a reply of `author` with this text, and naming `to`, would go to the agent unasked: the reply box's
+ * "Send to agent" follows it until the person sets the box.
+ */
+export function replyWakes(thread: CommentThread, text: string, author: string, to: readonly string[]): boolean {
+  const draft: CommentMessage = { id: '', author: { kind: 'person', name: author }, text, at: '' };
+  return judgeComment({ thread: { ...thread, messages: [...thread.messages, draft] }, to }).choice === 'wake';
+}
+
 /** An `@name` left in the text once the agent's mention is out of `to`: someone the page does not know. */
 function namesSomeone(text: string): boolean {
   return /(?:^|\s)@[\p{L}\p{N}_]/u.test(text);

@@ -1,4 +1,8 @@
-/** A comment's text box: grows with its text, Enter sends, Shift-Enter or Alt-Enter breaks the line, Escape cancels, `@` offers people and the agent. */
+/**
+ * A comment's text box: grows with its text, Enter sends, Shift-Enter or Alt-Enter breaks the line, Escape cancels, `@`
+ * offers people and the agent. With a `sendBox`, a "Send to agent" checkbox sits under it; on a new comment, a checked
+ * box shows an `@agent` tag in front of the text, which Backspace at the start takes off (and unchecks the box).
+ */
 import { ChromeButton, Tip } from '@open-artifact/editor-kit/react';
 import { COMMENT_TEXT_MAX, MOD } from '@open-artifact/editor-kit';
 import { cn } from '@open-artifact/ui';
@@ -15,6 +19,16 @@ export function useMentionCandidates(): MentionCandidate[] {
   return useMemo(() => mentionCandidates(threads, peers, myName(), canAskAgent() ? { name: agentName() } : null), [threads, peers, agent]);
 }
 
+/** The "Send to agent" checkbox under a composer. */
+export interface SendBoxSpec {
+  checked: boolean;
+  onChange(checked: boolean): void;
+  /** The text @mentions the agent: checked, and it stays so until the mention is gone. */
+  locked?: boolean;
+  /** A checked box shows the `@agent` tag in front of the text (a new comment). */
+  tag?: boolean;
+}
+
 export interface ComposerProps {
   value: string;
   onChange(text: string): void;
@@ -27,14 +41,19 @@ export interface ComposerProps {
   autoFocus?: boolean;
   /** Buttons only while it has focus or text (a reply box under a thread). */
   compact?: boolean;
+  /** Omitted when no agent can take comments: no checkbox. */
+  sendBox?: SendBoxSpec;
 }
 
 const MAX_HEIGHT = 240;
 /** From here on the composer counts what is left. */
 const COUNT_FROM = COMMENT_TEXT_MAX - 500;
 
-export function Composer({ value, onChange, onSubmit, onCancel, label, placeholder, submitLabel, busy = false, autoFocus = false, compact = false }: ComposerProps): ReactNode {
+export function Composer({ value, onChange, onSubmit, onCancel, label, placeholder, submitLabel, busy = false, autoFocus = false, compact = false, sendBox }: ComposerProps): ReactNode {
   const field = useRef<HTMLTextAreaElement>(null);
+  const tagRef = useRef<HTMLSpanElement>(null);
+  const tagged = !!sendBox?.tag && sendBox.checked && !sendBox.locked;
+  const [tagWidth, setTagWidth] = useState(0);
   const candidates = useMentionCandidates();
   const [caret, setCaret] = useState(value.length);
   const [focused, setFocused] = useState(autoFocus);
@@ -73,6 +92,17 @@ export function Composer({ value, onChange, onSubmit, onCancel, label, placehold
 
   useEffect(() => setPicked(0), [query?.query, query?.start]);
 
+  // The text starts after the @agent tag.
+  useLayoutEffect(() => {
+    const tag = tagRef.current;
+    if (!tag) return setTagWidth(0);
+    const measure = () => setTagWidth(tag.getBoundingClientRect().width);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(tag);
+    return () => observer.disconnect();
+  }, [tagged]);
+
   const pick = (candidate: MentionCandidate) => {
     if (!query) return;
     const next = insertMention(value, query.start, caret, candidate.name);
@@ -110,6 +140,11 @@ export function Composer({ value, onChange, onSubmit, onCancel, label, placehold
         return;
       }
     }
+    if (event.key === 'Backspace' && !event.repeat && tagged && event.currentTarget.selectionStart === 0 && event.currentTarget.selectionEnd === 0) {
+      event.preventDefault();
+      sendBox.onChange(false);
+      return;
+    }
     if (event.key === 'Enter' && event.altKey) {
       event.preventDefault();
       const box = event.currentTarget;
@@ -135,7 +170,7 @@ export function Composer({ value, onChange, onSubmit, onCancel, label, placehold
       <textarea
         ref={field}
         aria-label={label}
-        placeholder={placeholder}
+        placeholder={tagged ? undefined : placeholder}
         value={value}
         rows={1}
         disabled={busy}
@@ -149,8 +184,13 @@ export function Composer({ value, onChange, onSubmit, onCancel, label, placehold
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
         className="block w-full resize-none rounded-[8px] bg-chrome-field px-2.5 py-1.5 text-[13px] leading-5 text-chrome-fg shadow-[inset_0_0_0_1px_var(--color-chrome-ring)] outline-none placeholder:text-chrome-muted focus:shadow-[inset_0_0_0_1px_var(--color-chrome-accent)]"
-        style={{ maxHeight: MAX_HEIGHT }}
+        style={{ maxHeight: MAX_HEIGHT, ...(tagged ? { textIndent: tagWidth + 4 } : {}) }}
       />
+      {tagged ? (
+        <span ref={tagRef} aria-hidden data-send-tag="" className="pointer-events-none absolute top-1.5 left-2.5 rounded-[4px] bg-chrome-accent/12 px-1 text-[13px] leading-5 font-medium text-chrome-accent">
+          @{agentName()}
+        </span>
+      ) : null}
       {listOpen ? (
         <ul role="listbox" aria-label="People to mention" className="absolute top-full left-0 z-20 mt-1 w-full rounded-[10px] bg-chrome p-1 shadow-chrome-popup">
           {matches.map((candidate, index) => (
@@ -174,8 +214,9 @@ export function Composer({ value, onChange, onSubmit, onCancel, label, placehold
       ) : null}
       {showButtons ? (
         <div className="mt-1.5 flex items-center justify-end gap-1">
+          {sendBox ? <SendBox box={sendBox} disabled={busy} /> : null}
           {value.length >= COUNT_FROM ? (
-            <span className={cn('mr-auto text-[12px] tabular-nums', over ? 'text-red-600 dark:text-red-400' : 'text-chrome-muted')} aria-live="polite" data-testid="comment-count">
+            <span className={cn(!sendBox && 'mr-auto', 'text-[12px] tabular-nums', over ? 'text-red-600 dark:text-red-400' : 'text-chrome-muted')} aria-live="polite" data-testid="comment-count">
               {over ? `${(value.length - COMMENT_TEXT_MAX).toLocaleString()} characters too long` : `${(COMMENT_TEXT_MAX - value.length).toLocaleString()} characters left`}
             </span>
           ) : null}
@@ -207,5 +248,33 @@ export function Initial({ name, agent = false, size = 'sm' }: { name: string; ag
     <span aria-hidden="true" className={cn('inline-flex shrink-0 items-center justify-center rounded-full font-medium', box, agent ? 'bg-chrome-pressed text-chrome-pressed-fg' : 'bg-chrome-hover text-chrome-fg')}>
       {agent ? <Bot className="size-3.5" /> : (name.trim()[0] ?? '?').toUpperCase()}
     </span>
+  );
+}
+
+/** "Send to agent": while the text @mentions the agent it is checked and locked, and says why. */
+function SendBox({ box, disabled }: { box: SendBoxSpec; disabled: boolean }): ReactNode {
+  const name = agentName();
+  const control = (
+    <label className={cn('mr-auto flex h-6 min-w-0 items-center gap-1.5 text-[12px] text-chrome-muted select-none', box.locked || disabled ? 'cursor-default' : 'cursor-pointer hover:text-chrome-fg')}
+      // The text box keeps the focus (a reply box hides its buttons without it).
+      onMouseDown={event => event.preventDefault()}
+      data-send-to-agent=""
+    >
+      <input
+        type="checkbox"
+        className="size-3.5 shrink-0 accent-[var(--color-chrome-accent)]"
+        checked={box.checked}
+        disabled={disabled || box.locked}
+        onChange={event => box.onChange(event.target.checked)}
+      />
+      <span className="truncate">Send to {name}</span>
+    </label>
+  );
+  return box.locked ? (
+    <Tip label={`Your comment mentions @${name}. Remove the mention to uncheck.`} side="bottom">
+      {control}
+    </Tip>
+  ) : (
+    control
   );
 }

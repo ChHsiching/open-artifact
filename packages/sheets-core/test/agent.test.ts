@@ -20,6 +20,7 @@ import {
   serverIdOf,
   sha256Hex,
   STOCK_CHART_PROGRAMS,
+  STOCK_KINDS,
   sheetsOf,
   stockKindOf,
   versionsOf,
@@ -148,4 +149,22 @@ test('chart code: faults, the projection, and stock charts', () => {
   const cell = (value: unknown, text: string) => ({ value, text });
   const rows = [[cell('Week', 'Week'), cell('Signups', 'Signups')], [cell('W1', 'W1'), cell(3, '3')], [cell('W2', 'W2'), cell(5, '5')]];
   assert.deepEqual(describeStockChart('bar', rows), { kind: 'bar', direction: 'vertical', stacking: 'none', data: { from: 'table', input: 'rows', seriesAre: 'columns', labelsLeftOut: [] } });
+});
+
+test('stock charts: every kind passes the code checks, is known by its text, and is described for the file', () => {
+  for (const kind of STOCK_KINDS) {
+    assert.deepEqual(chartCodeErrors(STOCK_CHART_PROGRAMS[kind]), [], kind);
+    assert.equal(stockKindOf(STOCK_CHART_PROGRAMS[kind]), kind);
+  }
+  assert.equal(new Set(STOCK_KINDS.map((kind) => STOCK_CHART_PROGRAMS[kind])).size, STOCK_KINDS.length);
+  const cell = (value: unknown, text: string) => ({ value, text });
+  const table = { from: 'table', input: 'rows', seriesAre: 'columns', labelsLeftOut: [] };
+  const rows = [[cell('Week', 'Week'), cell('Signups', 'Signups')], [cell('W1', 'W1'), cell(3, '3')], [cell('W2', 'W2'), cell(5, '5')]];
+  assert.deepEqual(describeStockChart('area', rows), { kind: 'area', stacking: 'none', data: table });
+  assert.deepEqual(describeStockChart('horizontalBar', rows), { kind: 'bar', direction: 'horizontal', stacking: 'none', data: table });
+  // A scatter needs a number in the first column of every row under the headings.
+  assert.equal(describeStockChart('scatter', rows), null);
+  const points = [[cell('Price', 'Price'), cell('Sold', 'Sold')], [cell(10, '10'), cell(300, '300')], [cell(12, '12'), cell(260, '260')]];
+  assert.deepEqual(describeStockChart('scatter', points), { kind: 'scatter', data: table });
+  assert.equal(describeStockChart('scatter', [...points, [cell('n/a', 'n/a'), cell(1, '1')]]), null);
 });

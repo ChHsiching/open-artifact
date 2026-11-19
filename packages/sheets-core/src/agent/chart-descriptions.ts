@@ -1,8 +1,8 @@
 /**
  * The Sheet's charts described for an .xlsx file. The engine checks each description against the cells and writes the
  * file's own chart from it (readXlsxFile's `charts`). No model is asked here: a chart that one of the page's stock
- * programs draws (Insert chart: bar, stacked bar, line, pie) is described from that program's own rules, and any other
- * chart (code the agent wrote) is left out of the file.
+ * programs draws (bar, stacked bar, line, pie, area, horizontal bar, scatter) is described from that program's own
+ * rules, and any other chart (code the agent wrote) is left out of the file.
  *
  * The stock programs read one input, `rows`. Of its first 100 rows, those with a text in them are looked at: the first
  * is a heading row when it holds no number, the first column holds labels when it holds no number (or only years), and
@@ -59,6 +59,7 @@ export function describeStockChart(kind: StockKind, rows: ChartCell[][]): ChartD
   if (!hasHead || head === undefined || !isFilled(head)) return null;
   const probe = seen.slice(1);
   const width = probe[0]?.length ?? 0;
+  if (kind === 'scatter') return describeStockScatter(rows, probe, width);
   const hasLabels = width > 1 && (!probe.some((row) => isNumber(row[0])) || probe.every((row) => isYear(row[0])));
   if (!hasLabels) return null;
   const drawn = columnsWithNumbers(probe, width);
@@ -75,7 +76,22 @@ export function describeStockChart(kind: StockKind, rows: ChartCell[][]): ChartD
     return { kind: 'doughnut', data: table(leftOut) };
   }
   if (kind === 'line') return { kind: 'line', stacking: 'none', data: table([]) };
-  return { kind: 'bar', direction: 'vertical', stacking: kind === 'stackedBar' ? 'stacked' : 'none', data: table([]) };
+  if (kind === 'area') return { kind: 'area', stacking: 'none', data: table([]) };
+  const direction = kind === 'horizontalBar' ? 'horizontal' : 'vertical';
+  return { kind: 'bar', direction, stacking: kind === 'stackedBar' ? 'stacked' : 'none', data: table([]) };
+}
+
+/**
+ * The scatter program reads the first column as the numbers each point lies along and each other column with a number
+ * as a series, leaving out the rows with no number in the first column. The file's table form draws every row, so a
+ * scatter is described only when every row under the headings has a number there.
+ */
+function describeStockScatter(rows: ChartCell[][], probe: ChartCell[][], width: number): ChartDescription | null {
+  const below = rows.slice(1).filter(isFilled);
+  if (width < 2 || below.length === 0 || !below.every((row) => isNumber(row[0]))) return null;
+  const drawn = columnsWithNumbers(probe, width);
+  if (drawn.length === 0 || columnsWithNumbers(below, width).join() !== drawn.join()) return null;
+  return { kind: 'scatter', data: { from: 'table', input: STOCK_INPUT, seriesAre: 'columns', labelsLeftOut: [] } };
 }
 
 const isChartCell = (value: unknown): value is ChartCell => isObject(value) && typeof value.text === 'string';

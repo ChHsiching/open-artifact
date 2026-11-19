@@ -1,7 +1,9 @@
 /**
  * Comments beside the text: each card of the open tab level with its words, stacked so none overlap, the open card
  * kept by its words and nudged toward them. The column scrolls with the page, and other features' cards join it. Where
- * the page leaves no room for the column, a marker beside each line opens its cards one at a time, under the line.
+ * the page leaves no room for the column, a marker beside each line opens its cards one at a time, under the line. A
+ * reaction is its own chip, in the column or by the line's marker, and opens no card. The column lies over the page's
+ * right side, which leaves it room, so the page's scrollbar stays at the edge of the window.
  */
 import type { CommentThread } from '@open-artifact/runtime';
 import { cn } from '@open-artifact/ui';
@@ -214,12 +216,13 @@ function Margin({ tab, room }: { tab: string; room: boolean }): ReactNode {
     });
     anchored.sort((a, b) => a.top - b.top);
     let next: Map<string, number>;
+    const reactions = new Set(items.flatMap(item => (item.thread && isReactionThread(item.thread) ? [item.id] : [])));
     if (room) {
       next = stackCards(anchored, focus);
       setMarkers(before => (before.length ? [] : before));
     } else {
       const rows = markerRows(anchored.filter(item => item.id !== NEW_THREAD));
-      const shown = anchored.find(item => item.id === focus);
+      const shown = anchored.find(item => item.id === focus && !reactions.has(item.id));
       next = new Map(shown ? [[shown.id, shown.top + MARKER_HEIGHT + 4]] : []);
       setMarkers(before => (JSON.stringify(before) === JSON.stringify(rows) ? before : rows));
     }
@@ -231,6 +234,33 @@ function Margin({ tab, room }: { tab: string; room: boolean }): ReactNode {
     placed.current = new Set([...tops.keys()]);
   }, [tops]);
 
+  // The column lies over the page, clear of its scrollbar (and of any panel after it); with cards to show, the page
+  // leaves it room on its right.
+  const column = useRef<HTMLDivElement>(null);
+  const showing = items.length > 0;
+  useLayoutEffect(() => {
+    const page = scroller();
+    const row = page?.parentElement;
+    if (!page || !row || !showing) return;
+    const fit = () => {
+      if (!column.current) return;
+      const gap = row.getBoundingClientRect().right - page.getBoundingClientRect().right;
+      column.current.style.right = `${Math.max(0, gap) + page.offsetWidth - page.clientWidth}px`;
+    };
+    if (room) page.style.paddingRight = `${COLUMN_WIDTH}px`;
+    // What lies beside the page, for how far a table may reach (tables/fit.ts).
+    page.dataset.marginColumn = room ? 'rail' : 'icons';
+    fit();
+    const resize = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(fit);
+    resize?.observe(page);
+    resize?.observe(row);
+    return () => {
+      resize?.disconnect();
+      page.style.paddingRight = '';
+      delete page.dataset.marginColumn;
+    };
+  }, [showing, room]);
+
   // With no comments the page keeps the middle of the window; the column comes in with the first one.
   if (!items.length) return null;
 
@@ -240,14 +270,15 @@ function Margin({ tab, room }: { tab: string; room: boolean }): ReactNode {
     if (item?.card) item.card.select(open);
     else if (item?.thread) setActive(open ? id : null);
   };
-  // A marker opens the first of its cards, then the next; on its only card, open, it closes it.
+  // A marker opens the first of its cards, then the next; on its only card, open, it closes it. A reaction is pressed
+  // where it shows.
   const choose = (ids: readonly string[]) => {
     const at = focus ? ids.indexOf(focus) : -1;
     const next = at !== -1 && ids.length === 1 ? null : ids[(at + 1) % ids.length]!;
     if (focus && focus !== next) openItem(focus, false);
     if (next) openItem(next, true);
   };
-  const shown = room ? items : items.filter(item => tops.has(item.id));
+  const shown = room ? items : items.filter(item => tops.has(item.id) && !(item.thread && isReactionThread(item.thread)));
 
   const onWheel = (event: WheelEvent<HTMLDivElement>) => {
     const target = event.target as HTMLElement;
@@ -257,9 +288,10 @@ function Margin({ tab, room }: { tab: string; room: boolean }): ReactNode {
 
   return (
     <div
+      ref={column}
       className={cn(
-        'w-80 flex-none overflow-hidden',
-        room ? 'relative' : 'pointer-events-none absolute inset-y-0 right-0 z-30 max-w-full [&_[data-margin-item]]:pointer-events-auto',
+        'pointer-events-none absolute inset-y-0 right-0 w-80 max-w-full overflow-hidden [&_[data-margin-item]]:pointer-events-auto',
+        room ? 'z-10' : 'z-30',
       )}
       aria-label="Comments"
       role="complementary"
@@ -295,32 +327,44 @@ function Margin({ tab, room }: { tab: string; room: boolean }): ReactNode {
   );
 }
 
-/** One line's marker in the gutter: what its cards are and how many. */
+/** One line's marker in the gutter: its reactions as chips, then what its other cards are and how many. */
 function Marker({ row, items, open, onChoose }: { row: MarkerRow; items: ReadonlyMap<string, MarginItem>; open: string | null; onChoose(ids: readonly string[]): void }): ReactNode {
-  const comments = row.ids.filter(id => items.get(id)?.thread).length;
-  const others = row.ids.length - comments;
+  const reactions = row.ids.flatMap(id => {
+    const thread = items.get(id)?.thread;
+    return thread && isReactionThread(thread) ? [thread] : [];
+  });
+  const ids = row.ids.filter(id => !reactions.some(thread => thread.id === id));
+  const comments = ids.filter(id => items.get(id)?.thread).length;
+  const others = ids.length - comments;
   const label = [comments ? `${comments} ${comments === 1 ? 'comment' : 'comments'}` : '', others ? `${others} ${others === 1 ? 'suggestion' : 'suggestions'}` : '']
     .filter(Boolean)
     .join(', ');
   const Icon = comments ? MessageSquare : ListChecks;
   return (
-    <button
-      type="button"
-      data-margin-marker={row.ids.join(' ')}
-      aria-label={`${label} on this line`}
-      title={`${label} on this line`}
-      aria-pressed={!!open && row.ids.includes(open)}
-      className={cn(
-        'pointer-events-auto absolute right-3 inline-flex items-center gap-1 rounded-md px-1.5 text-[12px] text-chrome-muted transition-colors hover:bg-chrome-hover hover:text-chrome-fg',
-        open && row.ids.includes(open) && 'bg-chrome-hover text-chrome-fg ring-1 ring-chrome-accent/60',
-      )}
-      style={{ top: row.top, height: MARKER_HEIGHT }}
-      onMouseDown={event => event.preventDefault()}
-      onClick={() => onChoose(row.ids)}
-    >
-      <Icon className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
-      {row.ids.length}
-    </button>
+    <div className="absolute right-3 flex items-center gap-1" style={{ top: row.top, height: MARKER_HEIGHT }} data-margin-marker={row.ids.join(' ')}>
+      {reactions.map(thread => (
+        <div key={thread.id} className="pointer-events-auto" onMouseDown={event => event.preventDefault()}>
+          <ReactionChip thread={thread} open={false} onOpen={() => setActive(thread.id)} />
+        </div>
+      ))}
+      {ids.length ? (
+        <button
+          type="button"
+          aria-label={`${label} on this line`}
+          title={`${label} on this line`}
+          aria-pressed={!!open && ids.includes(open)}
+          className={cn(
+            'pointer-events-auto inline-flex h-full items-center gap-1 rounded-md px-1.5 text-[12px] text-chrome-muted transition-colors hover:bg-chrome-hover hover:text-chrome-fg',
+            open && ids.includes(open) && 'bg-chrome-hover text-chrome-fg ring-1 ring-chrome-accent/60',
+          )}
+          onMouseDown={event => event.preventDefault()}
+          onClick={() => onChoose(ids)}
+        >
+          <Icon className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+          {ids.length}
+        </button>
+      ) : null}
+    </div>
   );
 }
 

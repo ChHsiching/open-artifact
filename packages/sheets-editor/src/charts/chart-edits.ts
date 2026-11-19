@@ -1,3 +1,5 @@
+import { CHART_ROWS_INPUT } from './chart-kind-fit.ts';
+export { CHART_ROWS_INPUT };
 import type { Dynamic } from '../dynamic.ts';
 import { areaOfHeld } from './cells-held.ts';
 import { placeChartForArea, DEFAULT_CHART_SIZE } from './placement.ts';
@@ -109,4 +111,3 @@ export function chartEditOutcome(answer?: Dynamic) {
   if (answer.refusal === 'widgetNodeNotShownByTheView') return 'showsAnother';
   return isEditRefusalReason(messageKey) || answer.refusal === 'widgetNodeOfAnotherView' ? 'unsure' : 'notMade';
 }
-export const CHART_ROWS_INPUT = 'rows';

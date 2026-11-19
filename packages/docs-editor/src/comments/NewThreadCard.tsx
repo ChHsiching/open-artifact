@@ -1,12 +1,13 @@
 /** The card of a thread being written: the words it will hang on (what the cells are, on several), and its text box. */
 import { ConfirmDialog } from '@open-artifact/ui';
 import { type ReactNode, type Ref, useState } from 'react';
-import { cancelComposer, createThread } from './actions.ts';
-import { Composer } from './Composer.tsx';
-import { canAskAgent, setCommentUi, useCommentUi } from './store.ts';
+import { cancelComposer, createThread, mentionsAgent } from './actions.ts';
+import { Composer, type SendBoxSpec } from './Composer.tsx';
+import { canAskAgent, rememberSend, rememberedSend, setCommentUi, useCommentUi } from './store.ts';
 
 export function NewThreadCard({ cardRef }: { cardRef?: Ref<HTMLDivElement> }): ReactNode {
   const composer = useCommentUi(state => state.composer);
+  useCommentUi(state => state.agent);
   const [busy, setBusy] = useState(false);
   const [discard, setDiscard] = useState(false);
   if (!composer) return null;
@@ -14,6 +15,19 @@ export function NewThreadCard({ cardRef }: { cardRef?: Ref<HTMLDivElement> }): R
     const current = useCommentUi.getState().composer;
     if (current) setCommentUi({ composer: { ...current, text } });
   };
+  const locked = mentionsAgent(composer.text);
+  const sendBox: SendBoxSpec | undefined = canAskAgent()
+    ? {
+        checked: locked || (composer.send ?? rememberedSend()),
+        locked,
+        tag: true,
+        onChange: send => {
+          const current = useCommentUi.getState().composer;
+          if (current) setCommentUi({ composer: { ...current, send } });
+          rememberSend(send);
+        },
+      }
+    : undefined;
   return (
     <div ref={cardRef} className="pointer-events-auto rounded-[12px] bg-chrome p-3 text-chrome-fg shadow-chrome-popup ring-1 ring-chrome-accent/50" data-comment-card="new">
       {composer.clamped ? <div className="mb-2 text-[12px] text-chrome-muted">Long selection — your comment will attach to the beginning of it.</div> : null}
@@ -26,9 +40,10 @@ export function NewThreadCard({ cardRef }: { cardRef?: Ref<HTMLDivElement> }): R
         value={composer.text}
         onChange={setText}
         busy={busy}
+        sendBox={sendBox}
         onSubmit={text => {
           setBusy(true);
-          void createThread(text).finally(() => setBusy(false));
+          void createThread(text, useCommentUi.getState().composer, sendBox?.checked ?? false).finally(() => setBusy(false));
         }}
         onCancel={() => (composer.text.trim() ? setDiscard(true) : cancelComposer())}
       />

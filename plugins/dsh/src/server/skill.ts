@@ -15,7 +15,7 @@ export const SKILL_NAME = 'open-artifact';
 export const BUNDLED_SKILL_RANK = 600;
 
 const DESCRIPTION =
-  'Make a new artifact of one Open Artifact type (design, slides, whiteboard, data, sheets, design-system, …) with the Artifact tool. Usage: /open-artifact <type> <what to make>.';
+  'Make a new artifact of one Open Artifact type (design, slides, whiteboard, data, sheets, docs, design-system, …) with the Artifact tool. Usage: /open-artifact <type> <what to make>.';
 
 /** One installed type, as the skill lists it. */
 export interface SkillType {

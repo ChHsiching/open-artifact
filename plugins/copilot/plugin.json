@@ -17,7 +17,9 @@
     "sheets",
     "spreadsheet",
     "data",
-    "dashboard"
+    "dashboard",
+    "docs",
+    "document"
   ],
   "category": "design",
   "skills": "skills/",

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { CommentMessage, CommentThread } from '@open-artifact/runtime';
-import { judgeComment } from '../src/comments/judge.ts';
+import { judgeComment, replyWakes } from '../src/comments/judge.ts';
 
 let next = 0;
 const person = (name: string, text: string, to?: string[]): CommentMessage => ({
@@ -78,5 +78,23 @@ describe('the comment judge', () => {
 
   it('stays quiet for a message that is not a person’s', () => {
     assert.equal(judgeComment({ thread: thread([...talk(), agent('One more thing')], 'replied'), to: [] }).choice, 'nothing');
+  });
+});
+
+describe('where a reply would go, for the reply box\'s "Send to agent"', () => {
+  it('goes to the agent on a talk with it', () => {
+    assert.equal(replyWakes(thread(talk(), 'replied'), 'Make it punchier', 'Ana', []), true);
+  });
+
+  it('stays with people on a thread the agent took no part in, or when it only thanks, or names someone else', () => {
+    assert.equal(replyWakes(thread([person('Ana', 'Is this right?')]), 'I think so', 'Bo', []), false);
+    assert.equal(replyWakes(thread(talk(), 'replied'), 'Thanks!', 'Ana', []), false);
+    assert.equal(replyWakes(thread(talk(), 'replied'), '@Bo what do you think?', 'Ana', ['Bo']), false);
+  });
+
+  it('leaves the thread as it was', () => {
+    const before = thread(talk(), 'replied');
+    replyWakes(before, 'Make it punchier', 'Ana', []);
+    assert.equal(before.messages.length, 2);
   });
 });

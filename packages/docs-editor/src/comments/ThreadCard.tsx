@@ -5,10 +5,10 @@ import { Tip } from '@open-artifact/editor-kit/react';
 import { ConfirmDialog, cn } from '@open-artifact/ui';
 import { CircleCheck } from 'lucide-react';
 import { type ReactNode, type Ref, useState } from 'react';
-import { pressReactionThread, reply } from './actions.ts';
-import { Composer, Initial } from './Composer.tsx';
+import { mentionsAgent, pressReactionThread, reply, replyGoesToAgent } from './actions.ts';
+import { Composer, Initial, type SendBoxSpec } from './Composer.tsx';
 import { Message } from './Message.tsx';
-import { type Hold, agentName, canComment, canRemoveAny, docComments, myName, setActive, useCommentUi } from './store.ts';
+import { type Hold, agentName, canAskAgent, canComment, canRemoveAny, docComments, myName, setActive, useCommentUi } from './store.ts';
 import { canDeleteThread, isOwn, reactionCount, resolvedWords } from './threads.ts';
 
 export interface ThreadCardProps {
@@ -59,7 +59,14 @@ function ReplyBox({ thread }: { thread: CommentThread }): ReactNode {
   const draft = docComments.store(state => state.replies[thread.id]?.text ?? '');
   const [busy, setBusy] = useState(false);
   const [discard, setDiscard] = useState(false);
+  // The person's own "Send to agent" for this reply; until they set it, the box says where the reply would go.
+  const [choice, setChoice] = useState<boolean | null>(null);
+  useCommentUi(state => state.agent);
   const setDraft = (text: string) => docComments.store.getState().setReply(thread.id, { text, send: false });
+  const locked = mentionsAgent(draft);
+  const sendBox: SendBoxSpec | undefined = canAskAgent()
+    ? { checked: locked || (choice ?? replyGoesToAgent(thread, draft)), locked, onChange: setChoice }
+    : undefined;
   return (
     <div className="mt-3" onClick={event => event.stopPropagation()}>
       <Composer
@@ -70,9 +77,12 @@ function ReplyBox({ thread }: { thread: CommentThread }): ReactNode {
         value={draft}
         onChange={setDraft}
         busy={busy}
+        sendBox={sendBox}
         onSubmit={text => {
           setBusy(true);
-          void reply(thread.id, text).finally(() => setBusy(false));
+          void reply(thread.id, text, sendBox?.checked)
+            .then(sent => sent && setChoice(null))
+            .finally(() => setBusy(false));
         }}
         onCancel={() => (draft.trim() ? setDiscard(true) : setActive(null))}
       />
@@ -114,13 +124,13 @@ export function ReactionChip({ thread, open, cardRef, onOpen }: Pick<ThreadCardP
             void pressReactionThread(thread, canDeleteThread(thread, me, canComment(), canRemoveAny()));
           }}
           className={cn(
-            'flex h-7 items-center gap-1 rounded-full bg-chrome px-2 text-[13px] shadow-chrome transition-colors disabled:opacity-100',
-            mine && 'bg-chrome-pressed text-chrome-pressed-fg',
-            open && 'ring-1 ring-chrome-accent',
+            'flex h-6 items-center gap-1 rounded-full border px-2 leading-none transition-colors disabled:opacity-100',
+            mine ? 'border-chrome-accent/35 bg-chrome-accent/10 text-chrome-accent hover:bg-chrome-accent/15' : 'border-chrome-line bg-chrome text-chrome-muted hover:bg-chrome-hover',
+            open && 'ring-1 ring-chrome-accent/60',
           )}
         >
           <span className="text-[15px] leading-none">{emoji}</span>
-          <span className="text-[12px]">{reactionCount(thread)}</span>
+          <span className="text-[12px] tabular-nums">{reactionCount(thread)}</span>
         </button>
       </Tip>
     </div>

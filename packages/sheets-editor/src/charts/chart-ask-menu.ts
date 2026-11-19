@@ -6,6 +6,7 @@ import * as React from 'react';
 import { MAX_ASK_WORDS_LENGTH, cleanAskWords } from '../agent/chat-with-agent.ts';
 import { jsx } from 'react/jsx-runtime';
 import { ChartThumbnail } from './chart-thumbnail.ts';
+import { STOCK_KINDS } from './stock-programs.ts';
 import { chartKindName, CHART_MESSAGES } from './chart-words.ts';
 import { DrawnAndSaid, AgentWritingRow } from '../agent/agent-rows.ts';
 import { chartMessages } from '../messages/charts.ts';
@@ -15,7 +16,7 @@ export let KEEP_CHANGE_ROW: Dynamic;
 export let DISCARD_CHANGE_ROW: Dynamic;
 export function chartKindOfRow(rowId?: Dynamic) {
   if (rowId === ASK_AGENT_ROW || rowId === ANY_KIND_ROW) return 'any';
-  return rowId === 'bar' || rowId === 'stackedBar' || rowId === 'line' || rowId === 'pie' ? rowId : null;
+  return STOCK_KINDS.includes(rowId) ? rowId : null;
 }
 export function nextKindsOnlyState(state?: Dynamic, options?: Dynamic) {
   let canBeUsedWith = (showsOnlyKinds2?: Dynamic) => options.canTakeKind || (!showsOnlyKinds2 && !options.isFieldLocked);

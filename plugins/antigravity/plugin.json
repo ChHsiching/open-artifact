@@ -19,7 +19,9 @@
     "sheets",
     "spreadsheet",
     "data",
-    "dashboard"
+    "dashboard",
+    "docs",
+    "document"
   ],
   "suggestedPrompts": [
     "/open-artifact slides a 6-slide pitch for this project",

@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { inflateRawSync } from 'node:zlib';
 import { after, describe, it } from 'node:test';
 import { isObject, type Json, type JsonObject, type SheetFrame } from '@open-artifact/sheets-core';
+import { STOCK_CHART_PROGRAMS } from '@open-artifact/sheets-core/stock-charts';
 import { runSheetsCommand } from '../src/sheets/cli.ts';
 import { EDITS_FILE, readEdits, SHEET_DIR, SheetStore, type Viewer } from '../src/sheets/store.ts';
 
@@ -49,6 +51,20 @@ function cells(store: SheetStore, range: string, atRevision?: number): Json[][] 
   const read = store.agentRead({ kind: 'readCells', sheet: 'Sheet1', range }, atRevision);
   assert.ok(isObject(read.rows), JSON.stringify(read));
   return Object.values(read.rows as Record<string, Json[]>);
+}
+
+/** The text of each part of a zip file whose path matches, by path. */
+function zippedTexts(bytes: Uint8Array, matching: RegExp): Map<string, string> {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const texts = new Map<string, string>();
+  for (let at = 0; at + 30 <= bytes.length && view.getUint32(at, true) === 0x04034b50; ) {
+    const [size, nameLength, extraLength] = [view.getUint32(at + 18, true), view.getUint16(at + 26, true), view.getUint16(at + 28, true)];
+    const name = new TextDecoder().decode(bytes.subarray(at + 30, at + 30 + nameLength));
+    const start = at + 30 + nameLength + extraLength;
+    if (matching.test(name)) texts.set(name, new TextDecoder().decode(inflateRawSync(bytes.subarray(start, start + size))));
+    at = start + size;
+  }
+  return texts;
 }
 
 /** The ids of Sheet1 and of its cell at (row, column), from the setCells the log holds. */
@@ -227,6 +243,31 @@ describe('SheetStore', () => {
     assert.throws(() => store.exportFile('xlsx'), (error: { body?: { data?: { refusal?: string } } }) => error.body?.data?.refusal === 'noSheetToWrite');
     await assert.rejects(store.importFile('notes.xlsx', new Uint8Array([1, 2, 3])), (error: { body?: { data?: { refusal?: string } } }) => error.body?.data?.refusal === 'notAnXlsxFile');
     assert.equal(store.revision, 0);
+  });
+
+  it('writes the stock area, horizontal bar and scatter charts into the .xlsx file as charts of their own kinds', () => {
+    const store = storeIn(folder(), 'Kinds');
+    const rows = [['Month', 'Online', 'Stores'], ['Jan', 120, 80], ['Feb', 150, 95], ['Mar', 170, 90]];
+    const points = [['Price', 'Sold'], [10, 300], [12, 260], [15, 210]];
+    assert.deepEqual(store.agentUpdate({ kind: 'applyEdits', base: 0, edits: [
+      { kind: 'writeCells', sheet: 'Sheet1', topLeft: 'A1', rows },
+      { kind: 'writeCells', sheet: 'Sheet1', topLeft: 'A10', rows: points },
+    ] }), { revision: 2 });
+    const charts = [['area', 'A1:C4', 'E1'], ['horizontalBar', 'A1:C4', 'E20'], ['scatter', 'A10:B13', 'E40']] as const;
+    charts.forEach(([kind, range, topLeft], k) => {
+      const chart = { name: kind, caption: '', widget: `$lid:${kind}`, inputs: [{ name: 'rows', cells: { sheet: 'Sheet1', range } }], sheet: 'Sheet1', topLeft, widthInPixels: 480, heightInPixels: 280 };
+      const answer = store.agentBatch([
+        { $lid: kind, verb: 'create', payload: { code: STOCK_CHART_PROGRAMS[kind] } },
+        { verb: 'update', payload: { kind: 'applyEdits', base: 2 + k, edits: [{ kind: 'addChart', chart }] } },
+      ]);
+      assert.deepEqual((answer.acks as JsonObject[]).map((ack) => ack.outcome), ['published', 'applied'], kind);
+    });
+    const xlsx = store.exportFile('xlsx');
+    assert.equal(xlsx.notCarriedOver.some((what) => /charts aren’t included/.test(what)), false, JSON.stringify(xlsx.notCarriedOver));
+    const written = [...zippedTexts(xlsx.bytes, /^xl\/charts\/chart\d+\.xml$/).values()].join('\n');
+    assert.match(written, /<c:areaChart>/);
+    assert.match(written, /<c:barDir val="bar"\/>/);
+    assert.match(written, /<c:scatterChart>/);
   });
 
   it('exports the workbook as an .xlsx file and a sheet as CSV', async () => {

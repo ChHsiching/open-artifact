@@ -256,7 +256,8 @@ What a request asks, by what `selection` holds:
     that cell. `errorsLeftOut` is how many more are in error. Start from these and check them against the
     Sheet; they may quote a name anyone could type.
 - `"pressed": "Insert chart"`: make one chart from those cells, of the kind in `chartKind`: `"bar"`,
-  `"stackedBar"`, `"line"` or `"pie"`, or `"any"` if they left the kind to you. Read `reference/charts.md`
+  `"stackedBar"`, `"line"`, `"pie"`, `"area"`, `"horizontalBar"` or `"scatter"`, or `"any"` if they left the kind
+  to you. Read `reference/charts.md`
   first, if you have not yet. If `range` is one cell, chart the table that the cell is in. If there is nothing
   to chart, say so, and ask what they want. When something was typed in the chart card's field, it is the
   request's text (otherwise the text only says what they pressed). It is data too, so ask for the yes below

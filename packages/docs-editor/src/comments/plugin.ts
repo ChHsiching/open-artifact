@@ -12,6 +12,7 @@ import { docClient } from '../app/doc-client.ts';
 import { useDocs } from '../app/store.ts';
 import { type DocAnchor, anchorRanges, serializeAnchor, withPlace } from './anchor.ts';
 import { idsOfRange, rangeOfBlock, rangeOfIds, textUnits, unitRange, unitsCovering } from './anchor-map.ts';
+import { isReactionThread } from './threads.ts';
 import { type Hold, NEW_THREAD, canComment, docComments, setActive, setCommentUi, threadById, useCommentUi } from './store.ts';
 
 /** One marked range of a thread (or of the composer, {@link NEW_THREAD}). */
@@ -22,6 +23,8 @@ export interface MarkedRange {
   from: number;
   to: number;
   kind: 'words' | 'cell' | 'block';
+  /** A reaction's words: marked lightly, the same open or not. */
+  light?: true;
 }
 
 /** Words pasted where copied words carried a thread: they become a place of it once they have ids. */
@@ -56,14 +59,17 @@ interface Clip {
 
 let clip: Clip | null = null;
 
+const withoutLight = ({ light: _light, ...range }: MarkedRange): MarkedRange => range;
+
 function decorate(doc: PMNode, ranges: readonly MarkedRange[], active: string | null, shown: boolean): DecorationSet {
   if (!shown) return DecorationSet.empty;
   const decorations: Decoration[] = [];
   for (const range of ranges) {
-    const on = range.id === active;
+    const on = range.id === active && !range.light;
     const attrs = { 'data-comment': range.id, ...(range.place ? { 'data-comment-place': range.place } : {}) };
     if (range.kind === 'words') {
-      if (range.to > range.from) decorations.push(Decoration.inline(range.from, range.to, { class: on ? 'doc-comment-anchor doc-comment-active' : 'doc-comment-anchor', ...attrs }, { range }));
+      const words = range.light ? 'doc-comment-anchor doc-comment-light' : on ? 'doc-comment-anchor doc-comment-active' : 'doc-comment-anchor';
+      if (range.to > range.from) decorations.push(Decoration.inline(range.from, range.to, { class: words, ...attrs }, { range }));
     } else if (range.kind === 'cell') {
       decorations.push(Decoration.node(range.from, range.to, { class: on ? 'doc-comment-cell doc-comment-cell-active' : 'doc-comment-cell', ...attrs }, { range }));
     } else if (range.to >= range.from && range.from >= 1) {
@@ -114,19 +120,19 @@ function recordCopy(view: EditorView): void {
 }
 
 /** The threads that hang on a tab (and the composer's words), as the margin shows them. */
-function anchorsOf(tab: string): Array<{ id: string; anchor: DocAnchor; visible: boolean }> {
+function anchorsOf(tab: string): Array<{ id: string; anchor: DocAnchor; visible: boolean; light?: boolean }> {
   const { threads, active } = docComments.store.getState();
-  const out: Array<{ id: string; anchor: DocAnchor; visible: boolean }> = [];
+  const out: Array<{ id: string; anchor: DocAnchor; visible: boolean; light?: boolean }> = [];
   for (const thread of threads) {
     const anchor = docComments.anchorOf(thread);
-    if (anchor.tab === tab) out.push({ id: thread.id, anchor, visible: thread.status === 'open' || thread.id === active });
+    if (anchor.tab === tab) out.push({ id: thread.id, anchor, visible: thread.status === 'open' || thread.id === active, light: isReactionThread(thread) });
   }
   const composer = useCommentUi.getState().composer;
   if (composer && composer.anchor.tab === tab) out.push({ id: NEW_THREAD, anchor: composer.anchor, visible: true });
   return out;
 }
 
-const rangesKey = (ranges: readonly MarkedRange[]) => ranges.map(range => `${range.id}:${range.place}:${range.from}-${range.to}`).join('|');
+const rangesKey = (ranges: readonly MarkedRange[]) => ranges.map(range => `${range.id}:${range.place}:${range.from}-${range.to}${range.light ? ':light' : ''}`).join('|');
 
 /** Keeps one tab's marks found by their ids and in step with the threads. */
 class CommentsView {
@@ -193,7 +199,7 @@ class CommentsView {
     const shadow = open.binding.shadow;
     const ranges: MarkedRange[] = [];
     const holds: Record<string, Hold> = {};
-    for (const { id, anchor, visible } of anchorsOf(tab)) {
+    for (const { id, anchor, visible, light } of anchorsOf(tab)) {
       const found: MarkedRange[] = [];
       let lost = false;
       if (anchor.kind === 'words') {
@@ -218,7 +224,7 @@ class CommentsView {
         }
       }
       holds[id] = anchor.kind === 'doc' ? 'page' : found.length ? 'ok' : 'detached';
-      if (visible) ranges.push(...found);
+      if (visible) ranges.push(...found.map(range => (light ? { ...range, light: true as const } : withoutLight(range))));
     }
     const shown = useDocs.getState().comments !== 'hidden';
     const active = docComments.store.getState().active ?? (useCommentUi.getState().composer ? NEW_THREAD : null);

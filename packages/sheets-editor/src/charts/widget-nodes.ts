@@ -1,5 +1,6 @@
 import type { Dynamic } from '../dynamic.ts';
-import { PIE_MAX_SLICES, BAR_CHART_MAX_POINTS } from './chart-offers.ts';
+import { doesChartKindSuitRows, isNumberValuedCell, isYearValuedCell } from './chart-kind-fit.ts';
+export { doesChartKindSuitRows, isNumberValuedCell, isYearValuedCell };
 import type { WidgetRequest } from '@open-artifact/runtime/sheet-api';
 import { answerOf, isRetryableFailure, refusalOf } from '../store/requests.ts';
 import { isRecord } from '../store/json.ts';
@@ -18,33 +19,6 @@ export function readMadeWidget(outcome: StoreOutcome): { nodeId: string } | { le
   return Array.isArray(widget.errors) && widget.errors.length === 0 ? { nodeId: widget.id } : { leftBehind: widget.id };
 }
 
-export function doesChartKindSuitRows(chartKind?: Dynamic, rows?: Dynamic) {
-  let rowsWithText = rows.filter((row?: Dynamic) => row.some(({ text: text }: Dynamic) => text !== ''));
-  let hasHeaderRow = rowsWithText.length > 1 && rowsWithText[0]?.some(isNumberValuedCell) === false;
-  let dataRows = rowsWithText.slice(hasHeaderRow ? 1 : 0);
-  let columnCount = dataRows[0]?.length ?? 0;
-  let firstColumnIsLabels =
-    columnCount > 1 &&
-    (!dataRows.some((row?: Dynamic) => isNumberValuedCell(row[0])) || dataRows.every((row?: Dynamic) => isYearValuedCell(row[0])));
-  let numberColumns = Array.from<Dynamic, Dynamic>(
-    {
-      length: columnCount,
-    },
-    (input?: Dynamic, columnIndex?: Dynamic) => columnIndex,
-  ).filter(
-    (columnIndex?: Dynamic) =>
-      columnIndex >= (firstColumnIsLabels ? 1 : 0) && dataRows.some((row?: Dynamic) => isNumberValuedCell(row[columnIndex])),
-  );
-  let numbers = dataRows.flatMap(
-    (row?: Dynamic) =>
-      numberColumns.flatMap((columnIndex?: Dynamic) => (typeof row[columnIndex]?.value === 'number' ? [row[columnIndex].value] : [])),
-  );
-  let fitsParts =
-    numbers.every((number?: Dynamic) => number >= 0) && numbers.filter((number?: Dynamic) => number > 0).length > 1;
-  if (chartKind === 'pie') return numberColumns.length === 1 && fitsParts && dataRows.length <= PIE_MAX_SLICES;
-  if (chartKind === 'stackedBar') return numberColumns.length > 1 && fitsParts && dataRows.length <= BAR_CHART_MAX_POINTS;
-  return chartKind === 'line' || dataRows.length <= BAR_CHART_MAX_POINTS;
-}
 export interface ChartWidgetNodesDeps {
   newOpId(): string;
   wait(ms: number): Promise<void>;
@@ -144,6 +118,3 @@ export const WIDGET_READ_RETRY_MS = 1000;
 export const stockKindOfChartCode = (code: string): StockKind | null =>
   STOCK_KINDS.find((kind) => STOCK_CHART_PROGRAMS[kind].trim() === code.trim()) ?? null;
 export const STOCK_CHART_KINDS: readonly StockKind[] = STOCK_KINDS;
-export const isNumberValuedCell = (cell?: Dynamic) => typeof cell?.value === 'number';
-export const isYearValuedCell = (cell?: Dynamic) =>
-  typeof cell?.value === 'number' && Number.isInteger(cell.value) && cell.value > 1800 && cell.value < 2200;

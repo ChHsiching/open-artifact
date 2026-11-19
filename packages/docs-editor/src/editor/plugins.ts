@@ -32,6 +32,7 @@ import { leaveText } from './focus-keys.ts';
 import { foldPlugin, toggleFoldHere } from './fold.ts';
 import { docInputRules } from './input-rules.ts';
 import { schema } from './schema.ts';
+import { FitTableView } from '../tables/view.ts';
 
 const { nodes } = schema;
 
@@ -162,7 +163,7 @@ export function docPlugins(actions: EditorActions, options: { writable: boolean 
     placeholderGuard(),
   ];
   if (options.writable) {
-    plugins.unshift(columnResizing({ cellMinWidth: 48, defaultCellMinWidth: 48 }));
+    plugins.unshift(columnResizing({ cellMinWidth: 48, defaultCellMinWidth: 48, View: FitTableView }));
     plugins.push(emptyLineHint('Type / for more'));
   }
   plugins.push(tableEditing({ allowTableNodeSelection: true }));

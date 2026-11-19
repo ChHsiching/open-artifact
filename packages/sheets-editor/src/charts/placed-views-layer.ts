@@ -16,7 +16,8 @@ import {
 import { useChartNotice, NoChartNotice, ChartNoticeScope, ChartNoticeGate, ChartNoticesProvider, CallWhenNoticeDue } from './chart-notices.ts';
 import { PlacedViewFixOffer, isViewBigEnoughForFix, PlacedViewFixContext, FIX_OF_PLACED_VIEW_CLASS } from './fix-of-placed-view.ts';
 import { jsxs, jsx, Fragment } from 'react/jsx-runtime';
-import { chartCellsProblem, ChartCellsProblemNotice, ChartOnItsWay } from './chart-placeholders.ts';
+import { ChartCellsProblemNotice, ChartOnItsWay } from './chart-placeholders.ts';
+import { canAskChartChange, chartCellsProblem, chartChangeOffers } from './change-offers.ts';
 import { stripFrameTimestampParams } from '../shell/frame-token.ts';
 import { ChartFrame } from './chart-frame.ts';
 import { whenBlurredToNothingChecked } from '../grid/focus-left.ts';
@@ -47,6 +48,8 @@ import { LiveAnnouncer } from '../ui/live-announcer.ts';
 import { ChartBeingMade } from './chart-being-made.ts';
 import { useIsTrueForVisibleMs } from '../ui/save-status.ts';
 import { makeThisChartKindPrompt } from './chart-words.ts';
+import { canSwapChartKind } from './chart-kind-fit.ts';
+import { STOCK_KINDS } from './stock-programs.ts';
 export function ChartCantBeShownNotice({ why: why, ofCode = null }: Dynamic) {
   let { title: title, advice: advice } = chartProblemWords(why);
   useChartNotice(title, ofCode);
@@ -224,6 +227,7 @@ export function PlacedView({
   isCaretOfCardOwed: isCaretOfCardOwed,
   onSteppedBackFromChange: onSteppedBackFromChange,
   onPageCannotAsk: onPageCannotAsk,
+  canAgentWrite = false,
   onKeepPressed: onKeepPressed,
   onPreviewCameOut: onPreviewCameOut,
   lastBlurOfWindowAtMs: lastBlurOfWindowAtMs,
@@ -296,7 +300,34 @@ export function PlacedView({
     borderRadius: `calc(var(--sheet-radius-of-chart) * ${String(zoom)})`,
   };
   let { showsIn: showsIn } = box;
-  let canAskChange = React.useMemo(() => canAskChartChange(changes, chart), [changes, chart]);
+  let canAskChange = React.useMemo(() => canAskChartChange(changes, chart, canAgentWrite), [changes, chart, canAgentWrite]);
+  let shownNodeOfChart = chart.kind === 'none' ? null : shownChartNode(chart.nodeId, ask.change ?? null);
+  let [kindOfShown, setKindOfShown] = React.useState({
+    nodeId: null,
+    kind: null,
+  });
+  React.useEffect(() => {
+    if (!isSelected || changes === null || shownNodeOfChart === null || kindOfShown.nodeId === shownNodeOfChart) return;
+    let isLive: Dynamic = true;
+    changes
+      .kindOf(shownNodeOfChart)
+      .catch(() => null)
+      .then((kind?: Dynamic) =>
+        isLive
+          ? setKindOfShown({
+              nodeId: shownNodeOfChart,
+              kind: kind,
+            })
+          : undefined,
+      );
+    return () => {
+      isLive = false;
+    };
+  }, [isSelected, changes, shownNodeOfChart, kindOfShown.nodeId]);
+  let changeOffers = React.useMemo(
+    () => chartChangeOffers(chart, kindOfShown.nodeId === shownNodeOfChart ? kindOfShown.kind : null, canAgentWrite),
+    [chart, kindOfShown, shownNodeOfChart, canAgentWrite],
+  );
   let isCardOffered = (doesChatTakeWords || canAskChange) && askBoxStands?.isRoomEnough === true;
   let isCardOpen = actThatOpenedCard !== null;
   let isCardShown = askBoxStands !== null && isCardOpen;
@@ -418,8 +449,11 @@ export function PlacedView({
   let onAsked = (kind?: Dynamic, words?: Dynamic) => {
     let askWords = askWordsOfKind(kind, words);
     if (cleanAskWords(askWords) === '') return;
-    let goesToChat = shouldAskInChatInstead(ask.whyNotChanged ?? null, isChatToBeHad);
-    if (!canAskChange && !isChatToBeHad)
+    let isKindSwap =
+      kind !== 'any' && cleanAskWords(words) === '' && chart.kind !== 'none' && canSwapChartKind(chart.inputs, kind);
+    let canChangeHere = canAskChange && (isKindSwap || canAgentWrite);
+    let goesToChat = !isKindSwap && shouldAskInChatInstead(ask.whyNotChanged ?? null, isChatToBeHad);
+    if (!canChangeHere && !isChatToBeHad)
       return onAskChanged(
         viewId,
         () => ({
@@ -431,7 +465,7 @@ export function PlacedView({
       onAskAgent(viewId);
       return;
     }
-    if (canAskChange && !goesToChat && changes !== null && chart.kind !== 'none') {
+    if (canChangeHere && !goesToChat && changes !== null && chart.kind !== 'none') {
       let asked = {
         stands: 'asked',
         from: shownChartNode(chart.nodeId, change),
@@ -731,9 +765,9 @@ export function PlacedView({
                 className: 'overflow-hidden rounded-[inherit]',
                 children: jsx(ChartAskMenu, {
                   changesChart: true,
-                  onOffer: CHART_CHANGE_OFFERS,
-                  whyNot: ask.isOnItsWay ? 'waiting' : null,
-                  canPageMakeChart: false,
+                  onOffer: changeOffers,
+                  whyNot: ask.isOnItsWay ? 'waiting' : !canAgentWrite && !isChatToBeHad ? 'noChat' : null,
+                  canPageMakeChart: changeOffers.some(({ isSwap: isSwap }: Dynamic) => isSwap),
                   change: chartChangeStage(change),
                   askedOfAgent: ask.asked ?? '',
                   isKindAsked: ask.wasAskedByRow === true,
@@ -871,8 +905,21 @@ export function PlacedViewsLayer({
       isLive = false;
     };
   }, [isAnySelected, changes]);
+  let [canAgentChangeCharts, setCanAgentChangeCharts] = React.useState(false);
+  React.useEffect(() => {
+    if (!isAnySelected || changes === null) return;
+    let isLive: Dynamic = true;
+    changes
+      .canAskAgent()
+      .catch(() => false)
+      .then((canAsk?: Dynamic) => (isLive ? setCanAgentChangeCharts(canAsk) : undefined));
+    return () => {
+      isLive = false;
+    };
+  }, [isAnySelected, changes]);
   let [isPageUnableToAsk, setIsPageUnableToAsk] = React.useState(false);
-  let changesNow = canHaveChanges && !isPageUnableToAsk ? changes : null;
+  let changesNow = canHaveChanges ? changes : null;
+  let canAgentWrite = canAgentChangeCharts && !isPageUnableToAsk;
   let stepBackFromChange = (viewId?: Dynamic) => changeAsk(viewId, letGoOfChartChange);
   let asksRef = React.useRef(asks);
   React.useLayoutEffect(() => {
@@ -899,7 +946,8 @@ export function PlacedViewsLayer({
   );
   let notePageCannotAsk = () => setIsPageUnableToAsk(true);
   let isCardAskable = (placedView?: Dynamic) =>
-    (rest.doesChatTakeWords || canAskChartChange(changesNow, placedView.chart)) && placedView.askBoxStands?.isRoomEnough === true;
+    (rest.doesChatTakeWords || canAskChartChange(changesNow, placedView.chart, canAgentWrite)) &&
+    placedView.askBoxStands?.isRoomEnough === true;
   let askableViewOf = (placementId?: Dynamic) => {
     let placedView = placedViews.find((candidate?: Dynamic) => candidate.placementId === placementId);
     return placedView?.isSelected === true && isCardAskable(placedView) ? placedView : null;
@@ -1121,6 +1169,7 @@ export function PlacedViewsLayer({
                     lastBlurOfWindowAtMs: lastBlurOfWindowAtMs,
                     ...rest,
                     changes: changesNow,
+                    canAgentWrite: canAgentWrite,
                   },
                   placedView.placementId,
                 ),
@@ -1205,34 +1254,7 @@ export const isInPlacedViewControls = (target?: Dynamic) =>
 export const isPlacedViewAskInput = (target?: Dynamic) => target instanceof HTMLInputElement && isInPlacedViewAskBox(target);
 export const findPlacedViewAskInput = (root?: Dynamic, placementId?: Dynamic) =>
   findPlacedViewCaret(root, placementId)?.closest(PLACEMENT_ID_SELECTOR)?.querySelector(`.${PLACED_VIEW_ASK_BOX_CLASS} input`) ?? null;
-export const CHART_CHANGE_OFFERS = [
-  {
-    kind: 'bar',
-    series: [
-      [3, 5, 4, 7],
-      [2, 3, 5, 4],
-    ],
-  },
-  {
-    kind: 'stackedBar',
-    series: [
-      [3, 4, 3, 5, 4],
-      [2, 2, 3, 2, 4],
-      [1, 2, 1, 2, 2],
-    ],
-  },
-  {
-    kind: 'line',
-    series: [
-      [2, 4, 3, 6, 5, 8],
-      [1, 2, 4, 3, 5, 4],
-    ],
-  },
-  {
-    kind: 'pie',
-    series: [[5, 3, 2, 1]],
-  },
-];
+/** Every kind a chart can be changed to, in the order "Change chart type" lists them, with the sketch each row shows. */
 export const PLACED_VIEW_TOOLS_MIN_PX = 64;
 export const PLACED_VIEW_TOOLS_WITH_EDIT_PX = 104;
 export const clampToolsCutOff = (cutOff?: Dynamic, size?: Dynamic, keptShown?: Dynamic) =>
@@ -1364,12 +1386,10 @@ export const editButtonAct = (state?: Dynamic) => {
   if (!state.isCardOffered) return 'attachesChart';
   return state.isWindowLeft ? 'nothing' : 'opensCard';
 };
-export const canAskChartChange = (changes?: Dynamic, chart?: Dynamic) =>
-  changes !== null && chart.kind !== 'none' && chartCellsProblem(chart.inputs) === null;
 export const mostAskWordsTyped = () =>
   MAX_ASK_WORDS_LENGTH -
   1 -
-  (Math.max as Dynamic)(...CHART_CHANGE_OFFERS.map(({ kind: kind }: Dynamic) => makeThisChartKindPrompt(kind).length));
+  (Math.max as Dynamic)(...STOCK_KINDS.map((kind?: Dynamic) => makeThisChartKindPrompt(kind).length));
 export const askWordsOfKind = (kind?: Dynamic, words?: Dynamic) =>
   kind === 'any' ? words : [makeThisChartKindPrompt(kind), words.trim()].join(' ').trim();
 export const MOST_CHARTS_RUN = 12;

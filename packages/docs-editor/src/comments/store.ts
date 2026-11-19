@@ -26,6 +26,29 @@ export interface Composer {
   text: string;
   /** The selection was too long: the thread hangs on its beginning. */
   clamped?: boolean;
+  /** "Send to agent" as the person set it for this comment; unset, it is their last choice ({@link rememberedSend}). */
+  send?: boolean;
+}
+
+const SEND_KEY = 'oa-docs.comments.sendToAgent';
+
+/** Whether a new comment starts with "Send to agent" checked: the person's last choice, checked until they make one. */
+export function rememberedSend(): boolean {
+  try {
+    const kept = localStorage.getItem(SEND_KEY);
+    return kept === null ? true : kept === '1';
+  } catch {
+    return true;
+  }
+}
+
+/** Keeps the person's own choice of "Send to agent" for their next comment. */
+export function rememberSend(send: boolean): void {
+  try {
+    localStorage.setItem(SEND_KEY, send ? '1' : '0');
+  } catch {
+    // Storage blocked: the choice lasts this comment only.
+  }
 }
 
 /** How a thread of the open tab hangs on it now. */

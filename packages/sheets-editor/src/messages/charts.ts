@@ -17,6 +17,11 @@ export function askSentToChatWords(outcome?: Dynamic) {
         defaultMessage: 'Couldn’t send. Try again.',
         id: 'X87dNTQZvM',
       });
+    case 'notListening':
+      return translateMessage({
+        defaultMessage: 'Agent isn’t listening to this Sheet. Ask it to wait for requests here, then try again.',
+        id: 'oaChtNoLst1',
+      });
   }
 }
 export function chartProblemOfFault(fault?: Dynamic) {

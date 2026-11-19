@@ -24,6 +24,21 @@ export function chartKindName(chartKind?: Dynamic) {
         defaultMessage: 'Pie chart',
         id: 'EGV7QC2EPp',
       });
+    case 'area':
+      return translateMessage({
+        defaultMessage: 'Area chart',
+        id: 'oaAreaKnd1',
+      });
+    case 'horizontalBar':
+      return translateMessage({
+        defaultMessage: 'Horizontal bar chart',
+        id: 'oaHBarKnd1',
+      });
+    case 'scatter':
+      return translateMessage({
+        defaultMessage: 'Scatter chart',
+        id: 'oaScatKnd1',
+      });
   }
 }
 export function makeThisChartKindPrompt(chartKind?: Dynamic) {
@@ -48,6 +63,21 @@ export function makeThisChartKindPrompt(chartKind?: Dynamic) {
         defaultMessage: 'Make this a pie chart.',
         id: 'C965sMjdo4',
       });
+    case 'area':
+      return translateMessage({
+        defaultMessage: 'Make this an area chart.',
+        id: 'oaAreaMk01',
+      });
+    case 'horizontalBar':
+      return translateMessage({
+        defaultMessage: 'Make this a horizontal bar chart.',
+        id: 'oaHBarMk01',
+      });
+    case 'scatter':
+      return translateMessage({
+        defaultMessage: 'Make this a scatter chart.',
+        id: 'oaScatMk01',
+      });
   }
 }
 export function insertChartKindLabel(chartKind?: Dynamic) {
@@ -71,6 +101,21 @@ export function insertChartKindLabel(chartKind?: Dynamic) {
       return translateMessage({
         defaultMessage: 'Insert a pie chart',
         id: '52tvPvpPcD',
+      });
+    case 'area':
+      return translateMessage({
+        defaultMessage: 'Insert an area chart',
+        id: 'oaAreaIn01',
+      });
+    case 'horizontalBar':
+      return translateMessage({
+        defaultMessage: 'Insert a horizontal bar chart',
+        id: 'oaHBarIn01',
+      });
+    case 'scatter':
+      return translateMessage({
+        defaultMessage: 'Insert a scatter chart',
+        id: 'oaScatIn01',
       });
   }
 }

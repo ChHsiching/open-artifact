@@ -6,7 +6,7 @@
  *   vendor/shell, vendor/home        the Shell and home pages, when built
  *   vendor/frame-host                the type server of original hosted artifact types (the daemon finds it next to open-artifact.mjs)
  *   vendor/harnesses                 the harness profiles
- *   vendor/artifact-types/design     the built-in types (data, design, design-system, sheets, slides, whiteboard)
+ *   vendor/artifact-types             the built-in types (data, design, design-system, docs, sheets, slides, whiteboard)
  *
  * Every harness on this computer shares one daemon: whichever starts it first decides these folders.
  */

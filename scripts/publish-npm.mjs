@@ -8,9 +8,12 @@
  *
  *   node scripts/publish-npm.mjs              publish
  *   node scripts/publish-npm.mjs --dry-run    show what would be published
- *   node scripts/publish-npm.mjs --claim      make the workflow the trusted publisher of each package npm doesn't have
- *                                             yet, so the workflow can publish it (npm creates the package with a
- *                                             0.0.0-stage placeholder; npm asks you to sign in for each)
+ *   node scripts/publish-npm.mjs --claim [<name>…]
+ *                                             make the workflow the trusted publisher of each package npm doesn't have
+ *                                             yet, so the workflow can publish its next versions: publishes the staged
+ *                                             version from here (npm trusts only a package it has, and refuses
+ *                                             placeholder versions), then trusts the workflow; a name given again
+ *                                             finishes one whose trust step failed (npm asks you to sign in each step)
  *   node scripts/publish-npm.mjs --trust [<name>…]
  *                                             make the workflow each package's trusted publisher on npmjs.com (once per
  *                                             package, after its first publish; npm asks you to sign in for each)
@@ -56,12 +59,22 @@ function trust(name) {
   return spawnSync(npm, args, { stdio: 'inherit' }).status === 0;
 }
 
+/**
+ * Publishes the staged version of a package npm doesn't have yet, from this computer: npm sets a trusted publisher only
+ * on a package it has (`npm trust` on a new name answers 404) and refuses placeholder versions such as 0.0.0-stage.
+ */
+function first({ folder, name, version }) {
+  console.log(`npm claim: ${name}@${version} (first publish)`);
+  return spawnSync(npm, ['publish', '--auth-type=web'], { cwd: join(OUT, folder), stdio: 'inherit' }).status === 0;
+}
+
 if (process.argv.includes('--claim')) {
   const failed = [];
-  for (const { name } of packages) {
-    if (exists(name)) continue;
+  for (const pkg of packages) {
+    const { name } = pkg;
+    if (exists(name) && !process.argv.slice(process.argv.indexOf('--claim') + 1).includes(name)) continue;
     if (dryRun) console.log(`npm claim: ${name} (dry run)`);
-    else if (!trust(name)) failed.push(name);
+    else if (!(exists(name) || first(pkg)) || !trust(name)) failed.push(name);
   }
   if (failed.length) {
     console.error(`npm claim: not done for ${failed.join(' ')}; run again`);

@@ -5,8 +5,8 @@
 # npm signs in by trusted publishing (OIDC): each package names this repository and this file as its trusted
 # publisher on npmjs.com (`npm trust github <package> --file publish-npm.yml --repo JimLiu/open-artifact --allow-publish`).
 # No npm token is stored here, and npm adds provenance. A new package is claimed once from a computer first:
-# `node scripts/publish-npm.mjs --claim` sets this workflow as the trusted publisher of each package npm doesn't have,
-# and npm creates the package with a 0.0.0-stage placeholder.
+# `node scripts/publish-npm.mjs --claim` publishes the staged version of each package npm doesn't have (npm trusts
+# only a package it has, and refuses placeholder versions), then sets this workflow as its trusted publisher.
 name: Publish to npm
 
 on:

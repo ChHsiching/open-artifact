@@ -380,6 +380,9 @@ export const marksOfChartBeingMade = (kind?: Dynamic, nth?: Dynamic) =>
       stackedBar: stackedBarSketch,
       line: lineSketch,
       pie: pieMarksOfChartBeingMade,
+      area: lineSketch,
+      horizontalBar: barSketch,
+      scatter: lineSketch,
     }) as Dynamic
   )[kind](nth);
 export const secondsUntilChangeReaches = (at?: Dynamic) =>

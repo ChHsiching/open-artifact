@@ -19,8 +19,8 @@ import type { SuggestionReplyTarget } from '../suggest/reply.ts';
 import { commentCells, mixesCellsAndText } from '../tables/comment-cells.ts';
 import { type DocAnchor, anchorLocation, cellsDetail, cellsLabel, quoteDetail, quoteLabel, withoutPlace } from './anchor.ts';
 import { blockIdAt, idsOfRange, textUnits, unitRange } from './anchor-map.ts';
-import { judgeComment } from './judge.ts';
-import { mentionsIn } from './mentions.ts';
+import { judgeComment, replyWakes } from './judge.ts';
+import { AGENT_KEY, mentionsIn } from './mentions.ts';
 import { CommentOutbox, type OutboxEntry, type OutboxItem, indexedDbOutboxStore, isNetworkError, outboxText } from './outbox.ts';
 import { rangesOf } from './plugin.ts';
 import {
@@ -56,6 +56,19 @@ function addressees(text: string): string[] {
   const { peers } = useCommentUi.getState();
   return mentionsIn(text, mentionCandidates(threads, peers, myName(), canAskAgent() ? { name: agentName() } : null));
 }
+
+/** The text @mentions the agent: it goes to the agent whatever "Send to agent" says. */
+export const mentionsAgent = (text: string): boolean => canAskAgent() && addressees(text).includes(AGENT_KEY);
+
+/** Whether the reply box's "Send to agent" starts checked: the reply would go on a talk with the agent. */
+export function replyGoesToAgent(thread: CommentThread, text: string): boolean {
+  if (!canAskAgent()) return false;
+  if (mentionsAgent(text)) return true;
+  return replyWakes(thread, text, myName() ?? '', addressees(text));
+}
+
+/** The text addressed to the agent: an `@agent` in front unless it already names it. */
+const toAgent = (text: string): string => (mentionsAgent(text) ? text : bodyOf(`@${agentName()} ${text}`));
 
 /** Margin comments come back into view when a comment is started. */
 function showMargin(): void {
@@ -203,11 +216,14 @@ export async function commentOnSuggestion(target: SuggestionReplyTarget): Promis
 
 /**
  * Hands a thread to the agent when its newest message is addressed to it, or (judge.ts) when it is a reply going on
- * a talk with the agent, unasked. `edited`: the message was changed, not written.
+ * a talk with the agent, unasked. `edited`: the message was changed, not written. `quiet`: the person unchecked
+ * "Send to agent", so only an @mention hands it over.
  */
-async function handOver(thread: CommentThread, to: readonly string[], edited = false): Promise<void> {
+async function handOver(thread: CommentThread, to: readonly string[], edited = false, quiet = false): Promise<void> {
   if (!canAskAgent()) return;
   const { choice } = judgeComment({ thread, to, edited });
+  // "Send to agent" unchecked on a reply: it stays with people, unless it @mentions the agent.
+  if (quiet && choice !== 'asked') return;
   if (choice === 'asked') await docComments.sendToAgent(thread.id);
   // A reply going on a talk with the agent reaches it unasked: no "Sent" notice, and a host that refuses it is no error.
   else if (choice === 'wake') await capability()?.sendToAgent(thread.id, { unasked: true }).then(putThread, () => undefined);
@@ -237,7 +253,7 @@ async function sendKept(entry: OutboxEntry): Promise<void> {
   let thread = await comments.reply(entry.threadId, entry.text, entry.to?.length ? { to: entry.to } : undefined);
   if (thread.status === 'resolved') thread = await comments.setResolved(entry.threadId, false);
   putThread(thread);
-  await handOver(thread, entry.to ?? []).catch(() => undefined);
+  await handOver(thread, entry.to ?? [], false, entry.quiet === true).catch(() => undefined);
 }
 
 const outboxHandlers = {
@@ -276,11 +292,15 @@ if (typeof window !== 'undefined' && !startOutbox()) {
   });
 }
 
-/** Saves the composer's thread (or another new thread's); resolves whether it was saved. */
-export async function createThread(text: string, composer: Composer | null = useCommentUi.getState().composer): Promise<boolean> {
+/**
+ * Saves the composer's thread (or another new thread's); resolves whether it was saved. `send`: "Send to agent" was
+ * checked, so the comment goes out addressed to the agent (an `@agent` in front).
+ */
+export async function createThread(text: string, composer: Composer | null = useCommentUi.getState().composer, send = false): Promise<boolean> {
   const comments = capability();
-  const body = bodyOf(text);
-  if (!comments || !composer || !body) return false;
+  const typed = bodyOf(text);
+  if (!comments || !composer || !typed) return false;
+  const body = send && canAskAgent() ? toAgent(typed) : typed;
   const to = addressees(body);
   const input = {
     anchor: docComments.adapter.serialize(composer.anchor),
@@ -318,10 +338,19 @@ export async function reactOnSelection(emoji: string): Promise<boolean> {
   return createThread(emoji, composer);
 }
 
-export async function reply(threadId: string, text: string): Promise<boolean> {
+/**
+ * Saves a reply; resolves whether it was saved. `send` is the reply box's "Send to agent": checked on a reply that
+ * would not reach the agent by itself, it goes out addressed to it; unchecked, a reply on a talk with the agent stays
+ * with people. Left out, the reply goes where judge.ts says.
+ */
+export async function reply(threadId: string, text: string, send?: boolean): Promise<boolean> {
   const comments = capability();
-  const body = bodyOf(text);
-  if (!comments || !body) return false;
+  const typed = bodyOf(text);
+  if (!comments || !typed) return false;
+  const thread = threadById(threadId);
+  const asks = send === true && canAskAgent() && !(thread && replyGoesToAgent(thread, typed));
+  const body = asks ? toAgent(typed) : typed;
+  const quiet = send === false;
   const to = addressees(body);
   try {
     let thread = await comments.reply(threadId, body, to.length ? { to } : undefined);
@@ -331,10 +360,10 @@ export async function reply(threadId: string, text: string): Promise<boolean> {
       const { [threadId]: _sent, ...replies } = state.replies;
       return { replies };
     });
-    await handOver(thread, to);
+    await handOver(thread, to, false, quiet);
     return true;
   } catch (error) {
-    if (await keepForLater(error, { kind: 'reply', threadId, text: body, ...(to.length ? { to } : {}) })) {
+    if (await keepForLater(error, { kind: 'reply', threadId, text: body, ...(to.length ? { to } : {}), ...(quiet ? { quiet } : {}) })) {
       docComments.store.setState(state => {
         const { [threadId]: _kept, ...replies } = state.replies;
         return { replies };

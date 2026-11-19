@@ -340,6 +340,76 @@
   max-width: 42ch;
 }
 
+/*
+ * A table of its own starts at the text's left edge and may be as wide as the room beside the text, up to the comments
+ * column or the page's gutter (`--table-room`, tables/fit.ts); its edge is drawn where it is cut off on the right.
+ */
+.doc-text > .tableWrapper {
+  box-sizing: content-box;
+  width: var(--table-room, auto);
+  max-width: none;
+  margin-right: 0;
+  padding-right: 2px;
+  display: flex;
+  align-items: flex-start;
+}
+
+.doc-text > .tableWrapper > table {
+  flex: none;
+}
+
+.doc-text > .tableWrapper::after {
+  content: "";
+  flex: none;
+  width: 1px;
+  margin-left: -1px;
+  pointer-events: none;
+}
+
+.doc-text > .tableWrapper[data-clip="right"]::after {
+  position: sticky;
+  right: -2px;
+  align-self: stretch;
+  margin-top: -16px;
+  margin-bottom: -16px;
+  background: linear-gradient(transparent, var(--doc-table-rule) 16px, var(--doc-table-rule) calc(100% - 16px), transparent) right / 1px 100% no-repeat;
+}
+
+/*
+ * Columns share the room by what their cells hold (tables/fit.ts): a least width from the longest line, short cells
+ * on one line, short words kept whole. While the caret is in a table that fills its room, its columns keep their widths.
+ */
+@media screen {
+  .doc-text :is(.tableWrapper:is([data-fit], [data-fit-lock="cursor"]) > table, table[data-fit]) {
+    max-width: 100%;
+  }
+
+  .doc-text .tableWrapper:is([data-fit], [data-fit-lock]) > table[style^="width:"]:has(> colgroup):not(:has([colspan])) {
+    max-width: max-content;
+  }
+
+  .doc-text :is(.tableWrapper[data-fit] > table, table[data-fit]) > tbody > tr > :is(td, th) {
+    min-width: max(var(--fit-min, 0px), clamp(48px, calc(var(--fit-chars, 0) * 0.42ch + 21px), 144px));
+  }
+
+  .doc-text .tableWrapper[data-fit-lock] > table > tbody > tr > :is(td, th) {
+    min-width: var(--fit-lock, 48px);
+    max-width: var(--fit-lock, 42ch);
+  }
+
+  .doc-text .tableWrapper[data-fit-lock] > table > tbody > tr > [data-fit-cell="short"] {
+    max-width: none;
+  }
+
+  .doc-text :is(.tableWrapper:is([data-fit], [data-fit-lock]) > table, table[data-fit]) > tbody > tr > [data-fit-cell="short"] > :is(p, h1, h2, h3, h4, h5, h6) {
+    white-space: pre;
+  }
+
+  .doc-text :is(.tableWrapper:is([data-fit], [data-fit-lock]) > table, table[data-fit]) > tbody > tr > [data-fit-cell="words"] > p {
+    overflow-wrap: break-word;
+  }
+}
+
 .doc-text td[data-align="center"],
 .doc-text th[data-align="center"] {
   text-align: center;
@@ -596,6 +666,11 @@
 
 .doc-text .doc-comment-anchor.doc-comment-active {
   background: var(--doc-comment-active);
+}
+
+.doc-text .doc-comment-anchor.doc-comment-light {
+  background: var(--doc-comment-light);
+  border-bottom: none;
 }
 
 .doc-text .doc-find-match {

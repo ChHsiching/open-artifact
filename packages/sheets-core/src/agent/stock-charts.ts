@@ -1,17 +1,13 @@
-/**
- * The page's stock charts (Insert chart: bar, stacked bar, line, pie): the code each widget is made with. The page
- * inserts these texts as they are, and the xlsx export knows a stock chart by its exact text (stockKindOf), so this
- * file is the one source of them.
- */
+type FirstStockKind = 'bar' | 'stackedBar' | 'line' | 'pie';
 
-export type StockKind = 'bar' | 'stackedBar' | 'line' | 'pie';
+export type StockKind = FirstStockKind | 'area' | 'horizontalBar' | 'scatter';
 
-export const STOCK_KINDS: readonly StockKind[] = ['bar', 'stackedBar', 'line', 'pie'];
+export const STOCK_KINDS: readonly StockKind[] = ['bar', 'stackedBar', 'line', 'pie', 'area', 'horizontalBar', 'scatter'];
 
 /** The name of the one input a stock chart reads. */
 export const STOCK_INPUT = 'rows';
 
-export const STOCK_CHART_PROGRAMS: Readonly<Record<StockKind, string>> = {
+const FIRST_PROGRAMS: Readonly<Record<FirstStockKind, string>> = {
   bar: `export default () => <sheet.Visualize data-component='bars' sources={{rows: {kind: 'ref', ref: 'input/rows', adapter: {kind: 'cells'}}, chartSize: {kind: 'data', data: [{width: 480, height: 280}]}, chartWords: {kind: 'data', data: [{locale: 'en-US', one: '# value isn’t a number and isn’t shown', other: '# values aren’t numbers and aren’t shown'}]}}}>{({rows, chartSize, chartWords}) => {
   const wide = chartSize.at(0).width, high = chartSize.at(0).height;
   const isNumber = c => typeof c.value === 'number';
@@ -217,4 +213,105 @@ export const STOCK_CHART_PROGRAMS: Readonly<Record<StockKind, string>> = {
     {parts.map((o, k) => { const a = turn(k), z = turn(k + 1) - (parts.length === 1 ? 0.0001 : 0), big = z - a > Math.PI ? 1 : 0, mid = (a + z) / 2, right = Math.cos(mid) >= 0; return <g key={k}><Tooltip content={o.whole} detail={o.text}><path d={'M' + on(a, R) + 'A' + R + ' ' + R + ' 0 ' + big + ' 1 ' + on(z, R) + 'L' + on(z, R * 0.6) + 'A' + R * 0.6 + ' ' + R * 0.6 + ' 0 ' + big + ' 0 ' + on(a, R * 0.6) + 'z'} fill={o.hue} stroke='var(--bg-primary)' strokeWidth='1'/></Tooltip><text x={cx + (R + 10) * Math.cos(mid)} y={cy + (R + 10) * Math.sin(mid) + 4} textAnchor={right ? 'start' : 'end'} fill={gray}>{o.name + ' ' + o.text}</text></g>; })}
   </svg>;
 }}</sheet.Visualize>;`,
+};
+
+/** The text of `program` from its start through the first line that begins with `marker`; throws when there is none. */
+function upToLineOf(program: string, marker: string): string {
+  const at = program.indexOf('\n' + marker);
+  if (at < 0) throw new Error(`stock chart: no line begins with ${marker}`);
+  const end = program.indexOf('\n', at + 1);
+  return program.slice(0, end + 1);
+}
+
+/** `text` with `from` put in place of `to`, which must be found exactly once. */
+function withOnce(text: string, from: string, to: string): string {
+  const parts = text.split(from);
+  if (parts.length !== 2) throw new Error(`stock chart: ${JSON.stringify(from.slice(0, 40))} is found ${parts.length - 1} times`);
+  return parts.join(to);
+}
+
+/** The area chart: the line chart, with the ground under each line filled. */
+const AREA_PROGRAM = withOnce(
+  withOnce(FIRST_PROGRAMS.line, "data-component='lines'", "data-component='areas'"),
+  "last = points.at(-1); return <g key={s.i}><path d=",
+  "last = points.at(-1); return <g key={s.i}>{points.length > 1 && <path d={'M' + at(points.at(0).j) + ' ' + y(0) + points.map(o => 'L' + at(o.j) + ' ' + y(num(o.r, s))).join('') + 'L' + at(last.j) + ' ' + y(0) + 'Z'} fill={s.hue} fillOpacity='0.24'/>}<path d=",
+);
+
+/**
+ * The horizontal bar chart: the bar chart's reading of the rows (headings, labels, series, the note and the title), then
+ * a bar for each series in each row, laid from a value axis along the foot, with the labels down the left.
+ */
+const HORIZONTAL_BAR_PROGRAM =
+  withOnce(upToLineOf(FIRST_PROGRAMS.bar, '  const drop = '), "data-component='bars'", "data-component='horizontal-bars'") +
+  `  const cut = t => t.length > 20 ? t.slice(0, 19) + '…' : t;
+  const names = Math.min(W * 0.35, 7.5 * Math.max(0, ...body.map((r, j) => cut(label(r, j)).length)) + 16);
+  const x0 = 16 + names, x1 = W - 16 - 3.75 * short(ticks.at(-1), places).length, h = H - y0 - foot, x = v => x0 + (x1 - x0) * (v - ticks.at(0)) / (ticks.at(-1) - ticks.at(0));
+  const band = h / Math.max(1, body.length), every = Math.ceil(16 / band);
+  const thick = Math.max(1, Math.min(20, (band * 0.75 + 2) / Math.max(1, series.length) - 2));
+  const tips = body.length * series.length <= 400;
+  const bar = (v, upper) => { const a = x(0), long = Math.abs(x(v) - a), q = Math.min(4, thick / 4, long), d = v < 0 ? -1 : 1, f = v < 0 ? 0 : 1; return 'M' + a + ' ' + upper + 'h' + d * (long - q) + 'a' + q + ' ' + q + ' 0 0 ' + f + ' ' + d * q + ' ' + q + 'v' + (thick - 2 * q) + 'a' + q + ' ' + q + ' 0 0 ' + f + ' ' + -d * q + ' ' + q + 'h' + -d * (long - q) + 'z'; };
+  return <svg width='480' height='280' viewBox={'0 0 ' + W + ' ' + H} role='img' aria-label={[title || ends, note].filter(t => t !== '').join('. ')} fontSize='12'>
+    {title !== '' && <text x='16' y='27' fontSize='14' fontWeight='500' fill='var(--text-primary)'>{fit(title, W - 32)}</text>}
+    {note !== '' && <text x='16' y={title === '' ? 27 : 46} fill={gray}>{fit(note, (W - 32) * 7.5 / 6.5)}</text>}
+    {hasLegend && all.map((s, k) => <g key={s.i} opacity={off.includes(s.i) ? 0.4 : 1} onClick={() => setOff(o => o.includes(s.i) ? o.filter(n => n !== s.i) : [...o, s.i])}><rect x={legendAt(k) - 4} y={H - 35} width={28 + 7 * s.tag.length} height='24' fill='transparent'/><rect x={legendAt(k)} y={H - 27.5} width='10' height='10' rx='2' fill={s.hue}/><text x={legendAt(k) + 16} y={H - 18.5} fill={gray}>{s.tag}</text></g>)}
+    {ticks.map(t => <g key={t}><line x1={x(t)} x2={x(t)} y1={y0} y2={y0 + h} stroke={t ? 'var(--chart-grid)' : 'var(--chart-axis)'}/><text x={x(t)} y={y0 + h + 16} textAnchor='middle' fill={gray}>{short(t, places)}</text></g>)}
+    {body.map((r, j) => <g key={j}>{series.map((s, k) => { const upper = y0 + j * band + (band - series.length * (thick + 2) + 2) / 2 + k * (thick + 2); if (!isNumber(r.at(s.i))) return null; const d = bar(num(r, s), upper); return tips ? <Tooltip key={s.i} content={label(r, j) + (s.name === '' ? '' : ', ' + s.name)} detail={r.at(s.i).text}><path d={d} fill={s.hue}/></Tooltip> : <path key={s.i} d={d} fill={s.hue}/>; })}</g>)}
+    {body.map((r, j) => j % every === 0 && <text key={j} x={x0 - 8} y={y0 + j * band + band / 2 + 4} textAnchor='end' fill={gray}>{fit(cut(label(r, j)), names - 8)}</text>)}
+  </svg>;
+}}</sheet.Visualize>;`;
+
+/**
+ * The scatter chart: the first column holds the numbers each point lies along, and each other column with a number in
+ * it is a series. Rows without a number in the first column are left out.
+ */
+const SCATTER_PROGRAM = `export default () => <sheet.Visualize data-component='scatter' sources={{rows: {kind: 'ref', ref: 'input/rows', adapter: {kind: 'cells'}}, chartSize: {kind: 'data', data: [{width: 480, height: 280}]}, chartWords: {kind: 'data', data: [{locale: 'en-US', one: '# value isn’t a number and isn’t shown', other: '# values aren’t numbers and aren’t shown'}]}}}>{({rows, chartSize, chartWords}) => {
+  const wide = chartSize.at(0).width, high = chartSize.at(0).height;
+  const isNumber = c => typeof c.value === 'number';
+  const isFilled = r => r.some(c => c.text !== '');
+  const fit = (t, room) => 7.5 * t.length > room ? t.slice(0, Math.max(1, Math.floor(room / 7.5) - 1)) + '…' : t;
+  const seen = rows.slice(0, 100).filter(isFilled);
+  const hasHead = seen.length > 1 && !seen.at(0).some(isNumber);
+  const head = hasHead ? seen.at(0) : null, probe = hasHead ? seen.slice(1) : seen, below = rows.filter(isFilled).slice(hasHead ? 1 : 0);
+  const width = probe.length ? probe.at(0).length : 0;
+  const all = Array.from({length: width}, (_, i) => i).filter(i => i >= 1 && probe.some(r => isNumber(r.at(i)))).map((i, k) => ({i, name: head ? head.at(i).text : '', tag: head ? fit(head.at(i).text, 135) : '', hue: 'var(--chart-categorical-' + (k % 8 + 1) + ')'}));
+  const body = below.filter(r => r.length > 0 && isNumber(r.at(0)));
+  const across = head && width > 0 ? head.at(0).text : '';
+  const out = below.flatMap(r => r.length > 0 ? [r.at(0), ...all.map(s => r.at(s.i))] : []).filter(c => !isNumber(c) && c.text !== '').length;
+  const said = chartWords.at(0), form = Object.entries(said).find(e => e.at(0) === new Intl.PluralRules(said.locale).select(out));
+  const note = out === 0 ? '' : (form ? form.at(1) : said.other).split('#').join(out.toLocaleString(said.locale));
+  const gray = 'var(--text-secondary)';
+  const ends = body.length ? body.length.toLocaleString('en-US') + (body.length === 1 ? ' point' : ' points') : '';
+  const named = all.filter(s => s.name !== '').map(s => s.name);
+  const title = (named.length > 1 ? named.slice(0, -1).join(', ') + ' and ' + named.at(-1) : named.join('')) + (named.length && across !== '' ? ' by ' + across : '');
+  const round = (v, s) => (Math.round(v * 10) / 10).toLocaleString('en-US') + s;
+  const plain = (v, places) => { const a = Math.abs(v); return a >= 1e9 ? round(v / 1e9, 'B') : a >= 1e6 ? round(v / 1e6, 'M') : a >= 1e4 ? round(v / 1e3, 'K') : v.toLocaleString('en-US', {maximumFractionDigits: places}); };
+  const shortOf = sample => { const isPercent = !!sample && sample.text.endsWith('%'), sign = sample && ['$', '€', '£', '¥'].find(m => sample.text.startsWith(m) || sample.text.startsWith('-' + m)) || ''; return (v, places) => isPercent ? plain(v * 100, Math.max(0, places - 2)) + '%' : (v < 0 ? '-' : '') + sign + plain(Math.abs(v), places); };
+  const [off, setOff] = useState([]);
+  const hasLegend = all.length > 1 && named.length === all.length;
+  const legendAt = k => all.slice(0, k).reduce((a, b) => a + 36 + 7 * b.tag.length, 16);
+  const scale = Math.max(1, Math.max(320, hasLegend ? legendAt(all.length) : 0) / wide, 200 / high), W = wide * scale, H = high * scale;
+  const series = all.filter(s => !off.includes(s.i));
+  const axisOf = values => { const least = values.length ? Math.min(...values) : 0, most = values.length ? Math.max(...values) : 1, pad = least === most ? (Math.abs(most) || 1) / 2 : 0, lo = least - pad, hi = most + pad, span = hi - lo, p = 10 ** Math.floor(Math.log10(span / 4)), step = p * [1, 2, 2.5, 5, 10].find(m => m * p * 4 >= span); return {ticks: Array.from({length: Math.ceil(hi / step) - Math.floor(lo / step) + 1}, (_, n) => (Math.floor(lo / step) + n) * step), places: Math.min(8, Math.max(0, 1 - Math.floor(Math.log10(step))))}; };
+  const ax = axisOf(body.map(r => r.at(0).value)), ay = axisOf(body.flatMap(r => series.filter(s => isNumber(r.at(s.i))).map(s => r.at(s.i).value)));
+  const shortX = shortOf(body.map(r => r.at(0)).find(isNumber)), shortY = shortOf(body.flatMap(r => all.map(s => r.at(s.i))).find(isNumber));
+  const drop = note === '' ? 0 : title === '' ? 30 : 18, y0 = (title === '' ? 20 : 52) + drop, foot = hasLegend ? 64 : 34.5;
+  const left = 24 + 7.5 * Math.max(...ay.ticks.map(t => shortY(t, ay.places).length)), w = W - 16 - left - 3.75 * shortX(ax.ticks.at(-1), ax.places).length, h = H - y0 - foot;
+  const x = v => left + w * (v - ax.ticks.at(0)) / (ax.ticks.at(-1) - ax.ticks.at(0)), y = v => y0 + h - h * (v - ay.ticks.at(0)) / (ay.ticks.at(-1) - ay.ticks.at(0));
+  const tips = body.length * series.length <= 400;
+  return <svg width='480' height='280' viewBox={'0 0 ' + W + ' ' + H} role='img' aria-label={[title || ends, note].filter(t => t !== '').join('. ')} fontSize='12'>
+    {title !== '' && <text x='16' y='27' fontSize='14' fontWeight='500' fill='var(--text-primary)'>{fit(title, W - 32)}</text>}
+    {note !== '' && <text x='16' y={title === '' ? 27 : 46} fill={gray}>{fit(note, (W - 32) * 7.5 / 6.5)}</text>}
+    {hasLegend && all.map((s, k) => <g key={s.i} opacity={off.includes(s.i) ? 0.4 : 1} onClick={() => setOff(o => o.includes(s.i) ? o.filter(n => n !== s.i) : [...o, s.i])}><rect x={legendAt(k) - 4} y={H - 35} width={28 + 7 * s.tag.length} height='24' fill='transparent'/><rect x={legendAt(k)} y={H - 27.5} width='10' height='10' rx='2' fill={s.hue}/><text x={legendAt(k) + 16} y={H - 18.5} fill={gray}>{s.tag}</text></g>)}
+    {ay.ticks.map(t => <g key={t}><line x1={left} x2={left + w} y1={y(t)} y2={y(t)} stroke={t ? 'var(--chart-grid)' : 'var(--chart-axis)'}/><text x={left - 8} y={y(t) + 4} textAnchor='end' fill={gray}>{shortY(t, ay.places)}</text></g>)}
+    {ax.ticks.map(t => <g key={t}><line x1={x(t)} x2={x(t)} y1={y0} y2={y0 + h} stroke={t ? 'var(--chart-grid)' : 'var(--chart-axis)'}/><text x={x(t)} y={y0 + h + 16} textAnchor='middle' fill={gray}>{shortX(t, ax.places)}</text></g>)}
+    <line x1={left} x2={left + w} y1={y0 + h} y2={y0 + h} stroke='var(--chart-axis)'/>
+    {series.map(s => <g key={s.i}>{body.map((r, j) => { if (!isNumber(r.at(s.i))) return null; const dot = <circle cx={x(r.at(0).value)} cy={y(r.at(s.i).value)} r='4' fill={s.hue} fillOpacity='0.85'/>; return tips ? <Tooltip key={j} content={(across === '' ? '' : across + ' ') + r.at(0).text} detail={(s.name === '' ? '' : s.name + ' ') + r.at(s.i).text}>{dot}</Tooltip> : <g key={j}>{dot}</g>; })}</g>)}
+  </svg>;
+}}</sheet.Visualize>;`;
+
+export const STOCK_CHART_PROGRAMS: Readonly<Record<StockKind, string>> = {
+  ...FIRST_PROGRAMS,
+  area: AREA_PROGRAM,
+  horizontalBar: HORIZONTAL_BAR_PROGRAM,
+  scatter: SCATTER_PROGRAM,
 };

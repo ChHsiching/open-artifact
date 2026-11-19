@@ -124,7 +124,12 @@ export function createChatWithAgent(
     lookAgainIndex += 1;
     if (delayMs !== undefined) await scheduleLook(lookAgainIndex === 1 ? 'first' : 'later', sleep(delayMs));
   };
-  let sendToSession = async (payload?: Dynamic, sendOptions?: Dynamic, skipsKeyGuard: Dynamic = false): Promise<Dynamic> => {
+  let sendToSession = async (
+    payload?: Dynamic,
+    sendOptions?: Dynamic,
+    skipsKeyGuard: Dynamic = false,
+    whenNotListening: Dynamic = null,
+  ): Promise<Dynamic> => {
     let sendToAgentSession = room?.sendToAgentSession;
     let maySummon = availableIfSummoned && !leavingLosesWork();
     let isQuietWhenUnavailable = isNotBeside && leavingLosesWork();
@@ -147,6 +152,7 @@ export function createChatWithAgent(
         setToBeHad(false);
       }
       if (code === 'agent_unavailable' && !isQuietWhenUnavailable) notifyPressRefused(payload, keysWereHeld);
+      if (code === 'agent_unavailable') whenNotListening?.();
       if (code !== 'invalid_argument') return look(false).then(() => false);
       let isOfWords = 'request' in payload && !skipsKeyGuard;
       reportFault(Error(`sendToAgentSession fault: invalid_argument${isOfWords ? ' of words' : ''}`));
@@ -172,6 +178,7 @@ export function createChatWithAgent(
     } catch (sendOptions: Dynamic) {
       let sent = isNonNullObject(sendOptions) ? sendOptions.code : null;
       if (sent === 'rate_limited') return 'tooSoon';
+      if (sent === 'agent_unavailable') return look(false).then(() => 'notListening');
       if (sent !== 'invalid_argument') look(false);
       else if (withPresence) reportFault(Error('sendToAgentSession fault: invalid_argument of words'));
       else {
@@ -191,7 +198,9 @@ export function createChatWithAgent(
     };
     if (!isViewId(chartId) || request === '') reportFault(Error('sendAboutChart fault: no id or no words'));
     else if (takesWords && !isNotBeside) return deliverToSession(payload, 'send', sendsNow);
-    else if (toBeHad === true && !(isNotBeside && leavingLosesWork()))
+    else if (toBeHad === true && !(isNotBeside && leavingLosesWork())) {
+      // An agent that can be reached but is not waiting for requests refuses: say so, not just that it failed.
+      let isNotListening = false;
       return sendsNow
         ? deliverToSession(payload, 'stage', true)
         : withAnswerTimeout(
@@ -201,8 +210,10 @@ export function createChatWithAgent(
                 attachPresence: false,
               },
               true,
+              () => (isNotListening = true),
             ),
-          ).then((sent?: Dynamic) => (sent ? 'taken' : 'failed'));
+          ).then((sent?: Dynamic) => (sent ? 'taken' : isNotListening ? 'notListening' : 'failed'));
+    }
     return Promise.resolve('failed');
   };
   let chartSendInFlight: Dynamic = null;

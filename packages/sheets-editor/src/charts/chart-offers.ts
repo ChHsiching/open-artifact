@@ -1,3 +1,5 @@
+import { PIE_MAX_SLICES, BAR_CHART_MAX_POINTS } from './chart-kind-fit.ts';
+export { PIE_MAX_SLICES, BAR_CHART_MAX_POINTS };
 import type { Dynamic } from '../dynamic.ts';
 import { nonEmptyValueOfCell, DATE_TIME_FORMAT_KINDS, isYearCell } from '../selection/figures.ts';
 import { numberFormatOfCell } from '../model/workbook.ts';
@@ -132,12 +134,23 @@ export function chartKindsOfferedForCells(reads: WorkbookReads, sheetId?: Dynami
       1 &&
     pointCount + rowsBeyond > LEFT_TO_AGENT_MIN_POINTS;
   let isBestLeftToAgent = isLabelsRepeated || isTooBigForPage;
+  // Numbers in the first column that are amounts, not labels, with more numbers beside them: points of a scatter.
+  let isScatterShaped =
+    !hasLabelColumn && rows.length > 2 && firstColumn.every(isChartAmount) && numberSeries.length > 1 && series[0] !== undefined;
+  // Labels too long to sit under bars read better down the side of a horizontal bar chart.
+  let hasLongLabels =
+    hasLabelColumn && firstColumn.some((cell?: Dynamic) => cell?.is === 'text' && String(cell.value).length > LONG_LABEL_LENGTH);
   return [
+    isScatterShaped && 'scatter',
     prefersLine && 'line',
+    isBarOffered && hasLongLabels && 'horizontalBar',
     isBarOffered && 'bar',
     !prefersLine && 'line',
-    isBarOffered && numberSeries.length > 1 && isAllPositive && 'stackedBar',
+    // A stack adds up its series; with numbers down the first column, that column would be stacked as one of them.
+    isBarOffered && !isScatterShaped && numberSeries.length > 1 && isAllPositive && 'stackedBar',
     numberSeries.length === 1 && isAllPositive && pointCount <= PIE_MAX_SLICES && positives.length > 1 && 'pie',
+    isOverTime && isAllPositive && 'area',
+    isBarOffered && !hasLongLabels && 'horizontalBar',
   ]
     .flatMap((input?: Dynamic) => (input === false ? [] : [input]))
     .slice(0, MAX_CHART_OFFERS)
@@ -161,7 +174,8 @@ export const chartAskPayload = (chartKind?: Dynamic, request?: Dynamic) => ({
 });
 export const IS_CHART_OFFER_AT_SELECTION_ON = false;
 [CHART_OFFER_MAX_ROWS, CHART_OFFER_MAX_COLUMNS] = [100, 8];
-export const MAX_CHART_OFFERS = 3;
+export const MAX_CHART_OFFERS = 4;
+export const LONG_LABEL_LENGTH = 12;
 export const CHART_PREVIEW_SAMPLE_SIZES = {
   bar: {
     series: 2,
@@ -179,10 +193,20 @@ export const CHART_PREVIEW_SAMPLE_SIZES = {
     series: 1,
     points: 6,
   },
+  area: {
+    series: 2,
+    points: 12,
+  },
+  horizontalBar: {
+    series: 2,
+    points: 4,
+  },
+  scatter: {
+    series: 3,
+    points: 12,
+  },
 };
 export const LINE_CHART_MIN_POINTS = 8;
-export const PIE_MAX_SLICES = 6;
-export const BAR_CHART_MAX_POINTS = 50;
 export const LEFT_TO_AGENT_MIN_POINTS = 24;
 export const isChartNumber = (role?: Dynamic) => role?.is === 'amount' || role?.is === 'year';
 export const isChartAmount = (role?: Dynamic) => role?.is === 'amount';

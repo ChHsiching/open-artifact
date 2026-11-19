@@ -1,25 +1,12 @@
 import { Skeleton } from '../kit/skeleton.tsx';
 import type { Dynamic } from '../dynamic.ts';
+import { chartCellsProblem } from './change-offers.ts';
+export { chartCellsProblem };
 import * as React from 'react';
 import { useChartNotice } from './chart-notices.ts';
 import { chartCellsProblemWords } from '../messages/charts.ts';
 import { jsxs, jsx } from 'react/jsx-runtime';
 import { DangerWarningIcon } from '../ui/warning-icon.ts';
-export function chartCellsProblem(inputs?: Dynamic) {
-  let areas = Object.values(inputs);
-  if (areas.length === 0) return null;
-  let hasErrorCells: Dynamic = false;
-  for (let area of areas as Dynamic) {
-    let hasManyColumns = area.some((row?: Dynamic) => row.length > 1);
-    for (let [rowIndex, row] of area.entries() as Dynamic)
-      for (let [columnIndex, { value: value, text: text }] of row.entries() as Dynamic) {
-        let isLabelCell = (rowIndex === 0 && area.length > 1) || (columnIndex === 0 && hasManyColumns);
-        if (typeof value === 'number' || (value !== null && !isLabelCell)) return null;
-        hasErrorCells ||= value === null && text !== '';
-      }
-  }
-  return hasErrorCells ? 'cellsHaveErrors' : 'cellsHaveNoNumbers';
-}
 export function ChartCellsProblemNotice({ why: why, name: name }: Dynamic) {
   let isError = why === 'cellsHaveErrors';
   useChartNotice(chartCellsProblemWords(why));

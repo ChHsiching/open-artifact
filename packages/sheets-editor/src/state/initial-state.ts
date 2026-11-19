@@ -913,7 +913,7 @@ export interface OwnFilterTried {}
 export interface XlsxFileSaved {
   went: string;
 }
-export type ChartKindOffered = 'line' | 'bar' | 'stackedBar' | 'pie';
+export type ChartKindOffered = 'line' | 'bar' | 'stackedBar' | 'pie' | 'area' | 'horizontalBar' | 'scatter';
 export interface ChartOnOffer {
   kind: ChartKindOffered;
   isForPage: boolean;

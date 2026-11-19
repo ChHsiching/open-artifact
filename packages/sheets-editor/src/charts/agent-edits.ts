@@ -1,6 +1,7 @@
 import type { Dynamic } from '../dynamic.ts';
-import { stockKindOfChartCode, doesChartKindSuitRows } from './widget-nodes.ts';
-import { CHART_ROWS_INPUT } from './chart-edits.ts';
+import { stockKindOfChartCode } from './widget-nodes.ts';
+import { canSwapChartKind, readsRowsAlone } from './chart-kind-fit.ts';
+export { canSwapChartKind, readsRowsAlone };
 import { STOCK_CHART_PROGRAMS } from './stock-programs.ts';
 import { chartEditRequest, isForChatAnswer, readChartCodeAnswer } from './chart-code-ask.ts';
 import { nodeIdOfRef, nodeRefOf } from './placed-views.ts';
@@ -16,8 +17,8 @@ export async function editChartWithAgent(
   if (isStopped()) return 'stopped';
   if (source === null) return 'notChanged';
   let stockKind = stockKindOfChartCode(source.code);
-  let isKindSwap =
-    wantedKind !== null && stockKind !== null && stockKind !== wantedKind && doesChartKindSuitRows(wantedKind, inputs[CHART_ROWS_INPUT] ?? []);
+  if (wantedKind !== null && stockKind === wantedKind) return 'notChanged';
+  let isKindSwap = wantedKind !== null && canSwapChartKind(inputs, wantedKind);
   if (isKindSwap) agent.stop();
   let newCode =
     (isKindSwap ? STOCK_CHART_PROGRAMS[wantedKind] : null) ??
@@ -72,7 +73,14 @@ export async function askAgentForChartCode(agent?: Dynamic, request?: Dynamic): 
 export function createChartEditsByAgent(charts?: Dynamic, agent?: Dynamic) {
   let askNumber: Dynamic = 0;
   return {
-    isToBeHad: async (): Promise<Dynamic> => charts.isToBeHad && (await agent.isAvailable()),
+    /** Whether charts can be changed at all: a kind swap needs the page alone, any other change the agent too (canAskAgent). */
+    isToBeHad: async (): Promise<Dynamic> => charts.isToBeHad,
+    canAskAgent: async (): Promise<Dynamic> => charts.isToBeHad && (await agent.isAvailable()),
+    /** The stock kind this chart's code is, or null: another chart's code, or one that could not be read. */
+    async kindOf(nodeId?: Dynamic): Promise<Dynamic> {
+      let source = await charts.sourceOf(nodeId);
+      return source === null ? null : stockKindOfChartCode(source.code);
+    },
     async ask(chartAsk?: Dynamic, asked?: Dynamic, mostUnits?: Dynamic, wantedKind?: Dynamic): Promise<Dynamic> {
       askNumber += 1;
       let thisAsk = askNumber;

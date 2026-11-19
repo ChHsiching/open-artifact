@@ -64,6 +64,7 @@
   --doc-del-bg: rgb(220 38 38 / 0.1);
   --doc-comment: rgb(255 196 0 / 0.28);
   --doc-comment-active: rgb(255 196 0 / 0.55);
+  --doc-comment-light: rgb(255 170 60 / 0.14);
   --doc-find: rgb(255 210 0 / 0.45);
   --doc-find-current: rgb(255 140 0 / 0.6);
   --doc-selected: rgb(37 125 224 / 0.25);

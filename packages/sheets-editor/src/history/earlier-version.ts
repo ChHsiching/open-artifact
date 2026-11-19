@@ -100,6 +100,8 @@ export function createChartSends(changes?: Dynamic, made?: Dynamic, written?: Dy
   return {
     changes: {
       isToBeHad: () => changes.isToBeHad(),
+      canAskAgent: () => changes.canAskAgent(),
+      kindOf: (nodeId?: Dynamic) => changes.kindOf(nodeId),
       ask: (...input: Dynamic[]) => (changes.ask as Dynamic)(...input),
       giveUp: () => changes.giveUp(),
       discard: (input?: Dynamic) => changes.discard(input),

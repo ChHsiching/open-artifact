@@ -37,6 +37,8 @@ const SIZE: Told = { kind: 'size', size: { width: 480, height: 280 } };
 const cells = (...rows: (string | number)[][]): ChartRow[] =>
   rows.map((row) => row.map((value) => ({ value, text: typeof value === 'number' ? value.toLocaleString('en-US') : value })));
 const ROWS: ChartInputs = { rows: cells(['Item', 'Cost', 'Tax'], ['Rent', 1200, 100], ['Food', 400, 50], ['Total', 1600, 150]) };
+/** A scatter's rows: the first column holds the numbers each point lies along. */
+const POINTS: ChartInputs = { rows: cells(['Rent', 'Sold', 'Kept'], [1200, 30, 4], [1400, 25, 6], [1100, 41, 3]) };
 
 const drawings = (sent: WorkerToFrame[]): Extract<WorkerToFrame, { kind: 'drawing' }>[] =>
   sent.filter((message): message is Extract<WorkerToFrame, { kind: 'drawing' }> => message.kind === 'drawing');
@@ -194,7 +196,7 @@ describe('the chart runtime', () => {
   for (const kind of STOCK_KINDS)
     it(`draws the ${kind} stock chart into a tree the frame draws`, async () => {
       const { sent, hear } = runInit(await initOfCode(STOCK_CHART_PROGRAMS[kind]));
-      await hear({ kind: 'inputs', inputs: ROWS }, SIZE);
+      await hear({ kind: 'inputs', inputs: kind === 'scatter' ? POINTS : ROWS }, SIZE);
       assert.deepEqual(failures(sent), []);
       const tree = drawings(sent)[0]?.tree ?? null;
       const markup = toMarkup(tree);

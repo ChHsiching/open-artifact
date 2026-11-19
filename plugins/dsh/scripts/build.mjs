@@ -132,6 +132,7 @@ function buildVendor() {
   vendorCopy(join(repo, 'artifact-types', 'sheets'), join(vendor, 'artifact-types', 'sheets'), 'the sheets type');
   vendorCopy(join(repo, 'artifact-types', 'slides'), join(vendor, 'artifact-types', 'slides'), 'the slides type');
   vendorCopy(join(repo, 'artifact-types', 'design-system'), join(vendor, 'artifact-types', 'design-system'), 'the design-system type');
+  vendorCopy(join(repo, 'artifact-types', 'docs'), join(vendor, 'artifact-types', 'docs'), 'the docs type');
 }
 
 // ---------------------------------------------------------------- main
