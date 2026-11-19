@@ -32,6 +32,8 @@ export const PATHS = Object.freeze({
   hostOpened: `${ROUTE_BASE}.host-opened`,
   /** GET: whether this plugin has a newer release on its registry ({@link UpdateCheck}). */
   updates: `${ROUTE_BASE}.updates`,
+  /** GET `?upcoming=1`: the release notes of the version installed and the ones before it, and with `upcoming` of a newer release offered (`ChangelogAnswer`, src/shared/changelog.ts). */
+  changelog: `${ROUTE_BASE}.changelog`,
 });
 
 /** This plugin's newer release, which the browser half installs over it. */

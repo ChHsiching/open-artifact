@@ -9,6 +9,7 @@
  *   vendor/        the daemon (`open-artifact.mjs`), the built Shell and home pages, frame-host (the type server from dist/daemon/frame-host), the harness profiles, the type server (type-server/) and the built-in types that run it;
  *                  a piece that is not there is skipped with a warning
  *   LICENSE, NOTICE the repository's license files, copied here so the npm package carries them
+ *   CHANGELOG.md   the repository's release notes: the page's "What's new" and changelog (src/server/changelog.ts)
  *
  * The page's CSS is plain CSS in src/client/styles.ts, on the app's own design tokens, with every class prefixed.
  *
@@ -140,7 +141,7 @@ function buildVendor() {
 /** The whole build; `--no-vendor` leaves vendor/ as it is. */
 async function main() {
   mkdirSync(join(root, 'lib'), { recursive: true });
-  for (const file of ['LICENSE', 'NOTICE']) cpSync(join(repo, file), join(root, file));
+  for (const file of ['LICENSE', 'NOTICE', 'CHANGELOG.md']) cpSync(join(repo, file), join(root, file));
   buildServer();
   log('lib/index.js');
   buildClient();

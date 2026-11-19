@@ -27,6 +27,7 @@ import { countByType, DATES, isFiltered, NO_FILTERS, SHARINGS, SORTS, visibleArt
 import { isKey, type Translate } from '../i18n.ts';
 import { ArtifactsIcon, BETA, Doodle, Drawn, Icon, ICON, inTypeOrder, svg, TypeIcon, typeStyle } from '../look.tsx';
 import { usePage } from '../store.ts';
+import { ChangelogFooter, ChangelogView, closeChangelog, useChangelog, WhatsNewPanel } from '../changelog.tsx';
 import { UpdatePanel } from '../updates.tsx';
 import { ago, useNow } from '../time.ts';
 
@@ -336,7 +337,7 @@ function CreateMenu({ anchor, tiles, canCreate, t, onClose, create }: { anchor: 
   );
 }
 
-function Dialog({ label, onClose, children }: { label: string; onClose(): void; children: ReactNode }) {
+function Dialog({ label, onClose, children, wide = false }: { label: string; onClose(): void; children: ReactNode; wide?: boolean }) {
   return (
     <div
       className="oa-scrim"
@@ -350,7 +351,7 @@ function Dialog({ label, onClose, children }: { label: string; onClose(): void; 
         }
       }}
     >
-      <div className="oa-dialog" role="dialog" aria-modal="true" aria-label={label}>
+      <div className="oa-dialog" role="dialog" aria-modal="true" aria-label={label} {...(wide ? { 'data-wide': 'true' } : {})}>
         {children}
       </div>
     </div>
@@ -625,6 +626,7 @@ export function ArtifactsPage({ canCreate }: ArtifactsPageProps) {
   const [popup, setPopup] = useState<Popup | null>(null);
   const searchBox = useRef<HTMLInputElement>(null);
   const now = useNow();
+  const changelogOpen = useChangelog().open;
 
   useEffect(() => {
     void reload();
@@ -768,6 +770,7 @@ export function ArtifactsPage({ canCreate }: ArtifactsPageProps) {
             </div>
           </div>
           <UpdatePanel />
+          <WhatsNewPanel />
           {canCreate && tiles.length > 0 && (
             <>
               <h2 className="oa-section-title">{t('create.heading')}</h2>
@@ -869,6 +872,7 @@ export function ArtifactsPage({ canCreate }: ArtifactsPageProps) {
               ))}
             </ul>
           )}
+          <ChangelogFooter />
         </div>
       </div>
       {popup?.kind === 'filter' && <FilterMenu anchor={popup.anchor} filters={filters} setFilters={(next) => setFilters(next)} types={filterTypes} counts={counts} t={t} onClose={closePopup} />}
@@ -921,6 +925,11 @@ export function ArtifactsPage({ canCreate }: ArtifactsPageProps) {
             void remove(dialogFor);
           }}
         />
+      )}
+      {changelogOpen && (
+        <Dialog label={t('changelog.title')} onClose={closeChangelog} wide>
+          <ChangelogView />
+        </Dialog>
       )}
       <ToastBar />
     </section>

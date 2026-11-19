@@ -9,6 +9,7 @@ plugins/dsh/lib/
 plugins/dsh/vendor/
 plugins/dsh/LICENSE
 plugins/dsh/NOTICE
+plugins/dsh/CHANGELOG.md
 # Rust build output (scripts/build-wasm.mjs)
 /target/
 # The open-artifact skill's vendored daemon (scripts/build-skill.mjs)

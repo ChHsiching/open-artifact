@@ -5,8 +5,9 @@
  *
  *   - a mark on the Open Artifact entry in the left sidebar ({@link UpdateMark}): a small label on a wide row, a dot on the
  *     collapsed rail. It also says that a run is on, failed or wants a restart, wherever the person has gone;
- *   - a panel at the top of the Open Artifact page ({@link UpdatePanel}): the versions, Update, Later, and how the run
- *     is going. Later folds it to one line and takes the mark away, until a newer version comes;
+ *   - a panel at the top of the Open Artifact page ({@link UpdatePanel}): the versions, what the new one brings (its
+ *     release notes, changelog.tsx), Update, Later, and how the run is going. Later folds it to one line and takes the
+ *     mark away, until a newer version comes;
  *   - an Update button and a tag on the plugin's page in Plugins (`plugins.detail.actions`, `plugins.detail.badge`),
  *     where the app has no Update of its own there (`native`).
  *
@@ -21,6 +22,7 @@
  */
 import { type ComponentType, type ReactNode, useSyncExternalStore } from 'react';
 import type { PluginUpdate } from '../shared/routes.ts';
+import { UpcomingNotes } from './changelog.tsx';
 import { injectStyles } from './styles.ts';
 import {
   close,
@@ -134,6 +136,7 @@ export function UpdatePanel() {
         </div>
         {actions !== null && <div className="oau-actions">{actions}</div>}
       </div>
+      {phase === 'idle' && <UpcomingNotes />}
     </section>
   );
 }

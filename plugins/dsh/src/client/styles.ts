@@ -182,6 +182,26 @@ body[data-ds-dark-theme] .oa-menu-glyph{color:var(--oa-wash)}
 .oa-skeleton .oa-preview{background:var(--dsw-alias-bg-skeleton,var(--dsw-alias-interactive-bg-hover))}
 .oa-skeleton .oa-line{width:60%;height:10px;margin:18px 14px}
 @media (prefers-reduced-motion:reduce){.oa-sheet,.oa-paper,.oa-slide,.oa-film,.oa-act,.oa-tile-art,.oa-card{transition:none}.oa-tile:hover .oa-tile-art,.oa-tile[data-peek=true] .oa-tile-art{transform:none}.oa-peek{animation:none}.oa-spinner{animation-duration:2s}}
+.oa-news .oau-head{margin-bottom:8px}
+.oa-notes{display:flex;flex-direction:column;gap:12px;align-items:flex-start}
+.oa-release{align-self:stretch;min-width:0}
+.oa-release-head{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;margin:0 0 4px;font-size:14px;font-weight:600;line-height:22px;color:var(--dsw-alias-label-primary)}
+.oa-release-date{font-weight:400;color:var(--dsw-alias-label-tertiary);font-size:12px}
+.oa-release-summary{margin:0 0 6px;color:var(--dsw-alias-label-primary);font-size:13px;line-height:20px;overflow-wrap:anywhere}
+.oa-release-section{margin-top:6px}
+.oa-release-section h4{margin:0 0 2px;font-size:12px;font-weight:500;line-height:18px;color:var(--dsw-alias-label-tertiary)}
+.oa-release-section ul{margin:0;padding-left:18px;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:20px}
+.oa-release-section li{overflow-wrap:anywhere}
+.oa-release-section li+li{margin-top:2px}
+.oa-release code{padding:0 4px;border-radius:4px;background:color-mix(in srgb,var(--dsw-alias-label-primary) 8%,transparent);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+.oa-release strong{font-weight:600;color:var(--dsw-alias-label-primary)}
+.oa-release a{color:var(--dsw-alias-state-business-primary)}
+.oa-news-upcoming{display:flex;flex-direction:column;align-items:flex-start;gap:8px;margin-top:10px;padding-top:10px;border-top:.5px solid var(--dsw-alias-border-l2)}
+.oa-foot{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:4px 8px;margin-top:40px;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px}
+.oa-dialog[data-wide=true]{width:min(640px,100%);display:flex;flex-direction:column;max-height:min(720px,calc(100vh - 48px))}
+.oa-changelog{flex:1;min-height:0;overflow:auto;margin:0 -20px;padding:0 20px}
+.oa-changelog .oa-release+.oa-release{padding-top:12px;border-top:.5px solid var(--dsw-alias-border-l2)}
+.oa-btn-link{display:inline-flex;align-items:center;text-decoration:none;margin-right:auto}
 `;
 
 /** The chat cards of comments and requests sent to the agent. */

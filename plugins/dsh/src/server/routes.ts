@@ -7,6 +7,7 @@
 import { ensureDaemon, type EnsureDaemonOptions } from '@open-artifact/daemon/client';
 import { LIBRARY_ROUTES, type ArtifactView, type DaemonState, type TypeView } from '@open-artifact/protocol';
 import { PATHS, type ArtifactList, type DeleteAnswer, type OpenAnswer, type PageArtifact, type TypeTile, type UpdateCheck } from '../shared/routes.ts';
+import type { ChangelogAnswer } from '../shared/changelog.ts';
 import type { DshRoute } from './dsh.ts';
 import type { HostOpens } from './host-open.ts';
 
@@ -91,6 +92,8 @@ export interface RouteOptions {
   hostOpens?: HostOpens;
   /** Whether this plugin has a newer release (the updates route); no route without it. */
   updates?: () => Promise<UpdateCheck>;
+  /** The release notes (the changelog route); no route without it. `upcoming`: the offered release's too. */
+  changelog?: (upcoming: boolean) => Promise<ChangelogAnswer>;
 }
 
 export interface ApiCall {
@@ -246,6 +249,9 @@ export function registerRoutes(routes: RouteRegistry, options: RouteOptions = {}
 
   const updates = options.updates;
   if (updates !== undefined) route(PATHS.updates, ['GET'], async () => json(await updates()));
+
+  const changelog = options.changelog;
+  if (changelog !== undefined) route(PATHS.changelog, ['GET'], async (request) => json(await changelog(param(request, 'upcoming') === '1')));
 
   const hostOpens = options.hostOpens;
   if (hostOpens === undefined) return;

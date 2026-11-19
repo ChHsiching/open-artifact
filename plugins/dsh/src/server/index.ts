@@ -14,7 +14,7 @@
  *   the agent working only while it is.
  * - System prompt: one short section saying the tools exist.
  * - Skill: `/open-artifact <type> …` makes an artifact of that type (skill.ts).
- * - Routes: the Open Artifact page's (routes.ts). The page itself is the browser half (`lib/client.js`, from src/client).
+ * - Routes: the Open Artifact page's (routes.ts), with its update check (updates.ts) and release notes (changelog.ts). The page itself is the browser half (`lib/client.js`, from src/client).
  *
  * The daemon starts on first use from the vendored entry (vendor.ts); every harness on this computer shares it.
  */
@@ -36,6 +36,7 @@ import {
   type DshUserQuestions,
   type DshWorkingDirectory,
 } from './dsh.ts';
+import { changelogReader } from './changelog.ts';
 import { HostOpens } from './host-open.ts';
 import { HARNESS, libraryApi, registerRoutes } from './routes.ts';
 import { updateChecker, type PluginManager } from './updates.ts';
@@ -276,12 +277,14 @@ export function setup(ctx: DshContext, config: Config = {}, deps: SetupDeps = {}
 
   // Whether a newer release is out, for the page to offer (src/client/updates.tsx installs it).
   const updates = updateChecker([PACKAGE_NAME], () => service<PluginManager>(ctx, 'pluginManager'));
+  // What this release and the offered one bring, for the page's "What's new" and its changelog.
+  const changelog = changelogReader({ name: PACKAGE_NAME, root: packageRoot(), updates });
 
   // The page's routes, in a context of their own that goes with the app's route registry (the `connection` service).
   const routes = deps.registerRoutes ?? registerRoutes;
   ctx.inject?.(['connection'], (sub) => {
     try {
-      routes({ register: (route) => sub.connection.fetch.register(route) }, { daemonOptions: daemon, library, hostOpens, updates });
+      routes({ register: (route) => sub.connection.fetch.register(route) }, { daemonOptions: daemon, library, hostOpens, updates, changelog });
     } catch (error) {
       log('warn', `the Open Artifact page's routes: ${(error as Error).message}`);
     }
