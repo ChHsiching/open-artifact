@@ -5,13 +5,27 @@ and comment. Ask for `/open-artifact slides …`, `design …`, `whiteboard …`
 
 ## Install
 
+With Node.js 22.18+ installed, download `open-artifact-plugins.zip` from [GitHub Releases](https://github.com/JimLiu/open-artifact/releases)
+and extract it to a permanent location. Register the extracted folder using the [Codex CLI](https://developers.openai.com/codex/cli/):
+
 ```bash
-codex plugin marketplace add /path/to/open-artifacts/dist/plugins
+codex plugin marketplace add "/path/to/open-artifact-plugins"
 ```
 
-then install **Open Artifact** from `/plugins` in the Codex CLI or the Plugins tab of the Codex or ChatGPT desktop app
+Then install **Open Artifact** from `/plugins` in the Codex CLI or the Plugins tab of the Codex or ChatGPT desktop app
 (or `codex plugin add open-artifact@open-artifact`), and start a new session. Codex runs plugin hooks only once you
 approve them in `/hooks` (again after each update); the tools work before that.
+
+## Upgrade
+
+Replace the extracted folder at the same path with the one from the new ZIP. Restart the desktop app to refresh
+the plugin. You can also run `codex plugin add open-artifact@open-artifact` again. Start a new session after updating.
+
+If you originally registered a checkout's `dist/plugins` directory, run
+`codex plugin marketplace remove open-artifact` once, then follow the installation steps to register the extracted
+folder and install the plugin from there.
+
+## Where artifacts go
 
 New artifacts go under the thread's folder (`artifacts/<slug>`). Codex starts the MCP server in the plugin's own
 folder, so the daemon looks the thread's folder up: from its hook, or from the thread's rollout file in

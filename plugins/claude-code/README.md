@@ -5,14 +5,24 @@ and comment. Type `/open-artifact slides a 6-slide pitch for this repo` (or `des
 
 ## Install
 
-From a built `dist/plugins/` folder (`node scripts/build-plugins.mjs` in the repository):
+With Node.js 22.18+ installed, download `open-artifact-plugins.zip` from [GitHub Releases](https://github.com/JimLiu/open-artifact/releases)
+and extract it to a permanent location.
 
 ```bash
-claude plugin marketplace add /path/to/open-artifacts/dist/plugins
+claude plugin marketplace add "/path/to/open-artifact-plugins"
 claude plugin install open-artifact@open-artifact
 ```
 
-To try it in one session without installing: `claude --plugin-dir /path/to/open-artifacts/dist/plugins/claude-code`.
+To try it in one session, run `claude --plugin-dir "/path/to/open-artifact-plugins/claude-code"`.
+
+## Upgrade
+
+Replace the extracted folder at the same path with the one from the new ZIP. If you previously registered a
+checkout's `dist/plugins` directory, rerun the marketplace add command above with the extracted folder to switch
+sources. Run `/reload-plugins` or start a new session to load the updated local plugin.
+
+If an older Claude Code client still shows the previous version, run `claude plugin marketplace update open-artifact`
+and `claude plugin update open-artifact@open-artifact`, then restart Claude Code.
 
 ## What it adds
 

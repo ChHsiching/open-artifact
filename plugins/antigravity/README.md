@@ -2,18 +2,25 @@
 
 For Google Antigravity (the `agy` CLI and the Antigravity app). Slide decks, design canvases, whiteboards, spreadsheets, data dashboards, docs and design systems as
 folders of files that open in one local page where you view, edit and comment: `/open-artifact slides …`,
-`design …`, `whiteboard …`, `sheets …`, `data …` or `docs …`. Needs Node.js 22 or later.
+`design …`, `whiteboard …`, `sheets …`, `data …` or `docs …`. Needs Node.js 22.18+.
 
 ## Install
 
+Download `open-artifact-plugins.zip` from [GitHub Releases](https://github.com/JimLiu/open-artifact/releases),
+extract it and install the `antigravity/` folder.
+
 ```bash
-agy plugin install /path/to/open-artifacts/dist/plugins/antigravity
+agy plugin install "/path/to/open-artifact-plugins/antigravity"
 ```
 
-Check it with `agy plugin validate ./dist/plugins/antigravity` and `agy plugin list`. Without the CLI, copy the folder
-to `~/.gemini/config/plugins/open-artifact/`. Restart Antigravity after installing: it loads a plugin's MCP server at
-startup (the skill and hooks are picked up by new conversations). Antigravity asks you to allow each Open Artifact
-tool call until you choose to always allow it.
+For a manual install, copy that folder to `~/.gemini/config/plugins/open-artifact/`. Restart Antigravity to load
+the MCP server. Antigravity asks you to allow each Open Artifact tool call until you choose to always allow it.
+
+## Upgrade
+
+Install the `antigravity/` folder from the new ZIP with the same command. For a manual install, replace the entire
+`~/.gemini/config/plugins/open-artifact/` folder, retaining the installed folder name `open-artifact`. Restart
+Antigravity and start a new conversation.
 
 ## What it adds
 

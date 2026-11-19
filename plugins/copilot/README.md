@@ -6,20 +6,36 @@ folders of files that open in one local page where you view, edit and comment: `
 
 ## Install
 
-Copilot CLI:
+With Node.js 22.18+ installed, download `open-artifact-plugins.zip` from [GitHub Releases](https://github.com/JimLiu/open-artifact/releases)
+and extract it to a permanent location.
+
+For Copilot CLI, register the extracted folder as a marketplace and install the plugin.
 
 ```bash
-copilot plugin marketplace add /path/to/open-artifacts/dist/plugins
+copilot plugin marketplace add "/path/to/open-artifact-plugins"
 copilot plugin install open-artifact@open-artifact
 ```
 
-Copilot reads the marketplace from `.github/plugin/marketplace.json` and loads the plugin from the folder in place,
-so a rebuild takes effect in the next session.
+To try it in one CLI session, run `copilot --plugin-dir "/path/to/open-artifact-plugins/copilot"`.
 
-(or try it in one session: `copilot --plugin-dir /path/to/open-artifacts/dist/plugins/copilot`).
+In VS Code, run **Chat: Install Plugin from Source** and select the extracted `copilot/` folder.
 
-VS Code: turn on `chat.plugins.enabled`, then run **Chat: Install Plugin from Source** and pick the
-`dist/plugins/copilot` folder.
+## Upgrade
+
+Replace the extracted folder at the same path with the one from the new ZIP. Copilot CLI loads local marketplace
+plugins from the folder, so start a new session or run `/restart` to load the new files.
+
+If you originally registered a checkout's `dist/plugins` directory, remove the old registration, then follow the
+installation steps to switch sources.
+
+```bash
+copilot plugin uninstall open-artifact@open-artifact
+copilot plugin marketplace remove open-artifact
+```
+
+In VS Code, rerun **Chat: Install Plugin from Source** with the updated `copilot/` folder and start a new chat.
+If the installed plugin still points to a different folder, uninstall it in **Chat: Open Customizations** before
+installing from the new path.
 
 ## What it adds
 

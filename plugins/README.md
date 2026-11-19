@@ -24,7 +24,13 @@ in the agent app's built-in browser (Codex, Cursor, Claude, Antigravity, VS Code
 `view_url`. The daemon opens the computer's browser only when the agent asks it to (`Artifact {action: "open"}`), which
 it does when it has no browser of its own.
 
-## Build
+## Install and upgrade
+
+Follow your app's guide above. GitHub Releases includes `open-artifact-plugins.zip` with the prebuilt plugin
+folders, the ChatGPT web connector and the local marketplace catalogs. The
+[quick start](../README.md#1-as-a-plugin-in-your-agent-app-recommended) covers installation from npm for DeepSeek Harness.
+
+## Build from source
 
 ```bash
 npm ci && npm run build            # the Shell, frame-host and the types' editors (dist/, artifact-types/*/scripts/)
@@ -34,8 +40,7 @@ node scripts/build-plugins.mjs     # builds the skill, then dist/plugins/<name>/
 `dist/plugins/` is then a marketplace folder for Claude Code (`.claude-plugin/marketplace.json`), Codex
 (`.agents/plugins/marketplace.json`), Cursor (`.cursor-plugin/marketplace.json`) and the Copilot CLI
 (`.github/plugin/marketplace.json`), with one installable folder per
-plugin. Each plugin carries the skill with the daemon vendored in `skills/open-artifact/vendor/` (about 40 MB, most
-of it the types' editors); it needs Node.js 22 or later on the computer.
+plugin. Each plugin carries the skill with the daemon vendored in `skills/open-artifact/vendor/`.
 
 `node scripts/build-plugins.mjs --only codex` builds one; `--no-skill` reuses the built skill.
 

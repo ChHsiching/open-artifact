@@ -1,12 +1,13 @@
 # Open Artifact for ChatGPT
 
-**ChatGPT desktop** runs local plugins: install the [Codex plugin](../codex/README.md) from its Plugins tab.
+**ChatGPT desktop** can install the Codex plugin from its Plugins tab. Follow the [Codex installation and upgrade guide](../codex/README.md).
 
-**ChatGPT on the web** reaches MCP servers only over HTTPS, so this folder runs a connector on your computer that you
-put behind a tunnel:
+**ChatGPT on the web** uses a connector that runs on your computer behind an HTTPS tunnel. With Node.js 22.18+
+installed, download `open-artifact-plugins.zip` from [GitHub Releases](https://github.com/JimLiu/open-artifact/releases),
+extract it and run the connector.
 
 ```bash
-node /path/to/open-artifacts/dist/plugins/chatgpt/skills/open-artifact/scripts/open-artifact.mjs chatgpt --workspace ~/Documents
+node "/path/to/open-artifact-plugins/chatgpt/skills/open-artifact/scripts/open-artifact.mjs" chatgpt --workspace ~/Documents
 ```
 
 It prints a local address with a secret path, `http://127.0.0.1:4891/mcp/<secret>`. Then:
@@ -18,6 +19,9 @@ It prints a local address with a secret path, `http://127.0.0.1:4891/mcp/<secret
 
 The secret path is the only key: anyone who has it can make and change artifacts under the workspace. Keep it to
 yourself; `--rotate` makes a new one. New artifacts go in `<workspace>/artifacts/`.
+
+To upgrade, stop the connector, replace the extracted folder with the one from the new ZIP and run the same
+command again.
 
 ## What it adds to the daemon's tools
 

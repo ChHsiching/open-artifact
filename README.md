@@ -42,57 +42,32 @@ file format, `artifact-type.json` describes it to hosts, and `scripts/` (built) 
 
 ## Quick start
 
-Requires **Node.js 22.18+**.
-
-```bash
-npm ci
-npm run build
-```
-
-Then pick the way you want to use it.
-
 ### 1. As a plugin in your agent app (recommended)
 
-```bash
-node scripts/build-plugins.mjs      # writes dist/plugins/, a marketplace folder
-```
-
-Then install it in your agent app. The commands below run from the repository folder; each plugin folder in
-`dist/plugins/` carries the skill and the daemon, and needs Node.js 22 or later on the computer.
+Install **Node.js 22.18+**, then download `open-artifact-plugins.zip` from the **Assets** section of a
+[GitHub Release](https://github.com/JimLiu/open-artifact/releases). Extract it to a permanent location and use the
+extracted `open-artifact-plugins/` folder in the steps below. The plugins include the skill, daemon and editors.
+DeepSeek Harness installs its prebuilt package directly from npm.
 
 | Agent app | Install |
 |---|---|
-| [Claude Code](plugins/claude-code/README.md) (CLI, desktop, IDE) | `claude plugin marketplace add ./dist/plugins`, then `claude plugin install open-artifact@open-artifact` |
-| [Codex](plugins/codex/README.md) (CLI, app) and ChatGPT desktop | `codex plugin marketplace add ./dist/plugins`, then install **Open Artifact** from `/plugins` (CLI) or the Plugins tab (app) |
-| [Cursor](plugins/cursor/README.md) | copy `dist/plugins/cursor` to `~/.cursor/plugins/local/open-artifact`, then **Developer: Reload Window** |
-| [GitHub Copilot](plugins/copilot/README.md) CLI | `copilot plugin marketplace add ./dist/plugins`, then `copilot plugin install open-artifact@open-artifact` |
-| [GitHub Copilot](plugins/copilot/README.md) in VS Code | turn on `chat.plugins.enabled`, then **Chat: Install Plugin from Source** and pick `dist/plugins/copilot` |
-| [Antigravity](plugins/antigravity/README.md) | `agy plugin install ./dist/plugins/antigravity` (or copy the folder to `~/.gemini/config/plugins/open-artifact/`), then restart the app |
-| [ChatGPT on the web](plugins/chatgpt/README.md) | run the connector, put it behind an HTTPS tunnel and add it as a custom MCP server (steps in its README) |
-| DeepSeek Harness | add the `plugins/dsh` folder as a local plugin; `npm run build` builds it, and the app links the folder in place |
+| [Claude Code](plugins/claude-code/README.md) (CLI, desktop, IDE) | Add the extracted root as a marketplace, then install `open-artifact@open-artifact`. |
+| [Codex](plugins/codex/README.md) (CLI, app) and ChatGPT desktop | Add the extracted root with `codex plugin marketplace add`, then install **Open Artifact** in Plugins. |
+| [Cursor](plugins/cursor/README.md) | Copy the extracted `cursor/` folder to `~/.cursor/plugins/local/open-artifact`, then run **Developer: Reload Window**. |
+| [GitHub Copilot](plugins/copilot/README.md) CLI | Add the extracted root as a marketplace, then install `open-artifact@open-artifact`. |
+| [GitHub Copilot](plugins/copilot/README.md) in VS Code | Run **Chat: Install Plugin from Source** and select the extracted `copilot/` folder. |
+| [Antigravity](plugins/antigravity/README.md) | Install the extracted `antigravity/` folder with `agy plugin install` or copy it to `~/.gemini/config/plugins/open-artifact`, then restart the app. |
+| [ChatGPT on the web](plugins/chatgpt/README.md) | Run the prebuilt connector from the extracted `chatgpt/` folder and connect it over HTTPS. |
+| [DeepSeek Harness](https://www.npmjs.com/package/dsh-open-artifact) | In Plugins, choose **Add plugin** and enter `dsh-open-artifact` as the npm package. In the CLI, run `dsh plugin --profile web add dsh-open-artifact` for the web profile. |
 
-For example, Claude Code:
+To upgrade, download the new ZIP, replace the extracted folder at the same path, and follow your app's
+update steps in the linked guide. If your marketplace still points to a source checkout, register the extracted
+folder using the migration steps in your app's guide.
 
-```bash
-claude plugin marketplace add ./dist/plugins
-claude plugin install open-artifact@open-artifact
-```
+In DeepSeek Harness, use **Update** on the Open Artifact page when a new version is offered. If you previously
+linked a local checkout, remove the linked plugin in Plugins and add `dsh-open-artifact` from npm.
 
-Cursor:
-
-```bash
-mkdir -p ~/.cursor/plugins/local && cp -R ./dist/plugins/cursor ~/.cursor/plugins/local/open-artifact
-```
-
-A few apps need one more step:
-
-- **Codex** runs plugin hooks only after you approve them in `/hooks`, and again after each update.
-- **Antigravity** loads a plugin's MCP server only at startup, and asks you to allow each tool call until you choose
-  to always allow it.
-- To try a plugin in one session without installing it: `claude --plugin-dir ./dist/plugins/claude-code` or
-  `copilot --plugin-dir ./dist/plugins/copilot`.
-
-After rebuilding, install again (or copy the folder again) to update. Then, in a new session:
+In a new session, try one of these prompts.
 
 ```text
 /open-artifact slides a 6-slide pitch for this repo
@@ -109,17 +84,16 @@ page comments back into the session. How each app gets comments back, and what w
 
 ### 2. As a skill for any other agent
 
-Copy or point your agent at [`skills/open-artifact/`](skills/open-artifact/SKILL.md) (built by
-`build-plugins.mjs`, or alone with `node scripts/build-skill.mjs`). It carries the daemon, and the agent drives it
-from the command line:
+Copy `codex/skills/open-artifact/` from the extracted plugin bundle to your agent's skill directory. It carries
+the daemon, and the agent drives it from the command line. From the extracted bundle root, you can try:
 
 ```bash
-node skills/open-artifact/scripts/open-artifact.mjs artifact '{"action":"list","scope":"types"}'
+node codex/skills/open-artifact/scripts/open-artifact.mjs artifact '{"action":"list","scope":"types"}'
 ```
 
 ### 3. One type on its own
 
-Every built type folder runs by itself, without the daemon:
+After [building from source](#build-from-source), every built type folder runs by itself, without the daemon:
 
 ```bash
 node artifact-types/design/scripts/cli.mjs open ./my-design --type design   # starts a local server, prints the URL
@@ -131,8 +105,19 @@ CLI with no arguments for the full list.
 
 ## Development
 
+### Build from source
+
+From a source checkout, install dependencies and build the workspace and plugin folders.
+
 ```bash
-npm run build        # editors, support.js, the CLI, the Shell and the DSH plugin → dist/ and artifact-types/*/scripts/
+npm ci
+npm run build
+node scripts/build-plugins.mjs
+```
+
+For local plugin development, use `dist/plugins/` wherever the installation guides use the extracted folder.
+
+```bash
 npm run typecheck
 npm test             # unit tests (node --test)
 npm run e2e          # end-to-end: drives the built types with the CLI and Chrome, see e2e/README.md
@@ -155,9 +140,9 @@ JavaScript with type declarations), `@open-artifact/cli` (the `open-artifact` co
 2. Run `node scripts/changelog.mjs` for the commits since the last tag, and add a `## [x.y.z] - date` entry at the top
    of [CHANGELOG.md](CHANGELOG.md) that says what changed for people using it (Added / Changed / Fixed), plus its
    compare link at the bottom.
-3. Commit, then push a tag (`v0.9.0`). The [Publish to npm](.github/workflows/publish-npm.yml) workflow stops if
-   CHANGELOG.md has no entry for the tag; otherwise it builds and publishes every version npm does not have yet, by
-   trusted publishing, and makes the tag's GitHub release with the entry as its notes.
+3. Commit, then push a tag (`v0.9.0`). The [Publish to npm](.github/workflows/publish-npm.yml) workflow requires a
+   changelog entry for the tag. It publishes new package versions through npm trusted publishing, attaches
+   `open-artifact-plugins.zip` to the tag's GitHub release and uses the changelog entry as its release notes.
 
 A package npm doesn't have yet is claimed once from a computer before its first release:
 `node scripts/publish-npm.mjs --claim` publishes its staged version and sets the workflow as its trusted publisher.

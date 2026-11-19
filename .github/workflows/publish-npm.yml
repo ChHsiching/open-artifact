@@ -3,7 +3,7 @@
 # released, then push a tag (v0.2.0) or run the workflow by hand.
 #
 # On a tag, CHANGELOG.md must have that version's entry (written from `node scripts/changelog.mjs`): the run stops
-# before publishing without one, and after publishing makes the tag's GitHub release with the entry as its notes.
+# before publishing without one. The GitHub release gets those notes and a prebuilt plugin bundle.
 #
 # npm signs in by trusted publishing (OIDC): each package names this repository and this file as its trusted
 # publisher on npmjs.com (`npm trust github <package> --file publish-npm.yml --repo JimLiu/open-artifact --allow-publish`).
@@ -57,6 +57,14 @@ jobs:
           node scripts/build-skill.mjs
           node scripts/build-npm.mjs
 
+      - name: Package prebuilt plugins
+        if: github.ref_type == 'tag'
+        run: |
+          node scripts/build-plugins.mjs --no-skill
+          cp -R dist/plugins "$RUNNER_TEMP/open-artifact-plugins"
+          cd "$RUNNER_TEMP"
+          zip -qr open-artifact-plugins.zip open-artifact-plugins
+
       - name: Publish
         run: node scripts/publish-npm.mjs ${{ inputs.dry-run && '--dry-run' || '' }}
 
@@ -66,8 +74,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           node scripts/changelog.mjs --notes "$GITHUB_REF_NAME" > "$RUNNER_TEMP/notes.md"
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release edit "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md"
+          bundle="$RUNNER_TEMP/open-artifact-plugins.zip"
+          if uploaded=$(gh release view "$GITHUB_REF_NAME" --json assets --jq 'any(.assets[]; .name == "open-artifact-plugins.zip" and .state == "uploaded")'); then
+            if [[ "$uploaded" != true ]]; then
+              gh release upload "$GITHUB_REF_NAME" "$bundle" --clobber
+            fi
+            gh release edit "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md" --draft=false
           else
-            gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md" --verify-tag
+            gh release create "$GITHUB_REF_NAME" "$bundle" --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md" --verify-tag
           fi

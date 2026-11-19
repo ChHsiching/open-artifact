@@ -5,14 +5,21 @@ and comment. Type `/open-artifact slides …`, `design …`, `whiteboard …`, `
 
 ## Install
 
-Copy the built plugin into Cursor's local plugins and reload:
+With Node.js 22.18+ installed, download `open-artifact-plugins.zip` from [GitHub Releases](https://github.com/JimLiu/open-artifact/releases)
+and extract it. For a first install, copy the `cursor/` folder into Cursor's local plugins.
 
 ```bash
-mkdir -p ~/.cursor/plugins/local && cp -R /path/to/open-artifacts/dist/plugins/cursor ~/.cursor/plugins/local/open-artifact
+mkdir -p ~/.cursor/plugins/local
+cp -R "/path/to/open-artifact-plugins/cursor" ~/.cursor/plugins/local/open-artifact
 ```
 
-then run **Developer: Reload Window**. A team can instead import the repository as a team marketplace
-(`.cursor-plugin/marketplace.json` in `dist/plugins/`).
+Run **Developer: Reload Window**. The extracted bundle also includes the Cursor team marketplace catalog at
+`.cursor-plugin/marketplace.json`.
+
+## Upgrade
+
+Replace the entire `~/.cursor/plugins/local/open-artifact` folder with the `cursor/` folder from the new ZIP, retaining
+the installed folder name `open-artifact`. Run **Developer: Reload Window**.
 
 ## What it adds
 

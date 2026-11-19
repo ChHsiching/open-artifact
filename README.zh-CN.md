@@ -39,56 +39,30 @@
 
 ## 快速开始
 
-需要 **Node.js 22.18+**。
-
-```bash
-npm ci
-npm run build
-```
-
-然后选一种用法。
-
 ### 1. 作为 Agent 应用的插件（推荐）
 
-```bash
-node scripts/build-plugins.mjs      # 生成 dist/plugins/，一个插件市场目录
-```
-
-然后把它装进你的 Agent 应用。下面的命令都在仓库根目录运行。`dist/plugins/` 里每个插件文件夹都自带 skill 和 daemon，
-电脑上需要 Node.js 22 或更高版本。
+安装 **Node.js 22.18+**，然后到 [GitHub Releases](https://github.com/JimLiu/open-artifact/releases) 的
+**Assets** 下载 `open-artifact-plugins.zip`。解压到一个长期保留的位置，用解压出的 `open-artifact-plugins/`
+目录按下表安装。包内已包含 skill、后台服务和编辑器。DeepSeek Harness 直接从 npm 安装预构建包。
 
 | Agent 应用 | 安装方法 |
 |---|---|
-| [Claude Code](plugins/claude-code/README.md)（CLI、桌面版、IDE） | `claude plugin marketplace add ./dist/plugins`，再 `claude plugin install open-artifact@open-artifact` |
-| [Codex](plugins/codex/README.md)（CLI、应用）和 ChatGPT 桌面版 | `codex plugin marketplace add ./dist/plugins`，再到 `/plugins`（CLI）或 Plugins 标签页（应用）里安装 **Open Artifact** |
-| [Cursor](plugins/cursor/README.md) | 把 `dist/plugins/cursor` 复制到 `~/.cursor/plugins/local/open-artifact`，再运行 **Developer: Reload Window** |
-| [GitHub Copilot](plugins/copilot/README.md) CLI | `copilot plugin marketplace add ./dist/plugins`，再 `copilot plugin install open-artifact@open-artifact` |
-| VS Code 里的 [GitHub Copilot](plugins/copilot/README.md) | 打开 `chat.plugins.enabled`，运行 **Chat: Install Plugin from Source**，选 `dist/plugins/copilot` |
-| [Antigravity](plugins/antigravity/README.md) | `agy plugin install ./dist/plugins/antigravity`（或者把这个文件夹复制到 `~/.gemini/config/plugins/open-artifact/`），然后重启应用 |
-| [网页版 ChatGPT](plugins/chatgpt/README.md) | 运行连接器，套一层 HTTPS 隧道，再在 ChatGPT 里添加为自定义 MCP 服务器（步骤见它的 README） |
-| DeepSeek Harness | 把 `plugins/dsh` 文件夹添加为本地插件；`npm run build` 会构建它，应用直接链接这个文件夹 |
+| [Claude Code](plugins/claude-code/README.md)（CLI、桌面版、IDE） | 把解压目录添加为插件市场，再安装 `open-artifact@open-artifact`。 |
+| [Codex](plugins/codex/README.md)（CLI、应用）和 ChatGPT 桌面版 | 用 `codex plugin marketplace add` 添加解压目录，再到 Plugins 安装 **Open Artifact**。 |
+| [Cursor](plugins/cursor/README.md) | 把解压出的 `cursor/` 复制到 `~/.cursor/plugins/local/open-artifact`，再运行 **Developer: Reload Window**。 |
+| [GitHub Copilot](plugins/copilot/README.md) CLI | 把解压目录添加为插件市场，再安装 `open-artifact@open-artifact`。 |
+| VS Code 里的 [GitHub Copilot](plugins/copilot/README.md) | 运行 **Chat: Install Plugin from Source**，选择解压出的 `copilot/`。 |
+| [Antigravity](plugins/antigravity/README.md) | 用 `agy plugin install` 安装解压出的 `antigravity/`，或把目录复制到 `~/.gemini/config/plugins/open-artifact`，然后重启应用。 |
+| [网页版 ChatGPT](plugins/chatgpt/README.md) | 从解压出的 `chatgpt/` 运行预构建连接器，再通过 HTTPS 接入。 |
+| [DeepSeek Harness](https://www.npmjs.com/package/dsh-open-artifact) | 在插件页面选择「添加插件」，输入 npm 包名 `dsh-open-artifact`。CLI 的 web profile 可用 `dsh plugin --profile web add dsh-open-artifact`。 |
 
-比如 Claude Code：
+升级时下载新版 ZIP，把解压目录替换到原来的路径，再按表中对应的指南刷新插件。如果原来的插件市场还指向源码仓库，
+按对应指南把市场切换到解压目录。
 
-```bash
-claude plugin marketplace add ./dist/plugins
-claude plugin install open-artifact@open-artifact
-```
+DeepSeek Harness 有新版时，可以在 Open Artifact 页面点击「更新」。如果之前链接的是本地源码目录，先在插件页面
+移除该插件，再从 npm 添加 `dsh-open-artifact`。
 
-Cursor：
-
-```bash
-mkdir -p ~/.cursor/plugins/local && cp -R ./dist/plugins/cursor ~/.cursor/plugins/local/open-artifact
-```
-
-有几个应用还要多做一步：
-
-- **Codex** 要你在 `/hooks` 里批准之后才会运行插件的 hooks，每次更新后要再批准一次。
-- **Antigravity** 只在启动时加载插件的 MCP 服务器；每次调用工具都会请你允许，直到你选择始终允许。
-- 想不安装、只在一个会话里试用：`claude --plugin-dir ./dist/plugins/claude-code` 或
-  `copilot --plugin-dir ./dist/plugins/copilot`。
-
-重新构建后，再装一次（或再复制一次）就是更新。然后在新会话里输入：
+在新会话里试试下面的提示语。
 
 ```text
 /open-artifact slides a 6-slide pitch for this repo
@@ -102,16 +76,16 @@ hooks。每个应用怎样收到评论、各自测过什么，见 [plugins/READM
 
 ### 2. 作为 skill 给其他 Agent 用
 
-把 [`skills/open-artifact/`](skills/open-artifact/SKILL.md) 复制过去，或者让 Agent 直接读这个目录。它由
-`build-plugins.mjs` 构建，也可以单独运行 `node scripts/build-skill.mjs`。目录里自带 daemon，Agent 通过命令行驱动它：
+把解压目录里的 `codex/skills/open-artifact/` 复制到 Agent 的 skill 目录。它自带后台服务，Agent 可以通过命令行使用。
+在解压目录中可以运行：
 
 ```bash
-node skills/open-artifact/scripts/open-artifact.mjs artifact '{"action":"list","scope":"types"}'
+node codex/skills/open-artifact/scripts/open-artifact.mjs artifact '{"action":"list","scope":"types"}'
 ```
 
 ### 3. 单独使用某一种类型
 
-每个构建好的类型文件夹都能独立运行，不需要 daemon：
+[从源码构建](#从源码构建)后，每个类型文件夹都可以独立运行：
 
 ```bash
 node artifact-types/design/scripts/cli.mjs open ./my-design --type design   # 启动本地服务并打印页面地址
@@ -123,8 +97,19 @@ CLI 可以看到完整列表。
 
 ## 开发
 
+### 从源码构建
+
+在源码目录里安装依赖，构建工作区和插件。
+
 ```bash
-npm run build        # 编辑器、support.js、CLI、Shell 和 DSH 插件 → dist/ 和 artifact-types/*/scripts/
+npm ci
+npm run build
+node scripts/build-plugins.mjs
+```
+
+开发时可以用 `dist/plugins/` 代替各插件安装说明中的解压目录。
+
+```bash
 npm run typecheck
 npm test             # 单元测试（node --test）
 npm run e2e          # 端到端测试：用 CLI 和 Chrome 驱动构建好的类型，见 e2e/README.md
@@ -146,10 +131,11 @@ node scripts/build-wasm.mjs   # 需要 cargo + wasm32-unknown-unknown、wasm-bin
 2. 运行 `node scripts/changelog.mjs` 列出上一个 tag 以来的提交，据此在 [CHANGELOG.md](CHANGELOG.md) 顶部加一节
    `## [x.y.z] - 日期`，按 Added / Changed / Fixed 写清用户能感知的变化，并在文末补上对比链接。
 3. 提交后推送 tag（如 `v0.9.0`）。CHANGELOG.md 里没有这个版本的条目时，[Publish to npm](.github/workflows/publish-npm.yml)
-   工作流会直接停下；有的话就构建并发布 npm 上还没有的版本（trusted publishing），再用这一节创建该 tag 的 GitHub Release。
+   工作流会直接停下。有对应条目时，工作流通过 trusted publishing 发布 npm 上还没有的版本，并在该 tag 的 GitHub Release
+   上传 `open-artifact-plugins.zip`，用该条目作为发布说明。
 
-在本机运行 `node scripts/publish-npm.mjs` 效果相同（可以先加 `--dry-run` 看看）；
-新包第一次发布后，用 `--trust` 把这个工作流设为它的 trusted publisher。
+在本机也可以运行 `node scripts/publish-npm.mjs` 发布 npm 包，可加 `--dry-run` 预览。
+新包首次发布时，用 `node scripts/publish-npm.mjs --claim` 发布已准备好的包，并将工作流设为其 trusted publisher。
 
 ## 仓库结构
 
