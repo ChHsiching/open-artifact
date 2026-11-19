@@ -11,9 +11,11 @@
  *     shell/, home/                                the Shell every artifact page opens in, and the home page
  *     frame-host/                                  the type server of original hosted types (found next to open-artifact.mjs)
  *     harnesses/                                   the harness profiles
- *     artifact-types/<id>/                         the built-in types, with their built scripts/
+ *     type-server/                                 the built type server every built-in type runs (dist/server/)
+ *     artifact-types/<id>/                         the built-in types, each scripts/cli.mjs running type-server/
+ *                                                  (scripts/vendor-types.mjs)
  *
- * Run `node scripts/build.mjs` first (the Shell, frame-host and the types' scripts/ come from it); a piece that is
+ * Run `node scripts/build.mjs` first (the Shell, frame-host and the type server come from it); a piece that is
  * not there is skipped with a warning.
  *
  *   node scripts/build-skill.mjs [--out <dir>]     --out also copies the finished skill folder there
@@ -22,6 +24,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, statSync } from 'n
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildSync } from 'esbuild';
+import { vendorTypes } from './vendor-types.mjs';
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const skill = join(repo, 'skills', 'open-artifact');
@@ -70,11 +73,8 @@ function main() {
   vendorCopy(join(repo, 'dist', 'daemon', 'home'), join(vendor, 'home'), 'the home page');
   vendorCopy(join(repo, 'dist', 'daemon', 'frame-host'), join(vendor, 'frame-host'), 'frame-host');
   vendorCopy(join(repo, 'packages', 'daemon', 'harnesses'), join(vendor, 'harnesses'), 'the harness profiles');
-  for (const type of TYPES) {
-    const from = join(repo, 'artifact-types', type);
-    if (isDir(from) && !isDir(join(from, 'scripts'))) warn(`the ${type} type has no scripts/ (run node scripts/build.mjs first); its pages will not open.`);
-    vendorCopy(from, join(vendor, 'artifact-types', type), `the ${type} type`);
-  }
+  // One type server for every type, not a copy in each (scripts/vendor-types.mjs).
+  vendorTypes({ repo, vendor, types: TYPES, warn, log });
   log('vendor/');
   const i = process.argv.indexOf('--out');
   if (i > 0) {

@@ -6,7 +6,7 @@
  *   lib/index.js   the server half (src/server/index.ts), one Node ESM file with the protocol and the daemon client in it
  *   lib/client.js  the browser half (src/client/index.tsx), CommonJS in the app's `window.__ModuleLoader__.load`
  *                  wrapper, with React and the app's platform modules left to the loader
- *   vendor/        the daemon (`open-artifact.mjs`), the built Shell and home pages, frame-host (the type server from dist/daemon/frame-host), the harness profiles and the built-in types;
+ *   vendor/        the daemon (`open-artifact.mjs`), the built Shell and home pages, frame-host (the type server from dist/daemon/frame-host), the harness profiles, the type server (type-server/) and the built-in types that run it;
  *                  a piece that is not there is skipped with a warning
  *   LICENSE, NOTICE the repository's license files, copied here so the npm package carries them
  *
@@ -18,6 +18,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFil
 import { basename, dirname, join, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { buildSync } from 'esbuild';
+import { vendorTypes } from '../../../scripts/vendor-types.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const repo = join(root, '..', '..');
@@ -27,6 +28,10 @@ const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
 const PLATFORM_MODULES = ['react', 'react/jsx-runtime', 'react-dom', '@deepseek-ai/dsh-client-ui-primitives'];
 
 const warn = (message) => console.warn(`dsh-open-artifact build: ${message}`);
+// The built-in types: the daemon's own list (BUILTIN_TYPE_IDS).
+const BUILTIN_TYPES = JSON.parse(
+  /BUILTIN_TYPE_IDS[^=]*=\s*(\[[^\]]*\])/.exec(readFileSync(join(repo, 'packages', 'daemon', 'src', 'types.ts'), 'utf8'))[1].replace(/'/g, '"'),
+);
 const log = (message) => console.log(`dsh-open-artifact build: ${message}`);
 
 // ---------------------------------------------------------------- bundles
@@ -126,13 +131,8 @@ function buildVendor() {
   // The daemon looks for it next to itself: vendor/frame-host/frame-host.mjs.
   vendorCopy(join(repo, 'dist', 'daemon', 'frame-host'), join(vendor, 'frame-host'), 'frame-host');
   vendorCopy(join(repo, 'packages', 'daemon', 'harnesses'), join(vendor, 'harnesses'), 'the harness profiles');
-  vendorCopy(join(repo, 'artifact-types', 'design'), join(vendor, 'artifact-types', 'design'), 'the design type');
-  vendorCopy(join(repo, 'artifact-types', 'whiteboard'), join(vendor, 'artifact-types', 'whiteboard'), 'the whiteboard type');
-  vendorCopy(join(repo, 'artifact-types', 'data'), join(vendor, 'artifact-types', 'data'), 'the data type');
-  vendorCopy(join(repo, 'artifact-types', 'sheets'), join(vendor, 'artifact-types', 'sheets'), 'the sheets type');
-  vendorCopy(join(repo, 'artifact-types', 'slides'), join(vendor, 'artifact-types', 'slides'), 'the slides type');
-  vendorCopy(join(repo, 'artifact-types', 'design-system'), join(vendor, 'artifact-types', 'design-system'), 'the design-system type');
-  vendorCopy(join(repo, 'artifact-types', 'docs'), join(vendor, 'artifact-types', 'docs'), 'the docs type');
+  // The built-in types, with one type server for them all, not a copy in each (scripts/vendor-types.mjs).
+  vendorTypes({ repo, vendor, types: BUILTIN_TYPES, warn });
 }
 
 // ---------------------------------------------------------------- main
