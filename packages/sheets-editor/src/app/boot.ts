@@ -55,7 +55,7 @@ import { createWorkbookPainter } from './workbook-painter.ts';
 import { afterNextFrameOrTimeout } from '../utils/next-frame.ts';
 import { inertRoomPresence } from '../presence/selections.ts';
 import { createPeopleDirectory } from '../presence/people.ts';
-import { createRoomPresence } from '../presence/room.ts';
+import { createRoomPresence, watchPeersHere } from '../presence/room.ts';
 import { createAgentActivityWatcher } from '../agent/activity.ts';
 import { NO_VIEW_SHOWN_BY_AGENT } from '../agent/view-shown-feed.ts';
 import { createElement } from 'react';
@@ -221,6 +221,7 @@ export async function bootSheetsPage({ host, app }: BootOptions): Promise<void> 
   stage.before(peersMount);
   createRoot(peersMount).render(createElement(SheetPeers, { host, chrome: frameChrome }));
   host.bridge.startShell();
+  if (host.shell) watchPeersHere(host.page, (peers) => frameChrome.peersHere(peers));
   offerOverlayClosing(stage, frameChrome);
   setTopLayerCloseOfferer((closeOffer?: Dynamic) => frameChrome.offerCloseOfTopLayer('ofPage', closeOffer));
   let sheetLinks = createSheetAnchorLinks(window, () => sessionStorage, host.shell);

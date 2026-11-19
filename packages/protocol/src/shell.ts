@@ -95,10 +95,35 @@ export interface ChromeFormat {
  * Shell draws `saved` hides its own save badge; one whose Shell does not
  * (an older Shell sends no `draws`) keeps drawing it.
  */
-export type ChromeDraw = 'saved' | 'actions' | 'formats' | 'shareNotice';
+export type ChromeDraw = 'saved' | 'actions' | 'formats' | 'shareNotice' | 'peers';
 
 /** What the Shell draws, in the order it sends them. */
-export const CHROME_DRAWS: readonly ChromeDraw[] = ['saved', 'actions', 'formats', 'shareNotice'];
+export const CHROME_DRAWS: readonly ChromeDraw[] = ['saved', 'actions', 'formats', 'shareNotice', 'peers'];
+
+/** A {@link ChromePeer} key: the peer's id in the page's room. */
+export const CHROME_PEER_KEY = /^[A-Za-z0-9_.:-]{1,128}$/;
+
+/** Most peers a report lists. */
+export const MAX_CHROME_PEERS = 24;
+
+/**
+ * Someone else viewing the artifact, as the page knows them (another tab
+ * of the viewer's own counts too). The Shell draws them beside History and
+ * Share; where the page offers following (`following` in the report), each
+ * has Follow, or Stop while this view follows them.
+ */
+export interface ChromePeer {
+  /** The peer's key ({@link CHROME_PEER_KEY}), e.g. its room peer id: what `follow` names. */
+  key: string;
+  /** The name to show (at most 80 characters). */
+  name: string;
+  /** Their colour on the page (`#rrggbb`), e.g. of their selection. */
+  color?: string;
+  /** Another view (tab) of the viewer themself. */
+  self?: boolean;
+  /** They follow this view. */
+  followsYou?: boolean;
+}
 
 /**
  * What became of an `export_format` request:
@@ -142,6 +167,14 @@ export interface ChromeReport {
   shareNotice?: { text: string; tone: 'warning' };
   /** `false`: the page is empty, so there is nothing to export yet. */
   hasContent?: boolean;
+  /** Who else views the artifact (at most {@link MAX_CHROME_PEERS}); absent where the page does not know. */
+  peers?: ChromePeer[];
+  /**
+   * The page offers following someone's view (the Shell sends `follow`):
+   * the key of the peer this view follows, or `null` for nobody. Absent
+   * where the page does not offer it.
+   */
+  following?: string | null;
 }
 
 /** One export entry shown by the Shell's Export tab. */
@@ -171,7 +204,12 @@ export type ChromeCommand =
    * Exports a declared format (and variant). `request` matches
    * {@link CHROME_REQUEST}; the page answers with `chrome_export`.
    */
-  | { cmd: 'export_format'; request: string; format: string; variant?: string };
+  | { cmd: 'export_format'; request: string; format: string; variant?: string }
+  /**
+   * Follows the view of the peer with this key (one the report lists), or
+   * stops following with `null`. Only sent where the report has `following`.
+   */
+  | { cmd: 'follow'; key: string | null };
 
 // ---- capability broker: page → Shell → backend ------------------------------------------------------------------
 

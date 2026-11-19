@@ -154,7 +154,14 @@ export function mountSheetsApp(
         new (Date as Dynamic)(),
         isChatBesidePage(() => controller.viewOnceEntryUnderAtIsDropped(), shell),
       ),
-    otherViewers: otherViewers,
+    otherViewers: {
+      ...otherViewers,
+      // The Shell's list of who is here shows whom this view follows (its Stop).
+      tellWhomViewFollows(tabKey?: Dynamic) {
+        otherViewers.tellWhomViewFollows(tabKey);
+        shell.followsTab?.(typeof tabKey === 'string' ? tabKey : null);
+      },
+    },
     agentForImport: shell.agentForImport,
     agentForConditionalFormats: shell.agentForConditionalFormats,
     agentForRowsAskedFor: shell.agentForRowsAskedFor,
@@ -487,6 +494,7 @@ export function mountSheetsApp(
     shell.csvFileCanBeWritten(null);
     shell.xlsxFileCanBeWritten(null);
     shell.offerFollow(null);
+    shell.followsTab?.(null);
     reactRoot.unmount();
     mountElement.classList.remove('sheets-root');
     try {

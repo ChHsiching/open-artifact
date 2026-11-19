@@ -1,5 +1,6 @@
 import type { Dynamic } from '../dynamic.ts';
-import type { PageApi } from '../host/sheets-host.ts';
+import type { PageApi, PeerOfRoom, RoomPeersEvent } from '../host/sheets-host.ts';
+import { CHROME_PEER_KEY, MAX_CHROME_PEERS, type ChromePeer } from '@open-artifact/runtime';
 import { SHEETS_NEVER_GIVEN_COLORS } from './colors.ts';
 import { isNonNullObject } from '../utils/objects.ts';
 import { createPeerColorKeeper, normalizePeerColor, type PeerColorClaim } from '@open-artifact/editor-kit';
@@ -363,3 +364,53 @@ export const contextPresence = ({ byAddress: byAddress, chartId: chartId }: Dyna
   },
 });
 export const TIME_AT_PAGE_STORAGE_KEY = 'sheets-time-at-page';
+/**
+ * The others viewing the sheet, for the Shell's list beside History and Share (with Follow, which calls the page's
+ * follow handler with their tab key): each viewer's tab but this one, named as the room names them, in the colour
+ * they claimed, marked when it is another tab of this viewer or when it follows this tab.
+ */
+export function chromePeersOf(peers: readonly PeerOfRoom[]): ChromePeer[] {
+  let me = peers.find((peer) => peer.isMe);
+  let list: ChromePeer[] = peers.flatMap((peer) => {
+    if (peer.isMe || peer.kind !== 'viewer' || !CHROME_PEER_KEY.test(peer.peer)) return [];
+    let color = normalizePeerColor(claimedColorOfPresence(peer.presence));
+    let follow = peer.presence[FOLLOW_PRESENCE_KEY];
+    let followsYou = me !== undefined && isNonNullObject(follow) && follow.of === me.peer;
+    return [
+      {
+        key: peer.peer,
+        name: peer.name.trim() || peer.by,
+        ...(color !== undefined && { color }),
+        ...(me !== undefined && peer.by === me.by && { self: true }),
+        ...(followsYou && { followsYou: true }),
+      },
+    ];
+  });
+  return list.slice(0, MAX_CHROME_PEERS);
+}
+/** Hears who else views the sheet until stopped; `null` while the room is not there. */
+export function watchPeersHere(page: PageApi, heard: (peers: ChromePeer[] | null) => void): () => void {
+  let stopped = false;
+  let stop: (() => void) | null = null;
+  void page.use('room').then(
+    (room: Dynamic) => {
+      if (stopped || !isNonNullObject(room) || typeof room.onPeers !== 'function') return;
+      stop = room.onPeers(
+        (event: RoomPeersEvent) => {
+          try {
+            heard(chromePeersOf(Array.isArray(event?.peers) ? event.peers : []));
+          } catch (error: Dynamic) {
+            reportErrorSoftly(error, 'otherViewers');
+          }
+        },
+        () => heard(null),
+      );
+    },
+    () => {},
+  );
+  return () => {
+    stopped = true;
+    stop?.();
+    heard(null);
+  };
+}

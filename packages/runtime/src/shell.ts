@@ -12,15 +12,19 @@
  */
 
 import {
+  CHROME_PEER_KEY,
   CHROME_PROTOCOL,
+  MAX_CHROME_PEERS,
   type ChromeCommand,
   type ChromeDraw,
   type ChromeExportItem,
   type ChromeExportState,
+  type ChromePeer,
   type ChromeReport,
 } from '@open-artifact/protocol';
 
-export type { ChromeCommand, ChromeDraw, ChromeExportItem, ChromeExportState, ChromeReport };
+export type { ChromeCommand, ChromeDraw, ChromeExportItem, ChromeExportState, ChromePeer, ChromeReport };
+export { CHROME_PEER_KEY, MAX_CHROME_PEERS };
 
 /** A connected Shell. */
 export interface ShellConnection {
