@@ -6,6 +6,19 @@ agent plugins. Since 0.9.0 they all share one version; before that `dsh-open-art
 Each entry is written from the commits since the previous tag (`node scripts/changelog.mjs` lists them); see
 [Releasing](README.md#releasing).
 
+## [0.9.1] - 2026-11-18
+
+Much smaller installs: the built-in types share one type server.
+
+### Changed
+
+- `@open-artifact/cli`, `dsh-open-artifact` and the agent plugins carry the type server once, in
+  `vendor/type-server/`, instead of a whole copy (every editor included) in each built-in type; each type's
+  `scripts/cli.mjs` runs the shared one. The npm packages go from 112 MB to 18 MB (330 MB to 50 MB unpacked), and a
+  plugin folder from about 330 MB to 49 MB.
+- Every release now has a CHANGELOG.md entry, which becomes its GitHub release notes; the publish workflow refuses a
+  tag without one.
+
 ## [0.9.0] - 2026-11-18
 
 One version for every package, with Docs and Sheets in every plugin.
@@ -115,6 +128,7 @@ One version for every package, with Docs and Sheets in every plugin.
 - Plugins for Claude Code, Codex, Cursor, Copilot, ChatGPT and DeepSeek Harness.
 - English and Chinese READMEs, under Apache-2.0.
 
+[0.9.1]: https://github.com/JimLiu/open-artifact/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/JimLiu/open-artifact/compare/v0.2.2...v0.9.0
 [0.2.2]: https://github.com/JimLiu/open-artifact/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/JimLiu/open-artifact/compare/v0.2.0...v0.2.1
