@@ -282,6 +282,7 @@ export class Tools {
       if (name === 'Artifact') result = await this.artifact(input as ArtifactArgs, who);
       else if (name === 'ArtifactData') result = await this.data(input as unknown as ArtifactDataArgs, who);
       else if (name === 'ArtifactComments') result = await this.comments(input as unknown as ArtifactCommentsArgs, who);
+      else if (name === 'ShowArtifact') result = await this.show(input as ArtifactArgs);
       else throw new OpenArtifactError('unknown_tool', `No tool ${name}.`);
     } catch (error) {
       // A conflict's `current` is data, so it sits beside the error, never inside its words.
@@ -796,6 +797,21 @@ export class Tools {
       if (type && !type.exports.length) result.note = `${type.title} declares no export formats: the Export tab may be empty.`;
     }
     return result;
+  }
+
+  /**
+   * `ShowArtifact` (MCP Apps clients): what the view shows. It starts the page, so the frame opens at once, and opens
+   * nothing else: the page shows in the conversation.
+   */
+  private async show(args: ArtifactArgs): Promise<ToolCallResult> {
+    const record = this.o.store.require(args.url);
+    try {
+      await this.o.openPage(record);
+    } catch (error) {
+      // The Shell says what is wrong with the page; the view still shows it.
+      this.o.log(`ShowArtifact ${record.id}: ${(error as Error)?.message ?? error}`);
+    }
+    return { url: artifactUrl(record.id), title: record.title, type: record.type, view_url: this.o.viewUrl(record.id) };
   }
 
   /**

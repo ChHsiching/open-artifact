@@ -58,7 +58,7 @@ import {
 } from '@open-artifact/protocol';
 import { HarnessHub, systemBrowse, type PollParams } from './harness.ts';
 import { Inbox } from './inbox.ts';
-import { callerFromRequest, handleMcp, type McpMessage, type McpReply } from './mcp.ts';
+import { callerFromRequest, handleMcp, uiFromRequest, type McpMessage, type McpReply } from './mcp.ts';
 import { nudgeSession } from './nudge.ts';
 import { ensureDir, expandHome, files, inside, openArtifactHome, readJson, writeJson } from './paths.ts';
 import { ACTION_CALL_MS, TypeServers } from './servers.ts';
@@ -1657,7 +1657,9 @@ ${rows ? `<ul>\n${rows}\n</ul>` : '<p>No artifacts yet. Ask an agent to make one
       return sendJson(res, 400, { jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } });
     }
     const caller = callerFromRequest(req, this.harnesses);
-    const one = (message: McpMessage): Promise<McpReply | null> => handleMcp(message, { tools: this.tools, caller, version: VERSION, workspaceOf: (ref) => this.harnesses.workspaceOf(ref) });
+    const ui = uiFromRequest(req);
+    const one = (message: McpMessage): Promise<McpReply | null> =>
+      handleMcp(message, { tools: this.tools, caller, version: VERSION, workspaceOf: (ref) => this.harnesses.workspaceOf(ref), ui, origin: this.origin });
     if (Array.isArray(body)) {
       const out = (await Promise.all(body.map(one))).filter((reply): reply is McpReply => reply !== null);
       if (out.length) return sendJson(res, 200, out);

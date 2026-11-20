@@ -82,6 +82,11 @@ The plugin adds the `Artifact`, `ArtifactData` and `ArtifactComments` MCP tools,
 page comments back into the session. How each app gets comments back, and what was tested in each, is in
 [plugins/README.md](plugins/README.md).
 
+In an app that shows [MCP Apps](https://modelcontextprotocol.io/docs/extensions/apps), the agent also gets a
+`ShowArtifact` tool: it puts the artifact's live page in the conversation, where you can edit and comment without
+leaving the chat, go full screen, open it in a browser or send your comments to the agent. Apps that don't show
+MCP Apps never see the tool.
+
 ### 2. As a skill for any other agent
 
 Copy `codex/skills/open-artifact/` from the extracted plugin bundle to your agent's skill directory. It carries

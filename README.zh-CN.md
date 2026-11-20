@@ -74,6 +74,10 @@ DeepSeek Harness 有新版时，可以在 Open Artifact 页面点击「更新」
 插件会添加 `Artifact`、`ArtifactData` 和 `ArtifactComments` 三个 MCP 工具、这个 skill，以及把页面评论带回会话的
 hooks。每个应用怎样收到评论、各自测过什么，见 [plugins/README.md](plugins/README.md)。
 
+如果应用能显示 [MCP Apps](https://modelcontextprotocol.io/docs/extensions/apps)，Agent 还会多一个 `ShowArtifact`
+工具：它把 Artifact 的实时页面直接放进对话里，你不用离开聊天就能编辑、评论，也能全屏、在浏览器里打开，或把评论发回给
+Agent。不支持 MCP Apps 的应用看不到这个工具。
+
 ### 2. 作为 skill 给其他 Agent 用
 
 把解压目录里的 `codex/skills/open-artifact/` 复制到 Agent 的 skill 目录。它自带后台服务，Agent 可以通过命令行使用。

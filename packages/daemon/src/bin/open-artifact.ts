@@ -21,6 +21,7 @@ import { createInterface } from 'node:readline';
 import type { DaemonState, SessionRef, ToolCallResult } from '@open-artifact/protocol';
 import { api, ensureDaemon, readDaemon } from '../client.ts';
 import { harnessProfile } from '../harness.ts';
+import { clientShowsApps } from '../mcp-app.ts';
 import { openArtifactHome } from '../paths.ts';
 import { loadSettings } from '../settings.ts';
 import { TypeRegistry } from '../types.ts';
@@ -238,6 +239,8 @@ async function mcpBridge(): Promise<void> {
   const session = sessionFromEnv(harness);
   const workspace = ownWorkspace();
   let state: DaemonState = await ensureDaemon();
+  // The client shows MCP Apps (it said so in initialize): the daemon then offers ShowArtifact and its view.
+  let apps = false;
   const headers = (): Record<string, string> => ({
     'Content-Type': 'application/json',
     Authorization: `Bearer ${state.token}`,
@@ -245,16 +248,18 @@ async function mcpBridge(): Promise<void> {
     ...(workspace ? { 'X-Open-Artifact-Workspace': encodeURIComponent(workspace) } : {}),
     'X-Open-Artifact-PPID': ancestors(process.ppid, 2).join(','),
     ...(session ? { 'X-Open-Artifact-Session': session } : {}),
+    ...(apps ? { 'X-Open-Artifact-UI': '1' } : {}),
   });
   const write = (line: string): void => void process.stdout.write(`${line}\n`);
   let watching = false;
   const send = async (line: string): Promise<void> => {
-    let message: { id?: unknown; method?: string };
+    let message: { id?: unknown; method?: string; params?: { capabilities?: unknown } };
     try {
-      message = JSON.parse(line) as { id?: unknown; method?: string };
+      message = JSON.parse(line) as typeof message;
     } catch {
       return;
     }
+    if (message.method === 'initialize') apps = clientShowsApps(message.params?.capabilities);
     if (channel && message.method === 'notifications/initialized' && !watching) {
       watching = true;
       watchWakes({

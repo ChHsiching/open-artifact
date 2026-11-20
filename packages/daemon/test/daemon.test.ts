@@ -68,6 +68,46 @@ test('MCP: tools/list needs the token and lists the tools', async () => {
   const body = (await response.json()) as { result: { tools: Array<{ name: string }> } };
   const names = body.result.tools.map((t) => t.name);
   for (const name of ['Artifact', 'ArtifactData', 'ArtifactComments']) assert.ok(names.includes(name), name);
+  assert.ok(!names.includes('ShowArtifact'), 'ShowArtifact is only for clients that show MCP Apps');
+});
+
+test('MCP Apps: a client that shows them gets ShowArtifact and the view of the live page', async () => {
+  type Rpc = { result: Record<string, any>; error?: { message: string } };
+  const rpc = async (method: string, params: Record<string, unknown> = {}, headers: Record<string, string> = {}): Promise<Rpc> =>
+    (await (await mcp({ jsonrpc: '2.0', id: 1, method, params }, headers)).json()) as Rpc;
+  const apps = { extensions: { 'io.modelcontextprotocol/ui': { mimeTypes: ['text/html;profile=mcp-app'] } } };
+
+  const plain = await rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {} });
+  assert.equal(plain.result.capabilities.resources, undefined);
+  assert.doesNotMatch(plain.result.instructions, /ShowArtifact/);
+  const other = await rpc('initialize', { capabilities: { extensions: { 'io.modelcontextprotocol/ui': { mimeTypes: ['text/other'] } } } });
+  assert.equal(other.result.capabilities.resources, undefined, 'a client that takes no mcp-app HTML gets none');
+  const init = await rpc('initialize', { protocolVersion: '2025-06-18', capabilities: apps });
+  assert.deepEqual(init.result.capabilities.resources, {});
+  assert.match(init.result.instructions, /ShowArtifact \{url\}/);
+
+  const ui = { 'X-Open-Artifact-UI': '1', 'X-Open-Artifact-Harness': 'dsh', 'X-Open-Artifact-Session': 'apps-1' };
+  const tools = (await rpc('tools/list', {}, ui)).result.tools as Array<{ name: string; _meta?: { ui?: { resourceUri?: string } } }>;
+  const show = tools.find((t) => t.name === 'ShowArtifact');
+  assert.equal(show?._meta?.ui?.resourceUri, 'ui://open-artifact/view.html');
+
+  const listed = (await rpc('resources/list', {}, ui)).result.resources as Array<{ uri: string; mimeType: string }>;
+  assert.deepEqual(listed.map((r) => [r.uri, r.mimeType]), [['ui://open-artifact/view.html', 'text/html;profile=mcp-app']]);
+  const view = (await rpc('resources/read', { uri: 'ui://open-artifact/view.html' }, ui)).result.contents[0];
+  assert.equal(view.mimeType, 'text/html;profile=mcp-app');
+  assert.deepEqual(view._meta.ui.csp.frameDomains, [state.url], 'the view frames the daemon origin, nothing else');
+  assert.match(view.text, /ui\/initialize/);
+  assert.match(view.text, /ui\/notifications\/tool-result/);
+  assert.doesNotMatch(view.text, /__OPEN_ARTIFACT_VERSION__/);
+  assert.match((await mcp({ jsonrpc: '2.0', id: 2, method: 'resources/read', params: { uri: 'ui://nope' } }, ui).then((r) => r.json()) as Rpc).error?.message ?? '', /No resource/);
+
+  const id = await createDesign('Shown inline', 'apps-1');
+  const called = (await rpc('tools/call', { name: 'ShowArtifact', arguments: { url: `open-artifact://artifact/${id}` } }, ui)).result;
+  assert.equal(called.isError, false);
+  assert.deepEqual(called.structuredContent, { url: `open-artifact://artifact/${id}`, title: 'Shown inline', type: 'design', view_url: `${state.url}/a/${id}` });
+  const missing = (await rpc('tools/call', { name: 'ShowArtifact', arguments: { url: 'open-artifact://artifact/art_missing' } }, ui)).result;
+  assert.equal(missing.isError, true);
+  assert.equal(missing.structuredContent, undefined);
 });
 
 test('Artifact quickstart and publish make a design artifact from the built-in root', async () => {
