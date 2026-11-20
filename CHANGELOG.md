@@ -6,6 +6,47 @@ agent plugins. Since 0.9.0 they all share one version; before that `dsh-open-art
 Each entry is written from the commits since the previous tag (`node scripts/changelog.mjs` lists them); see
 [Releasing](README.md#releasing).
 
+## [0.10.0] - 2026-11-20
+
+Follow other viewers from the Shell, link-aware Design and Design System editing, and copying that works in the
+Claude app's built-in browser.
+
+### Added
+
+- In Sheets, the Shell shows who else is viewing beside History; choose Follow to see what they see, and Stop to go
+  back.
+- Readable links to a place in a design: `#page-<id>`, `#artboard-<name>` (selects the artboard and brings it into
+  view) and `#play-<name>` (runs it on the canvas). Agents give these links when a reply mentions an artboard or page.
+- Hovering an element that sits in a link shows its address in Design, with Open for web and mail links; a selected
+  element's link shows on the selection bar.
+- In the Design System README, a link opens a card to open, copy, edit or remove it. ⌘Z (Ctrl+Z) undoes a change made
+  in the card and ⇧⌘Z (Ctrl+Shift+Z, Ctrl+Y) makes it again; a modifier click opens a link while editing.
+- A color typed into the Design System picker previews as you type; Escape puts the old color back.
+- Without the Shell, the focused artboard view has its Export menu again, with the same formats as Share → Export.
+
+### Changed
+
+- "Send all to agent" sends every open comment at once, so the agent gets them as one message instead of one turn
+  per comment.
+- Design canvases no longer limit the number of notes; `canvas.json` just has to stay under 1 MiB.
+- The Design skill places new, moved and resized artboards in clear space, moves neighbours out of the way when a
+  frame grows, and starts from a design system's README.
+- Design exports say why an upload could not be included and stop waiting sooner on font hosts that do not answer.
+- Long menus fit in a short window and scroll.
+
+### Fixed
+
+- Copy as PNG, SVG or HTML, copying layers, and Design System copy buttons work in browsers that keep the clipboard
+  from framed pages, such as the Claude app's built-in browser: the Shell writes the clipboard instead.
+- Design shortcuts follow the physical key, so they work on any keyboard layout; Enter and Escape no longer end
+  cropping or path drawing while you type in a field or compose with an input method.
+- Property fields: font search works, Enter keeps focus, ⌘Z undoes, and starting a scrub first saves a number typed
+  into another field.
+- An image or video upload still lands on the right element when the artboard changed while it uploaded, and a file
+  dropped where nothing takes it no longer replaces the editor.
+- A component preview in a design system can no longer take focus away from the field you are editing before you use
+  it.
+
 ## [0.9.2] - 2026-11-18
 
 Install agent plugins from a prebuilt download and read release notes in DeepSeek Harness.
@@ -144,6 +185,7 @@ One version for every package, with Docs and Sheets in every plugin.
 - Plugins for Claude Code, Codex, Cursor, Copilot, ChatGPT and DeepSeek Harness.
 - English and Chinese READMEs, under Apache-2.0.
 
+[0.10.0]: https://github.com/JimLiu/open-artifact/compare/v0.9.2...v0.10.0
 [0.9.2]: https://github.com/JimLiu/open-artifact/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/JimLiu/open-artifact/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/JimLiu/open-artifact/compare/v0.2.2...v0.9.0
