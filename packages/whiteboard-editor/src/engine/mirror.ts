@@ -25,7 +25,7 @@ export interface MirrorFrame {
   measures: ElementMeasures;
   scheme: ColorScheme;
   editable: boolean;
-  /** The settled zoom (section titles, the text cut-off). */
+  /** The current layout zoom (section titles, the text cut-off). */
   zoom: number;
   /** The raster bucket sprites in `view` take. */
   bucket: number;
@@ -35,8 +35,6 @@ export interface MirrorFrame {
   dom: ReadonlySet<ElementId>;
   /** Elements drawn as live DOM above the canvas. */
   live: ReadonlySet<ElementId>;
-  /** Elements whose sprite is hidden (being resized). */
-  hidden: ReadonlySet<ElementId>;
   /** Fills behind free text. */
   backdrops: ReadonlyMap<string, string>;
 }
@@ -176,7 +174,6 @@ export class BoardMirror {
   #show(entry: Entry, frame: MirrorFrame): SpriteShow | null {
     const id = entry.element.id;
     if (!entry.place || entry.hash === undefined || entry.live) return null;
-    if (frame.hidden.has(id)) return null;
     if (frame.dom.has(id)) return { mode: 'dom' };
     if (!entry.place.picture && frame.zoom < TEXT_SPRITE_MIN_ZOOM) return null;
     return { mode: 'texture', key: spriteKey(id, entry.hash, entry.bucket) };

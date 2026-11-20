@@ -3,10 +3,10 @@
  * still draws next to it.
  *
  * With the engine on, the canvas draws the grid, every element's body,
- * text sprites while the camera moves, selection, hover, marquee, guides
+ * text sprites where DOM views are absent, selection, hover, marquee, guides
  * and peers. The DOM keeps two element layers: under the canvas, the views
- * of elements in view whose text shows through holes while the camera is
- * still (`dom`); above it, live elements that must stay interactive DOM
+ * of elements whose text shows through holes, including during camera motion
+ * (`dom`); above it, live elements that must stay interactive DOM
  * (embeds, the timer, the element being typed in, a table being edited:
  * `live`). `?open_artifact_engine=off` keeps the plain DOM board, and so does a
  * browser where the engine cannot start.
@@ -21,9 +21,9 @@ export type EngineStatus = 'off' | 'starting' | 'on' | 'failed';
 
 export interface EngineViewState {
   status: EngineStatus;
-  /** The camera is moving (pan, zoom, glide): DOM text is hidden and sprites draw. */
+  /** The camera or an element is moving. */
   moving: boolean;
-  /** Elements the DOM layer under the canvas draws while the camera is still. */
+  /** Elements the DOM layer under the canvas draws. */
   dom: ReadonlySet<ElementId>;
   /** Elements drawn as interactive DOM above the canvas, in draw order. */
   live: readonly ElementId[];

@@ -19,7 +19,7 @@
  * themselves the same way.
  *
  * With the canvas engine on (`engine/mode.ts`) the layer draws only the
- * elements whose text shows through the canvas while the camera is still,
+ * elements whose text shows through the canvas,
  * and {@link LiveElements} draws the interactive ones above the canvas.
  *
  * The layer also does the bookkeeping that needs the whole board: section

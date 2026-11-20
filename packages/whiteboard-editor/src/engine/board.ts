@@ -8,43 +8,35 @@
  * camera changes made elsewhere (zoom buttons, fit, follow) are pushed to
  * the engine.
  *
- * Text: while the camera is still and the zoom readable, elements in view
- * with text are drawn by their DOM views under the canvas, through holes
- * (at most {@link DOM_TEXT_MAX} of them, else none). While the camera or a
- * drag moves, and for everything else, text is drawn from sprites
- * (`sprites.ts`); below `TEXT_SPRITE_MIN_ZOOM` text is left out.
+ * Text: at readable zooms, DOM views under the canvas draw text through
+ * holes, including while the view moves. Small boards keep these views across
+ * the whole board; larger boards limit them to the last settled viewport.
+ * Sprites draw the rest. The renderer choice is refreshed after the
+ * camera settles; below `TEXT_SPRITE_MIN_ZOOM` sprites leave text out.
  *
  * Presses: on the canvas, with the Select tool, a mouse or pen press
  * without ⌥/⌘/Ctrl goes to the engine when the engine and the board's own
  * hit test agree on what is under it and that is neither an arrow nor
- * locked; the engine then selects, moves (connectors follow from
- * `dragging` previews), resizes a lone note, shape, section or picture,
- * or draws a marquee, and its commits are applied through the board's
- * edit layer (undo and sync as usual). Every other press runs the board's
- * own tool gestures with the engine's tool set to `none` until it ends.
+ * locked. The engine draws marquees and handles moves on canvas-only
+ * scenes. Resize handles and moves in mixed scenes use the board's own
+ * gestures so the DOM and canvas see the same element geometry.
  */
 
-import { CanvasEngine, parseColor, type CanvasEvents, type CommitIntent, type Peer, type Rect, type Tool } from '@open-artifact/canvas-engine';
+import { CanvasEngine, parseColor, type CanvasEvents, type CommitIntent, type Peer, type Tool } from '@open-artifact/canvas-engine';
 import {
   applyMoveDrag,
-  applyResizeDrag,
-  carriedArrowEnds,
   arrowBoundsBox,
   elementBoundsWithTitle,
   placementRectsOverlap,
-  elementLayoutBox,
   expandSelectionToGroups,
   hitSlop,
   isElementLocked,
-  withoutLockedIds,
   type BoardElement,
   type Box,
   type ElementId,
   type ElementsById,
-  type ResizeDrag,
-  type ResizeEdges,
 } from '@open-artifact/whiteboard-core';
-import { cameraLayerTransform, GRID_BASE_PITCH, GRID_FADE_END_PX, GRID_FADE_START_PX, sameCamera, screenToBoard, type Point } from '../lib/camera.ts';
+import { cameraLayerTransform, GRID_BASE_PITCH, GRID_FADE_END_PX, GRID_FADE_START_PX, sameCamera, screenToBoard, type Camera, type Point } from '../lib/camera.ts';
 import { useCollabPeers } from '../collab/peers.ts';
 import { CURSOR_HIDE_MS } from '../collab/PeerCursors.tsx';
 import { layerOrder } from '../elements/ElementsLayer.tsx';
@@ -54,7 +46,6 @@ import { boardElements, canEditBoard, editContent, selectedIds } from '../servic
 import { maybeSession } from '../services/session.ts';
 import { AREA_FILL_OPACITY } from '../selection/area-marquee.ts';
 import { useInteraction } from '../selection/store.ts';
-import { RESIZE_FITTING } from '../selection/transform.ts';
 import { useBoard } from '../state/board.ts';
 import { useCamera, zoomRange } from '../state/camera.ts';
 import { currentMeasures, useMeasures } from '../state/measures.ts';
@@ -65,7 +56,7 @@ import { useTheme } from '../state/theme.ts';
 import { effectiveTool, useTool } from '../state/tool.ts';
 import { containerAtPoint, hitContext, pressTargetAt } from '../tools/hit.ts';
 import { createTextAt, placeElement } from '../tools/place.ts';
-import { clickStartsTyping, gestureKey, hasModifier, marqueePick, openElement, rectBetween, startMove, stopTyping, type MoveState } from '../tools/select.ts';
+import { clickStartsTyping, hasModifier, marqueePick, openElement, rectBetween, startMove, stopTyping, type MoveState } from '../tools/select.ts';
 import { isAlwaysLive, itemOwner, sectionTitleSpot } from './items.ts';
 import { useStickerParty } from '../lib/sticker-party.ts';
 import { BoardMirror } from './mirror.ts';
@@ -77,13 +68,13 @@ import { SpritePainter } from './sprites.ts';
 export const DOM_TEXT_MIN_ZOOM = 0.35;
 /** Most elements with text the DOM draws at once; with more in view, sprites draw them all. */
 export const DOM_TEXT_MAX = 300;
-/** The engine's resize handle size, screen pixels. */
-const HANDLE_PX = 7;
 
 /** The surface parts the engine board works with. */
 export interface EngineBoardParts {
   surface: HTMLElement;
   canvas: HTMLCanvasElement;
+  /** The element layer under the canvas, visible through its holes. */
+  elements: HTMLElement;
   /** The live DOM layer above the canvas (camera transform, every frame). */
   live: HTMLElement;
 }
@@ -124,32 +115,13 @@ function engineTheme(surface: HTMLElement, scheme: 'light' | 'dark') {
   };
 }
 
-/** The edges a resize moved, from the box before and after. */
-function resizedEdges(before: Box, after: Box): ResizeEdges {
-  const near = (a: number, b: number): boolean => Math.abs(a - b) < 1e-6;
-  return {
-    x: !near(before.x, after.x) ? 'left' : !near(before.w, after.w) ? 'right' : null,
-    y: !near(before.y, after.y) ? 'top' : !near(before.h, after.h) ? 'bottom' : null,
-  };
-}
-
-/** The board's resize of one element from its box at the start to `rect` (as the board's own resize builds it). */
-function resizeDrag(id: ElementId, rect: Box): ResizeDrag | undefined {
-  const before = useBoard.getState().board.content;
-  const element = before.elements.find((candidate) => candidate.id === id);
-  const start = element && elementLayoutBox(element, currentMeasures());
-  if (!element || !start) return undefined;
-  const ids = withoutLockedIds(before.elements, new Set([element.id]));
-  return { before, members: new Map([[element.id, start]]), start, edge: resizedEdges(start, rect), freeEnds: carriedArrowEnds(before.elements, ids, []) };
-}
-
 /**
  * Starts the engine over `parts.canvas`. Resolves `null` when it cannot
  * start (marking the engine failed, so the DOM draws the board) or when
  * `signal` aborted meanwhile.
  */
 export async function startEngineBoard(parts: EngineBoardParts, signal: AbortSignal): Promise<EngineBoard | null> {
-  const { surface, canvas, live } = parts;
+  const { surface, canvas, elements: elementLayer, live: liveLayer } = parts;
   const scheme = (): 'light' | 'dark' => useTheme.getState().scheme;
   let engine: CanvasEngine;
   try {
@@ -169,7 +141,6 @@ export async function startEngineBoard(parts: EngineBoardParts, signal: AbortSig
       wheelZoomMax: 1.25,
       settleMs: 150,
       cameraEventMs: 50,
-      handleSize: HANDLE_PX,
       minZoom: range.min,
       maxZoom: range.max,
       theme: engineTheme(surface, scheme()),
@@ -210,21 +181,21 @@ export async function startEngineBoard(parts: EngineBoardParts, signal: AbortSig
       engine.setCamera(state.camera);
     }),
   );
-  const applyLiveTransform = (): void => {
-    live.style.transform = cameraLayerTransform(engine.camera, window.devicePixelRatio || 1);
+  const applyLayerTransforms = (camera: Camera): void => {
+    const transform = cameraLayerTransform(camera);
+    elementLayer.style.transform = transform;
+    liveLayer.style.transform = transform;
+    elementLayer.toggleAttribute('data-wb-zoomed-out', camera.zoom < 1);
+    liveLayer.toggleAttribute('data-wb-zoomed-out', camera.zoom < 1);
   };
-  applyLiveTransform();
-  offs.push(engine.on('frame', applyLiveTransform));
+  applyLayerTransforms(engine.camera);
 
   /* ------------------------------------------------------------ mirroring */
 
-  let settled = { zoom: engine.camera.zoom, view: engine.viewport(), bucket: spriteBucket(engine.camera.zoom, window.devicePixelRatio || 1) };
+  let settled = { view: engine.viewport(), bucket: spriteBucket(engine.camera.zoom, window.devicePixelRatio || 1) };
   /** Elements whose text shows through a canvas hole now. */
   let holes: ReadonlySet<ElementId> = new Set();
-  let hidden: ReadonlySet<ElementId> = new Set();
   let preview: { move: MoveState; dx: number; dy: number } | null = null;
-  /** The resize in progress, previewed on the elements around it (arrows reroute). */
-  let resizePreview: { drag: ResizeDrag; rect: Rect } | null = null;
 
   const liveIds = (elements: readonly BoardElement[], byId: ElementsById): Set<ElementId> => {
     const ids = new Set<ElementId>();
@@ -238,9 +209,10 @@ export async function startEngineBoard(parts: EngineBoardParts, signal: AbortSig
     if (ids.size) {
       const regions: Box[] = [];
       const measures = currentMeasures();
+      const { zoom } = useCamera.getState().camera;
       for (const element of elements) {
         if (!regions.length && !ids.has(element.id)) continue;
-        const box = element.type === 'arrow' ? arrowBoundsBox(element, byId, measures) : elementBoundsWithTitle(element, measures, false, settled.zoom);
+        const box = element.type === 'arrow' ? arrowBoundsBox(element, byId, measures) : elementBoundsWithTitle(element, measures, false, zoom);
         if (box && (ids.has(element.id) || regions.some((liveBox) => placementRectsOverlap(box, liveBox, 2)))) {
           ids.add(element.id);
           regions.push(box);
@@ -265,13 +237,6 @@ export async function startEngineBoard(parts: EngineBoardParts, signal: AbortSig
       const moved = applyMoveDrag({ elements }, { dx: preview.dx, dy: preview.dy, origins: preview.move.origins, freeEnds: preview.move.freeEnds });
       elements = moved.elements as BoardElement[];
       byId = new Map(elements.map((element) => [element.id, element]));
-    } else if (resizePreview) {
-      // The engine draws the resized item itself; what is drawn around it follows the previewed element.
-      const { drag, rect } = resizePreview;
-      const before = elements;
-      const resized = applyResizeDrag(before, drag, rect, RESIZE_FITTING) as BoardElement[];
-      byId = new Map(resized.map((element) => [element.id, element]));
-      elements = resized.map((element, index) => (drag.members.has(element.id) ? before[index]! : element));
     }
     const live = pushLive(elements, byId);
     engineRef.drawn = byId;
@@ -281,12 +246,11 @@ export async function startEngineBoard(parts: EngineBoardParts, signal: AbortSig
       measures: currentMeasures(),
       scheme: scheme(),
       editable: canEditBoard(),
-      zoom: settled.zoom,
+      zoom: useCamera.getState().camera.zoom,
       bucket: settled.bucket,
       view: settled.view,
       dom: holes,
       live,
-      hidden,
       backdrops: useElementView.getState().backdrops,
     });
     // A new element may have been selected before the engine had it.
@@ -302,11 +266,17 @@ export async function startEngineBoard(parts: EngineBoardParts, signal: AbortSig
   offs.push(
     useBoard.subscribe((state, previous) => {
       if (state.board !== previous.board) {
-        scheduleSync();
+        // Element transforms update both DOM geometry and the matching canvas holes in the same frame.
+        const { transform } = useInteraction.getState();
+        if (transform === 'resize' || transform === 'move') sync();
+        else scheduleSync();
         scheduleDomRefresh();
       }
     }),
     useShown.subscribe(scheduleSync),
+    useCamera.subscribe((state, previous) => {
+      if (state.camera.zoom !== previous.camera.zoom) scheduleSync();
+    }),
     useStickerParty.subscribe(scheduleSync),
     useMeasures.subscribe(scheduleSync),
     useElementView.subscribe((state, previous) => {
@@ -332,7 +302,7 @@ export async function startEngineBoard(parts: EngineBoardParts, signal: AbortSig
     measures: currentMeasures,
     scheme,
     backdrops: () => useElementView.getState().backdrops,
-    titleSpot: (element) => (element.type === 'container' ? sectionTitleSpot(element, currentMeasures(), settled.zoom) : undefined),
+    titleSpot: (element) => (element.type === 'container' ? sectionTitleSpot(element, currentMeasures(), useCamera.getState().camera.zoom) : undefined),
     faceName: (id) => {
       const session = maybeSession();
       if (session && (id === session.viewer.id || id === session.peerId)) return session.viewer.name;
@@ -348,12 +318,15 @@ export async function startEngineBoard(parts: EngineBoardParts, signal: AbortSig
   let revealFrame = 0;
   let domTimer: ReturnType<typeof setTimeout> | undefined;
 
-  /** Elements with text in view and everything under their sprites, or none (see the module notes). */
+  /** Text views and the items that overlap their holes (see the module notes). */
   const domSet = (): Set<ElementId> => {
     const { zoom } = engine.camera;
     const out = new Set<ElementId>();
-    if (zoom < DOM_TEXT_MIN_ZOOM || gesture === 'move' || gesture === 'resize') return out;
-    const owners = new Set(engine.queryRect(engine.viewport()).map(itemOwner));
+    if (zoom < DOM_TEXT_MIN_ZOOM || gesture === 'move') return out;
+    const elements = mirror.frame?.elements ?? [];
+    const owners = elements.length <= DOM_TEXT_MAX
+      ? elements.map(({ id }) => id)
+      : new Set(engine.queryRect(engine.viewport()).map(itemOwner));
     const texts: ElementId[] = [];
     for (const id of owners) if (mirror.sprite(id) && !mirror.sprite(id)!.place.picture) texts.push(id);
     if (texts.length > DOM_TEXT_MAX) return out;
@@ -365,15 +338,8 @@ export async function startEngineBoard(parts: EngineBoardParts, signal: AbortSig
     return out;
   };
 
-  /** Hides DOM text (the camera or a drag moves): sprites draw everything. */
-  const conceal = (): void => {
-    if (revealFrame !== 0) cancelAnimationFrame(revealFrame);
-    revealFrame = 0;
+  const markMoving = (): void => {
     surface.dataset.wbMoving = '';
-    if (holes.size > 0) {
-      holes = new Set();
-      sync();
-    }
     if (!useEngineView.getState().moving) useEngineView.setState({ moving: true });
   };
 
@@ -389,21 +355,21 @@ export async function startEngineBoard(parts: EngineBoardParts, signal: AbortSig
     });
   };
   const settleNow = (): void => {
-    if (engine.moving || gesture === 'move' || gesture === 'resize') return;
+    if (engine.moving || gesture === 'move' || useInteraction.getState().transform === 'resize') return;
     pullCamera();
     const { zoom } = engine.camera;
-    settled = { zoom, view: engine.viewport(), bucket: spriteBucket(zoom, window.devicePixelRatio || 1) };
+    settled = { view: engine.viewport(), bucket: spriteBucket(zoom, window.devicePixelRatio || 1) };
     const dom = domSet();
     // Views leaving the DOM go now: close their holes first.
     holes = new Set([...holes].filter((id) => dom.has(id)));
     sync();
     useEngineView.setState({ dom, moving: false });
+    delete surface.dataset.wbMoving;
     if (revealFrame !== 0) cancelAnimationFrame(revealFrame);
     // Two frames: React renders the views, then they are laid out and painted.
     revealFrame = requestAnimationFrame(() => {
       revealFrame = requestAnimationFrame(() => {
         revealFrame = 0;
-        delete surface.dataset.wbMoving;
         holes = dom;
         sync();
         // Sprites of what the DOM draws now, for the next pan.
@@ -423,7 +389,8 @@ export async function startEngineBoard(parts: EngineBoardParts, signal: AbortSig
     }, 200);
   };
   offs.push(
-    engine.on('moving', ({ moving }) => (moving ? conceal() : settle())),
+    engine.on('moving', ({ moving }) => (moving ? markMoving() : settle())),
+    engine.on('frame', () => applyLayerTransforms(engine.camera)),
     engine.on('camera', ({ settled: still }) => {
       if (still) settle();
     }),
@@ -492,9 +459,12 @@ export async function startEngineBoard(parts: EngineBoardParts, signal: AbortSig
     const name = effectiveTool();
     if (name === 'hand') return true;
     if (name !== 'select' || useTool.getState().commentMode || event.altKey || hasModifier(event) || !canEditBoard()) return false;
-    // On a resize handle the engine draws (a lone selected item it resizes).
-    if (engine.hitHandle(at)) return true;
-    if (hit && (hit.type === 'arrow' || isElementLocked(hit))) return false;
+    if (hit) {
+      if (hit.type === 'arrow' || isElementLocked(hit)) return false;
+      const { dom, live } = useEngineView.getState();
+      // A moved item can carry or cross DOM elements. Move them using the same board state.
+      if (dom.size > 0 || live.length > 0) return false;
+    }
     const engineHit = engine.hitTest(at);
     return (engineHit === null ? undefined : itemOwner(engineHit)) === hit?.id;
   };
@@ -583,7 +553,6 @@ export async function startEngineBoard(parts: EngineBoardParts, signal: AbortSig
 
   /* ------------------------------------------------------------ gestures */
 
-  let resizing: ElementId | null = null;
   offs.push(
     engine.on('gesture', ({ kind, phase }) => {
       if (phase === 'start') {
@@ -597,22 +566,14 @@ export async function startEngineBoard(parts: EngineBoardParts, signal: AbortSig
           }
           preview = { move, dx: 0, dy: 0 };
           useInteraction.getState().setTransform('move');
-          conceal();
-        } else if (kind === 'resize') {
-          resizing = engine.selection[0] ?? null;
-          if (resizing !== null) hidden = new Set([resizing]);
-          useInteraction.getState().setTransform('resize');
-          conceal();
+          markMoving();
         }
         return;
       }
       const was = gesture;
       gesture = null;
-      if (was === 'move' || was === 'resize') {
+      if (was === 'move') {
         preview = null;
-        resizePreview = null;
-        resizing = null;
-        hidden = new Set();
         useInteraction.getState().reset();
         scheduleSync();
         if (!engine.moving) settle();
@@ -621,12 +582,6 @@ export async function startEngineBoard(parts: EngineBoardParts, signal: AbortSig
     engine.on('dragging', ({ dx, dy }) => {
       if (!preview) return;
       preview = { ...preview, dx, dy };
-      sync();
-    }),
-    engine.on('resizing', ({ id, rect }) => {
-      if (id !== resizing) return;
-      const drag = resizeDrag(id, rect);
-      resizePreview = drag ? { drag, rect } : null;
       sync();
     }),
     engine.on('commit', (intent) => applyCommit(intent)),
@@ -660,15 +615,6 @@ export async function startEngineBoard(parts: EngineBoardParts, signal: AbortSig
         const drag = { dx: intent.dx, dy: intent.dy, origins: move.origins, freeEnds: move.freeEnds };
         editContent((content) => applyMoveDrag(content, drag), { label: move.label, coalesce: move.key });
         announce(movedMessage(intent.dx, intent.dy));
-        return;
-      }
-      case 'resize': {
-        const drag = resizeDrag(intent.id, intent.rect);
-        if (!drag) return;
-        editContent((content) => ({ ...content, elements: applyResizeDrag(content.elements, drag, intent.rect, RESIZE_FITTING) }), {
-          label: 'Resize',
-          coalesce: gestureKey('resize', intent.id),
-        });
         return;
       }
     }
