@@ -132,7 +132,9 @@ function elementIdOfPath(path: string): ElementId | undefined {
 
 /** A coalescing step still open for merging. */
 interface OpenStep {
-  key: string;
+  /** The run's coalesce key; `undefined` for a step only a follow-up joins. */
+  key: string | undefined;
+  label: string;
   /** The content before the first edit of the run. */
   start: BoardContent;
   step: HistoryStep;
@@ -290,6 +292,8 @@ export function startSync(options: SyncOptions = {}): () => void {
     removeCol: (...args) => (beforeTableEdit(), tables.removeCol(...args)),
     colWidth: (...args) => (beforeTableEdit(), tables.colWidth(...args)),
     fill: (...args) => (beforeTableEdit(), tables.fill(...args)),
+    setFills: (...args) => (beforeTableEdit(), tables.setFills(...args)),
+    setHeat: (...args) => (beforeTableEdit(), tables.setHeat(...args)),
   });
   stops.push(() => {
     flushTableCell();
@@ -308,10 +312,11 @@ export function startSync(options: SyncOptions = {}): () => void {
    */
   const commitLocal = (before: BoardContent, after: BoardContent, change: ChangeOptions): void => {
     closeAnswer();
-    const label = change.label ?? 'Edit';
-    const key = change.coalesce;
     const now = Date.now();
-    const run = key !== undefined && open?.key === key && now - open.at <= COALESCE_WINDOW_MS ? open : null;
+    const joins = open !== null && now - open.at <= COALESCE_WINDOW_MS && (change.follows === true || (change.coalesce !== undefined && open.key === change.coalesce));
+    const run = joins ? open : null;
+    const label = change.follows === true && run ? run.label : (change.label ?? 'Edit');
+    const key = change.follows === true && run ? run.key : change.coalesce;
     open = null;
     lastSeeded = undefined;
     refused = false;
@@ -328,7 +333,7 @@ export function startSync(options: SyncOptions = {}): () => void {
       // `false`: the run ended where it began (dragged back), so it leaves no step.
       step = commitStep(label, run.start, stepDoc.content()) ? lastSeeded : undefined;
     }
-    if (step !== undefined && key !== undefined) open = { key, start, step, at: now };
+    if (step !== undefined) open = { key, label, start, step, at: now };
   };
 
   const publishHistory = (): void => {

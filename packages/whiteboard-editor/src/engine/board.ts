@@ -65,7 +65,7 @@ import { useTheme } from '../state/theme.ts';
 import { effectiveTool, useTool } from '../state/tool.ts';
 import { containerAtPoint, hitContext, pressTargetAt } from '../tools/hit.ts';
 import { createTextAt, placeElement } from '../tools/place.ts';
-import { gestureKey, hasModifier, marqueePick, openElement, rectBetween, startMove, stopTyping, type MoveState } from '../tools/select.ts';
+import { clickStartsTyping, gestureKey, hasModifier, marqueePick, openElement, rectBetween, startMove, stopTyping, type MoveState } from '../tools/select.ts';
 import { isAlwaysLive, itemOwner, sectionTitleSpot } from './items.ts';
 import { useStickerParty } from '../lib/sticker-party.ts';
 import { BoardMirror } from './mirror.ts';
@@ -538,6 +538,10 @@ export async function startEngineBoard(parts: EngineBoardParts, signal: AbortSig
     // selection changes, and it never holds live DOM elements (an animated sticker, a timer).
     if (!done.hit) {
       if (event.button === 0 && effectiveTool() === 'select' && useSelection.getState().ids.length > 0) useSelection.getState().clear();
+      return;
+    }
+    if (clickStartsTyping(done.hit)) {
+      useSelection.getState().edit({ kind: 'element', id: done.hit.id });
       return;
     }
     if (done.hit.type !== 'container' || done.hit.text.trim() !== '') return;

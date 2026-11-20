@@ -4,7 +4,7 @@
  * or a selection, and remembering this tab's camera.
  */
 
-import { centerOn, fitRect, nextZoomStep, panBy, recallCamera, rememberCamera, zoomAround, type Camera, type Point, type Rect } from '../lib/camera.ts';
+import { CAMERA_GLIDE_MS, centerOn, fitRect, glideCameraAt, nextZoomStep, panBy, recallCamera, rememberCamera, sameCamera, zoomAround, type Camera, type Point, type Rect } from '../lib/camera.ts';
 import { useCamera, zoomRange } from '../state/camera.ts';
 
 /** Wheel zoom factor of one wheel delta (pixels), clamped per event. */
@@ -62,6 +62,39 @@ export function scrollsNatively(target: EventTarget | null, root: Element): bool
 /** Sets the camera. */
 export function setCamera(camera: Camera): void {
   useCamera.getState().setCamera(camera);
+}
+
+/** The glide under way, if any. */
+let glide: number | null = null;
+
+/**
+ * Moves the camera to `target` over a moment (at once when the viewer
+ * prefers less motion). Any other camera move during the glide ends it.
+ */
+export function glideCamera(target: Camera): void {
+  if (glide !== null) cancelAnimationFrame(glide);
+  glide = null;
+  const from = useCamera.getState().camera;
+  if (sameCamera(from, target)) return;
+  if (typeof requestAnimationFrame !== 'function' || (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches)) {
+    setCamera(target);
+    return;
+  }
+  const start = performance.now();
+  let shown = from;
+  const step = (now: number): void => {
+    if (!sameCamera(useCamera.getState().camera, shown)) {
+      glide = null;
+      return;
+    }
+    const t = (now - start) / CAMERA_GLIDE_MS;
+    shown = t >= 1 ? target : glideCameraAt(from, target, t);
+    setCamera(shown);
+    // The store may round what it was given; follow what it shows.
+    shown = useCamera.getState().camera;
+    glide = t >= 1 ? null : requestAnimationFrame(step);
+  };
+  glide = requestAnimationFrame(step);
 }
 
 /** Zooms around a screen point (default: the viewport center). */

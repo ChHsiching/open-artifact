@@ -402,6 +402,41 @@ describe('whiteboard type server', () => {
     assert.equal(clean.check.problems, 0);
   });
 
+  it('writes and checks drawing styles, placeholders, table tints and ended claims', async () => {
+    const board = join(dir, 'Tints');
+    await mkdir(join(board, 'db', 'board'), { recursive: true });
+    await writeFile(join(board, 'db', 'board', 'meta.json'), JSON.stringify({ v: 1, title: 'Tints', order: [] }));
+    const drawing = `data:image/svg+xml;base64,${Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="4" height="4"/></svg>').toString('base64')}`;
+    const table = { type: 'table', x: 0, y: 200, cols: { c1: { at: 1 }, c2: { at: 2 } }, rows: { r1: { at: 1, c1: 'Name', c2: 'Score' }, r2: { at: 2, c1: 'a', c2: '12' } } };
+    const writes = [
+      { op: 'set', path: 'elements/d1', data: { type: 'image', x: 0, y: 0, w: 100, h: 100, src: drawing, style: 'comic' } },
+      { op: 'set', path: 'elements/t1', data: { type: 'text', x: 200, y: 0, text: '', placeholder: 'Write the goal' } },
+      { op: 'set', path: 'elements/tb', data: { ...table, fills: { r2: { c1: 'blue' } }, heat: { cols: { c2: 'green' } } } },
+      { op: 'update', path: 'board/meta', data: { order: ['d1', 't1', 'tb'] } },
+      { op: 'set', path: 'board/claim-c1234567', data: { x: 0, y: 0, w: 300, h: 200 } },
+    ];
+    assert.equal((await action('open-artifact.db.write', { writes }, board)).status, 200);
+    type Check = { check: { problems: number; findings: { file: string; level: string; message: string }[] } };
+    const claimed = (await (await action('check', {}, board)).json()) as Check;
+    assert.deepEqual(
+      claimed.check.findings.map((finding) => [finding.level, finding.file]),
+      [['warning', 'db/board/claim-c1234567.json']],
+      'a claim that still frames an area asks to be ended',
+    );
+
+    // Ending the claim with {} is accepted and leaves the board clean.
+    assert.equal((await action('open-artifact.db.write', { writes: [{ op: 'set', path: 'board/claim-c1234567', data: {} }] }, board)).status, 200);
+    assert.deepEqual(JSON.parse(await readFile(join(board, 'db', 'board', 'claim-c1234567.json'), 'utf8')), {});
+    const ended = (await (await action('check', {}, board)).json()) as Check;
+    assert.deepEqual(ended.check.findings, []);
+    assert.equal(ended.check.problems, 0);
+
+    await action('open-artifact.db.write', { writes: [{ op: 'update', path: 'elements/d1', data: { style: 'oil' } }] }, board);
+    const styled = (await (await action('check', {}, board)).json()) as Check;
+    assert.equal(styled.check.problems, 1);
+    assert.match(styled.check.findings[0]!.message, /watercolor, comic/);
+  });
+
   it('reads and writes a board from the CLI', async () => {
     const lines: string[] = [];
     const log = console.log;

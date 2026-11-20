@@ -319,6 +319,286 @@ describe('whiteboard', { skip: skipFor('whiteboard') }, () => {
     } finally { await p.close(); }
   });
 
+  it('tints table cells by heat map and fill, removes a column heat map from the menu and sets a cell color', { skip: noBrowser }, async () => {
+    const board = tmpDir('whiteboard-tints');
+    const table = { type: 'table', x: 0, y: 0, head: true, color: 'white', cols: { c1: { at: 1 }, c2: { at: 2 } },
+      rows: { r1: { at: 1, c1: 'Item', c2: 'Cost' }, r2: { at: 2, c1: 'A', c2: '$10' }, r3: { at: 3, c1: 'B', c2: '$30' } }, heat: { cols: { c2: 'blue' } } };
+    const file = path.join(board, 'db/elements/tints.json');
+    for (const sub of ['db/elements', 'db/board']) fs.mkdirSync(path.join(board, sub), { recursive: true });
+    fs.writeFileSync(path.join(board, 'db/board/meta.json'), JSON.stringify({ v: 1, title: 'Costs', order: ['tints'] }));
+    fs.writeFileSync(file, JSON.stringify(table));
+    const saved = () => JSON.parse(fs.readFileSync(file));
+    const at = selector => `document.querySelector('${selector}')`;
+    const cellAt = (row, col) => `[data-wb-row="${row}"][data-wb-col="${col}"]`;
+    const center = selector => `(() => { const r = ${at(selector)}.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()`;
+    const { url: boardUrl } = await run.json(['open', board, '--type', 'whiteboard', '--json']);
+    const p = await browser.load(boardUrl, { ready });
+    try {
+      assert.ok(await p.waitFor(`${at(cellAt('r3', 'c2'))}?.dataset.wbTint`), 'the heat-mapped column is tinted');
+      assert.ok(await p.evaluate(`${at(cellAt('r2', 'c2'))}.dataset.wbTint !== ${at(cellAt('r3', 'c2'))}.dataset.wbTint`), 'by value');
+      assert.equal(await p.evaluate(`${at(cellAt('r1', 'c2'))}.hasAttribute('data-wb-tint')`), false, 'the header row is not shaded');
+
+      fs.writeFileSync(file, JSON.stringify({ ...table, fills: { r2: { c1: 'pink' } } }));
+      assert.ok(await p.waitFor(`${at(cellAt('r2', 'c1'))}?.dataset.wbTint`, 5000), 'a fill the agent writes shows at once');
+
+      await p.rightClick(...await p.evaluate(center(cellAt('r3', 'c2'))));
+      const menuItem = label => `[...document.querySelectorAll('[role=menuitem], [role=menuitemcheckbox]')].find(e => e.textContent.trim() === '${label}')`;
+      assert.ok(await p.waitFor(menuItem('Remove column heat map'), 3000));
+      assert.equal(await p.evaluate(`Boolean(${menuItem('Heat map this row')})`), true);
+      await p.evaluate(`${menuItem('Remove column heat map')}.click()`);
+      assert.ok(await until(() => saved().heat?.cols?.c2 === undefined), 'the column heat map is gone from the file');
+      assert.ok(await p.waitFor(`!${at(cellAt('r3', 'c2'))}.hasAttribute('data-wb-tint')`));
+
+      await p.clickTimes(...await p.evaluate(center(cellAt('r2', 'c1'))), 2);
+      assert.ok(await p.waitFor(at(`${cellAt('r2', 'c1')} [contenteditable=true]`), 3000));
+      assert.ok(await p.waitFor(at('button[aria-label="Cell color"]'), 3000));
+      await p.evaluate(`${at('button[aria-label="Cell color"]')}.click()`);
+      const green = '[role=radiogroup][aria-label="Cell color"] [aria-label="Green"]';
+      assert.ok(await p.waitFor(at(green), 3000));
+      await p.evaluate(`${at(green)}.click()`);
+      assert.ok(await until(() => saved().fills?.r2?.c1 === 'green'), 'the picked cell color is saved');
+      assert.deepEqual(p.problems, []);
+    } finally { await p.close(); await run.run(['stop', board]); }
+  });
+
+  it('shows a text\'s placeholder, edits it on one click and saves what is typed', { skip: noBrowser }, async () => {
+    const board = tmpDir('whiteboard-hint');
+    const file = path.join(board, 'db/elements/hint.json');
+    for (const sub of ['db/elements', 'db/board']) fs.mkdirSync(path.join(board, sub), { recursive: true });
+    fs.writeFileSync(path.join(board, 'db/board/meta.json'), JSON.stringify({ v: 1, title: 'Ideas', order: ['hint'] }));
+    fs.writeFileSync(file, JSON.stringify({ type: 'text', x: 0, y: 0, text: '', placeholder: 'First idea' }));
+    const hint = '[data-wb-id="hint"]';
+    const { url: boardUrl } = await run.json(['open', board, '--type', 'whiteboard', '--json']);
+    const p = await browser.load(boardUrl, { ready });
+    try {
+      assert.ok(await p.waitFor(`document.querySelector('${hint} .wb-text-hint')?.textContent === 'First idea'`, 5000), 'the hint shows');
+      const at = await p.evaluate(`(() => { const r = document.querySelector('${hint}').getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()`);
+      await p.click(...at);
+      assert.ok(await p.waitFor(`document.activeElement?.isContentEditable && document.querySelector('${hint}')?.contains(document.activeElement)`, 3000), 'one click starts typing');
+      await p.type('Launch plan');
+      await p.press('Escape');
+      assert.ok(await until(() => JSON.parse(fs.readFileSync(file)).text === 'Launch plan'), 'the typed text is saved');
+      assert.deepEqual(p.problems, []);
+    } finally { await p.close(); await run.run(['stop', board]); }
+  });
+
+  it('shows a link\'s card on hover, copies it, opens it after a click and not on a double click', { skip: noBrowser }, async () => {
+    const board = tmpDir('whiteboard-links');
+    for (const sub of ['db/elements', 'db/board']) fs.mkdirSync(path.join(board, sub), { recursive: true });
+    fs.writeFileSync(path.join(board, 'db/board/meta.json'), JSON.stringify({ v: 1, title: 'Links', order: ['words'] }));
+    fs.writeFileSync(path.join(board, 'db/elements/words.json'), JSON.stringify({ type: 'text', x: 0, y: 200, w: 320, text: 'Read [the guide](https://example.org/docs/guide) first' }));
+    const centre = sel => `(() => { const r = document.querySelector('${sel}').getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()`;
+    const linkCard = '[data-wb-link-card]';
+    const { url: boardUrl } = await run.json(['open', board, '--type', 'whiteboard', '--json']);
+    const p = await browser.load(boardUrl, { ready });
+    try {
+      await p.cdp('Browser.grantPermissions', { origin: new URL(boardUrl).origin, permissions: ['clipboardReadWrite', 'clipboardSanitizedWrite'] });
+      await p.evaluate('window.opened = []; window.open = (href) => { window.opened.push(href); return null; }; 1');
+      assert.ok(await p.waitFor("document.querySelector('[data-wb-id=words] a[data-wb-link]')", 5000));
+      const link = await p.evaluate(centre('[data-wb-id=words] a[data-wb-link]'));
+      await p.hover(link[0] - 4, link[1]);
+      await p.hover(...link);
+      assert.ok(await p.waitFor(`document.querySelector('${linkCard}')?.innerText.includes('example.org')`, 3000), 'the card shows the domain');
+      await p.hover(...await p.evaluate(centre(`${linkCard} button[aria-label="Copy link"]`)));
+      await p.click(...await p.evaluate(centre(`${linkCard} button[aria-label="Copy link"]`)));
+      assert.ok(await p.waitFor(`document.querySelector('${linkCard} button[aria-label="Link copied"]')`, 2000), 'the button says the link was copied');
+      assert.equal(await p.evaluate('navigator.clipboard.readText()'), 'https://example.org/docs/guide');
+
+      await p.click(...link);
+      assert.deepEqual(await p.evaluate('window.opened'), [], 'a plain click waits');
+      assert.ok(await p.waitFor('window.opened.length === 1', 2000), 'a plain click opens after the delay');
+      assert.equal(await p.evaluate('window.opened[0]'), 'https://example.org/docs/guide');
+
+      await p.evaluate('window.opened = []; 1');
+      await new Promise(resolve => setTimeout(resolve, 800));
+      await p.clickTimes(...link, 2);
+      assert.ok(await p.waitFor("!!document.querySelector('[data-wb-id=words] [contenteditable=true]')", 3000), 'a double click starts typing');
+      await new Promise(resolve => setTimeout(resolve, 500));
+      assert.deepEqual(await p.evaluate('window.opened'), [], 'a double click does not open the link');
+      assert.deepEqual(p.problems, []);
+    } finally { await p.close(); await run.run(['stop', board]); }
+  });
+
+  it('adds a shape and no arrow from a shape\'s side dot, and gives a text no side dots', { skip: noBrowser }, async () => {
+    const board = tmpDir('whiteboard-dots');
+    const dir = path.join(board, 'db/elements');
+    for (const sub of ['db/elements', 'db/board']) fs.mkdirSync(path.join(board, sub), { recursive: true });
+    const items = {
+      step: { type: 'shape', kind: 'rect', x: 0, y: 0, w: 160, h: 100, color: 'blue', text: 'Step' },
+      label: { type: 'text', x: 0, y: 260, w: 200, text: 'A caption' },
+    };
+    fs.writeFileSync(path.join(board, 'db/board/meta.json'), JSON.stringify({ v: 1, title: 'Dots', order: Object.keys(items) }));
+    for (const [id, el] of Object.entries(items)) fs.writeFileSync(path.join(dir, id + '.json'), JSON.stringify(el));
+    const saved = () => fs.readdirSync(dir).filter(n => n.endsWith('.json')).map(n => ({ id: n.slice(0, -5), ...JSON.parse(fs.readFileSync(path.join(dir, n))) }));
+    const centre = sel => `(() => { const r = document.querySelector('${sel}').getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()`;
+    const { url: boardUrl } = await run.json(['open', board, '--type', 'whiteboard', '--json']);
+    const p = await browser.load(boardUrl, { ready });
+    try {
+      assert.ok(await p.waitFor("document.querySelector('[data-wb-id=label]') && document.querySelector('[data-wb-id=step]')", 5000));
+      await p.click(...await p.evaluate(centre('[data-wb-id=label]')));
+      assert.ok(await p.waitFor("document.querySelector('.wb-sel-frame')", 3000));
+      await p.press('Escape');
+      await p.hover(...await p.evaluate(centre('[data-wb-id=label]')));
+      assert.equal(await p.evaluate("document.querySelectorAll('.wb-side-dot').length"), 0, 'a text has no side dots');
+      await p.click(...await p.evaluate(centre('[data-wb-id=step]')));
+      const dot = '.wb-sel .wb-side-dot[data-side=right]';
+      assert.ok(await p.waitFor(`document.querySelector('${dot}')`, 3000), 'a selected shape has side dots');
+      assert.equal(await p.evaluate(`document.querySelector('${dot}').title`), 'Click to add a shape\nDrag to connect');
+      await p.click(...await p.evaluate(centre(dot)));
+      assert.ok(await until(() => saved().length === 3), 'one item is added');
+      const added = saved().find(el => !(el.id in items));
+      assert.equal(added.type, 'shape');
+      assert.equal(added.kind, 'rect');
+      assert.ok(added.x > 160, 'the new shape sits to the right');
+      assert.equal(added.by, undefined);
+      assert.ok(saved().every(el => el.type !== 'arrow'), 'no arrow joins them');
+      assert.deepEqual(p.problems, []);
+    } finally { await p.close(); await run.run(['stop', board]); }
+  });
+
+  it('drops the rest of a double click on a menu row and keeps a typed-into panel open on a press outside', { skip: noBrowser }, async () => {
+    const board = tmpDir('whiteboard-follow-up');
+    const dir = path.join(board, 'db/elements');
+    for (const sub of ['db/elements', 'db/board']) fs.mkdirSync(path.join(board, sub), { recursive: true });
+    fs.writeFileSync(path.join(board, 'db/board/meta.json'), JSON.stringify({ v: 1, title: 'Menus', order: ['only'] }));
+    fs.writeFileSync(path.join(dir, 'only.json'), JSON.stringify({ type: 'shape', kind: 'rect', x: 0, y: 0, w: 120, h: 80, color: 'blue', text: 'Only' }));
+    const count = () => fs.readdirSync(dir).filter(n => n.endsWith('.json')).length;
+    const centre = sel => `(() => { const r = document.querySelector('${sel}').getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()`;
+    const menuItem = label => `[...document.querySelectorAll('[role=menuitem]')].find(e => e.textContent.includes('${label}'))`;
+    const { url: boardUrl } = await run.json(['open', board, '--type', 'whiteboard', '--json']);
+    const p = await browser.load(boardUrl, { ready });
+    try {
+      assert.ok(await p.waitFor("document.querySelector('[data-wb-id=only]')", 5000));
+      const spot = await p.evaluate("(() => { const r = document.querySelector('[data-wb-id=only]').getBoundingClientRect(); return [Math.round(r.right + 200), Math.round(r.bottom + 120)]; })()");
+      await p.rightClick(...spot);
+      assert.ok(await p.waitFor(menuItem('Select all'), 3000), 'the board menu opens');
+      const row = await p.evaluate(`(() => { const r = ${menuItem('Select all')}.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()`);
+      await p.clickTimes(...row, 2);
+      assert.ok(await p.waitFor("!document.querySelector('[role=menu]')", 3000), 'the first click runs the row and closes the menu');
+      await new Promise(resolve => setTimeout(resolve, 600));
+      assert.equal(count(), 1, 'the second click adds no text to the board beneath');
+
+      await p.evaluate("document.querySelector('[data-wb-timer] button').click()");
+      assert.ok(await p.waitFor("document.querySelector('input[aria-label=Minutes]')", 3000));
+      await p.click(...await p.evaluate(centre('input[aria-label=Minutes]')));
+      await p.type('7');
+      await p.click(...spot);
+      await new Promise(resolve => setTimeout(resolve, 300));
+      assert.ok(await p.evaluate("Boolean(document.querySelector('.wb-timer-panel'))"), 'a panel typed into stays open');
+      await p.press('Escape');
+      assert.ok(await p.waitFor("!document.querySelector('.wb-timer-panel')", 3000), 'Escape still closes it');
+      assert.deepEqual(p.problems, []);
+    } finally { await p.close(); await run.run(['stop', board]); }
+  });
+
+  it('moves between the page\'s regions with F6 and cancels a crop with Command-Z', { skip: noBrowser }, async () => {
+    const board = tmpDir('whiteboard-keys');
+    const dir = path.join(board, 'db/elements');
+    for (const sub of ['db/elements', 'db/board', '_blobs']) fs.mkdirSync(path.join(board, sub), { recursive: true });
+    fs.writeFileSync(path.join(board, 'db/board/meta.json'), JSON.stringify({ v: 1, title: 'Keys', order: ['pic'] }));
+    fs.writeFileSync(path.join(dir, 'pic.json'), JSON.stringify({ type: 'image', x: 0, y: 0, w: 240, h: 200, src: '_blob/' + pictureId }));
+    fs.writeFileSync(path.join(board, '_blobs', pictureId), bytes);
+    fs.writeFileSync(path.join(board, '_blobs', pictureId + '.json'), JSON.stringify({ name: 'diagram.png', contentType: 'image/png', bytes: bytes.length }));
+    const saved = () => JSON.parse(fs.readFileSync(path.join(dir, 'pic.json')));
+    const centre = sel => `(() => { const r = document.querySelector('${sel}').getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()`;
+    const region = "document.activeElement?.closest('[data-wb-region]')?.dataset.wbRegion";
+    const { url: boardUrl } = await run.json(['open', board, '--type', 'whiteboard', '--json']);
+    // The DOM renderer, so the picture and its crop handles are elements to find.
+    const entry = new URL(boardUrl);
+    entry.searchParams.set('open_artifact_engine', 'off');
+    const p = await browser.load(entry.href, { ready });
+    const f6 = async (shift = false) => {
+      for (const type of ['rawKeyDown', 'keyUp']) await p.cdp('Input.dispatchKeyEvent', { type, key: 'F6', code: 'F6', windowsVirtualKeyCode: 117, modifiers: shift ? 8 : 0 });
+    };
+    try {
+      assert.ok(await p.waitFor("document.querySelector('#wb-pic img')?.naturalWidth === 2", 5000));
+      await p.evaluate("document.querySelector('.wb-surface').focus(); 1");
+      assert.equal(await p.evaluate(region), 'canvas');
+      const steps = [];
+      for (let step = 0; step < 3 && steps.at(-1) !== 'zoom'; step++) {
+        await f6();
+        steps.push(await p.evaluate(region));
+      }
+      assert.equal(steps.at(-1), 'zoom', `F6 from the board reaches the zoom bar (went ${steps.join(' → ')})`);
+      await f6(true);
+      assert.equal(await p.evaluate(region), steps.length > 1 ? steps.at(-2) : 'canvas', 'Shift-F6 goes back');
+      await p.evaluate("document.querySelector('.wb-surface').focus(); 1");
+      await f6(true);
+      assert.equal(await p.evaluate(region), 'toolbar', 'Shift-F6 from the board reaches the toolbar');
+
+      await p.clickTimes(...await p.evaluate(centre('#wb-pic')), 2);
+      assert.ok(await p.waitFor("document.querySelector('.wb-crop-handle[data-handle=e]')", 3000), 'a double click crops the picture');
+      const [x, y] = await p.evaluate(centre('.wb-crop-handle[data-handle=e]'));
+      await p.cdp('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
+      await p.cdp('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', buttons: 1, clickCount: 1 });
+      for (const dx of [-20, -40, -60]) await p.cdp('Input.dispatchMouseEvent', { type: 'mouseMoved', x: x + dx, y, button: 'left', buttons: 1 });
+      await p.cdp('Input.dispatchMouseEvent', { type: 'mouseReleased', x: x - 60, y, button: 'left', buttons: 0, clickCount: 1 });
+      assert.ok(await until(() => saved().crop !== undefined), 'the crop is saved as it is dragged');
+      await p.press('z', process.platform === 'darwin' ? { meta: true } : { ctrl: true });
+      assert.ok(await p.waitFor("!document.querySelector('.wb-crop')", 3000), 'Command-Z leaves crop mode');
+      assert.ok(await until(() => saved().crop === undefined), 'the picture gets back its crop from before');
+      assert.ok(await p.waitFor("document.querySelector('.wb-announcer')?.textContent === 'Cropping cancelled.'", 2000));
+      assert.deepEqual(p.problems, []);
+    } finally { await p.close(); await run.run(['stop', board]); }
+  });
+
+  it('shows a viewer a Read-only badge beside the zoom', { skip: noBrowser }, async () => {
+    const { createTypeServer } = await import('../packages/type-server/src/index.ts');
+    const server = createTypeServer({
+      secret: 'whiteboard-viewer', idleMs: 0, assetsDir: path.join(typePath('whiteboard'), 'scripts'),
+      lanAddresses: () => [], isLocal: req => !req.headers['x-test-guest'],
+    });
+    const board = tmpDir('whiteboard-viewer');
+    for (const sub of ['db/elements', 'db/board']) fs.mkdirSync(path.join(board, sub), { recursive: true });
+    fs.writeFileSync(path.join(board, 'db/board/meta.json'), JSON.stringify({ v: 1, title: 'Shared', order: ['note1'] }));
+    fs.writeFileSync(path.join(board, 'db/elements/note1.json'), JSON.stringify({ type: 'note', x: 0, y: 0, text: 'Hello' }));
+    let guest;
+    try {
+      await server.listen();
+      const { id, url: ownerUrl } = await server.open({ root: board, type: 'whiteboard', title: 'Shared' });
+      const share = new URL('/__open-artifact/share', ownerUrl);
+      const headers = { 'content-type': 'application/json', authorization: 'Bearer whiteboard-viewer' };
+      const view = await (await fetch(share, { method: 'POST', headers, body: JSON.stringify({ id, lan: true }) })).json();
+      const link = new URL(new URL(view.links.viewer.url).pathname, ownerUrl);
+      guest = await browser.load('about:blank');
+      await guest.cdp('Network.setExtraHTTPHeaders', { headers: { 'x-test-guest': '1' } });
+      await guest.cdp('Page.navigate', { url: link.href });
+      assert.ok(await guest.waitFor("document.querySelector('input[name=name]')"));
+      await guest.evaluate("document.querySelector('[name=name]').value = 'Guest'; document.querySelector('form').requestSubmit()");
+      const badge = "document.querySelector('[data-wb-read-only][role=status]')";
+      assert.ok(await guest.waitFor(`${badge}?.textContent === 'Read-only'`, 15000), 'the viewer sees the badge');
+      assert.ok(await guest.waitFor(`${badge}?.querySelector('svg') && ${badge}.getAttribute('aria-label').includes('not change it')`), 'with a lock and the reason');
+      assert.ok(await guest.waitFor(`${badge}?.closest('.wb-corner-zoom, .wb-pill')?.querySelector('button[aria-label^=Zoom]')`), 'beside the zoom');
+      assert.deepEqual(guest.problems, []);
+    } finally { await guest?.close(); await server.stop(); }
+  });
+
+  it('paints a watercolor drawing and draws a draft one unlike a plain one', { skip: noBrowser }, async () => {
+    const board = tmpDir('whiteboard-looks');
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 120" fill="none" stroke="currentColor" stroke-width="3">'
+      + '<rect x="20" y="20" width="90" height="70" rx="8" fill="#60a5fa"/><circle cx="150" cy="60" r="30" fill="#f59e0b"/><path d="M20 105H180"/></svg>';
+    const src = 'data:image/svg+xml;base64,' + Buffer.from(svg).toString('base64');
+    const elements = {
+      wash: { type: 'image', x: 0, y: 0, w: 300, h: 180, src, style: 'watercolor' },
+      sketch: { type: 'image', x: 340, y: 0, w: 300, h: 180, src, style: 'draft' },
+      clean: { type: 'image', x: 680, y: 0, w: 300, h: 180, src, style: 'plain' },
+    };
+    for (const sub of ['db/elements', 'db/board']) fs.mkdirSync(path.join(board, sub), { recursive: true });
+    fs.writeFileSync(path.join(board, 'db/board/meta.json'), JSON.stringify({ v: 1, title: 'Looks', order: Object.keys(elements) }));
+    for (const [id, el] of Object.entries(elements)) fs.writeFileSync(path.join(board, 'db/elements', id + '.json'), JSON.stringify(el));
+    const { url: boardUrl } = await run.json(['open', board, '--type', 'whiteboard', '--json']);
+    const entry = new URL(boardUrl);
+    entry.searchParams.set('open_artifact_engine', 'off');
+    const p = await browser.load(entry.href, { ready });
+    const img = id => `document.querySelector('#wb-${id} img')`;
+    try {
+      assert.ok(await p.waitFor(`${img('wash')}?.src.startsWith('blob:') && ${img('wash')}.naturalWidth > 0`, 15000), 'the watercolor look is painted');
+      assert.ok(await p.waitFor(`${img('sketch')}?.complete && ${img('clean')}?.complete`, 5000));
+      assert.ok(await p.evaluate(`${img('sketch')}.src.startsWith('data:image/svg+xml') && ${img('sketch')}.src !== ${img('clean')}.src`), 'draft and plain differ');
+      assert.deepEqual(p.problems, []);
+    } finally { await p.close(); await run.run(['stop', board]); }
+  });
+
   // Opt in with the published reference CLI path. The normal suite has no dependency on another checkout.
   const reference = process.env.E2E_WHITEBOARD_REFERENCE;
   it('exchanges an editable shape in both directions with the reference editor', { skip: noBrowser || !reference }, async () => {

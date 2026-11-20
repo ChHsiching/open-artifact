@@ -70,6 +70,11 @@ export interface ChangeOptions {
   coalesce?: string;
   /** Skip the undo history (remote-driven or cosmetic changes). */
   history?: boolean;
+  /**
+   * A follow-up of the change just made (a correction once the page has
+   * measured it): joins that change's undo step, keeping its label.
+   */
+  follows?: boolean;
 }
 
 /** Receives local changes: the sync engine plus history (wired by `services/sync.ts`). */

@@ -217,6 +217,7 @@ export function BoardSurface({ elements, live, children, overlay }: BoardSurface
       // Comment mode's pointer is the comments' speech bubble, as in every editor (styles.css).
       style={commenting ? ({ '--wb-comment-cursor': COMMENT_CURSOR } as CSSProperties) : undefined}
       tabIndex={-1}
+      data-wb-region="canvas"
       data-testid="board-surface"
       data-wb-engine={engine ? status : undefined}
     >

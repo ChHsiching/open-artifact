@@ -4,12 +4,17 @@
  * keys of `sprite-keys.ts`. The engine asks for keys it lacks
  * (`textureNeeded`) only for items in view; they are painted a few
  * milliseconds per frame. Pictures wait for their image (or icon) and are
- * painted again once it arrives.
+ * painted again once it arrives; a drawing in a textured look is painted
+ * plain until its look is painted, and again when the settled paint scale
+ * moves.
  */
 
 import type { CanvasEngine } from '@open-artifact/canvas-engine';
-import { iconStickerOf, type BoardElement, type ColorScheme, type ElementId, type ElementMeasures, type ElementsById } from '@open-artifact/whiteboard-core';
-import { drawnImagePen, drawnImageSrcForPen } from '../export/drawn-svg.ts';
+import { iconStickerOf, imageDrawingLook, type BoardElement, type ColorScheme, type ElementId, type ElementMeasures, type ElementsById } from '@open-artifact/whiteboard-core';
+import { drawnImagePen, drawnImageSrc } from '../export/drawn-svg.ts';
+import { isRasterLook } from '../lib/drawing-looks.ts';
+import { lookRequestKey, onLookPainted, paintedLookUrl, requestDrawingLook } from '../services/drawing-looks.ts';
+import { useDrawingLooks } from '../state/drawing-looks.ts';
 import { emojiArtKey, stickerEmoji } from '../lib/noto-emoji.ts';
 import { loadBoardFontsWithTimeout, loadRasterImages, loadStickerIcons } from '../export/images.ts';
 import { paintElementSprite, type SectionTitleSpot } from '../export/paint.ts';
@@ -47,6 +52,11 @@ export class SpritePainter {
   readonly #iconMisses = new Set<string>();
   /** Keys waiting for a picture, by source. */
   readonly #waiting = new Map<string, Set<string>>();
+  /** Keys waiting for a painted look, by look key. */
+  readonly #lookWaiting = new Map<string, Set<string>>();
+  /** Keys painted with (or waiting for) a painted look, repainted when the paint scale moves. */
+  readonly #looked = new Set<string>();
+  readonly #stops: (() => void)[] = [];
   #frame = 0;
   #ready = false;
   #stopped = false;
@@ -58,6 +68,24 @@ export class SpritePainter {
       this.#ready = true;
       this.#schedule();
     });
+    this.#stops.push(
+      onLookPainted((lookKey) => {
+        const keys = this.#lookWaiting.get(lookKey);
+        this.#lookWaiting.delete(lookKey);
+        if (keys) this.want(keys);
+      }),
+      useDrawingLooks.subscribe((state, previous) => {
+        if (state.painted !== previous.painted) {
+          const kept = new Set(state.painted.values());
+          for (const src of this.#images.keys()) if (src.startsWith('blob:') && !kept.has(src)) this.#images.delete(src);
+        }
+        if (state.scale === previous.scale) return;
+        const keys = [...this.#looked];
+        this.#looked.clear();
+        this.#lookWaiting.clear();
+        this.want(keys);
+      }),
+    );
   }
 
   /** Queues keys to paint (the engine's `textureNeeded`). */
@@ -69,6 +97,7 @@ export class SpritePainter {
   /** Stops painting. */
   stop(): void {
     this.#stopped = true;
+    for (const stop of this.#stops.splice(0)) stop();
     if (this.#frame !== 0) cancelAnimationFrame(this.#frame);
     this.#frame = 0;
   }
@@ -91,14 +120,31 @@ export class SpritePainter {
     this.#schedule();
   }
 
-  /** The source an image element draws in the current scheme. */
-  #imageSource(element: BoardElement): string | undefined {
-    return element.type === 'image' ? drawnImageSrcForPen(element.src, drawnImagePen(this.#source.scheme())) : undefined;
+  /**
+   * The source an image element draws in the current scheme: its painted
+   * look when it has a textured one that is ready (asked for otherwise, and
+   * `key` painted again once it is), else the drawing as written.
+   */
+  #imageSource(element: BoardElement, key: string): string | undefined {
+    if (element.type !== 'image') return undefined;
+    const scheme = this.#source.scheme();
+    const written = drawnImageSrc(element, drawnImagePen(scheme));
+    const look = imageDrawingLook(element);
+    if (look === undefined || !isRasterLook(look)) return written;
+    const request = { src: element.src, look, scheme, w: element.w, h: element.h, scale: useDrawingLooks.getState().scale };
+    const lookKey = lookRequestKey(request).key;
+    this.#looked.add(key);
+    const painted = paintedLookUrl(lookKey);
+    if (painted !== undefined) return painted;
+    let waiting = this.#lookWaiting.get(lookKey);
+    if (!waiting) this.#lookWaiting.set(lookKey, (waiting = new Set()));
+    waiting.add(key);
+    void requestDrawingLook(request);
+    return written;
   }
 
   /** True when the element's picture assets are loaded; starts loading them otherwise. */
-  #assetsReady(element: BoardElement, key: string): boolean {
-    const src = this.#imageSource(element);
+  #assetsReady(element: BoardElement, key: string, src: string | undefined): boolean {
     if (src !== undefined && !this.#images.has(src)) {
       let waiting = this.#waiting.get(src);
       if (!waiting) {
@@ -136,7 +182,8 @@ export class SpritePainter {
     // Stale keys (the element changed since) are skipped: the new key is asked for.
     if (!parsed || !current || current.hash !== parsed.hash) return;
     const { element, place } = current;
-    if (!this.#assetsReady(element, key)) return;
+    const src = this.#imageSource(element, key);
+    if (!this.#assetsReady(element, key, src)) return;
     const { box } = place;
     const scale = Math.min(parsed.bucket, MAX_SPRITE_PX / Math.max(box.w, box.h, 1));
     const width = Math.max(1, Math.ceil(box.w * scale));
@@ -149,7 +196,6 @@ export class SpritePainter {
     // them off the art. The texture overshoots the box by under a pixel.
     ctx.scale(scale, scale);
     ctx.translate(-box.x, -box.y);
-    const src = this.#imageSource(element);
     const image = src !== undefined ? this.#images.get(src) : undefined;
     paintElementSprite(ctx, element, {
       scheme: this.#source.scheme(),

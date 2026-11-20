@@ -10,7 +10,7 @@
  *       engine canvas                the board, when the canvas engine runs
  *       live layer (board units)     LiveElements and the rest, above the canvas
  *       overlay (screen units)       SelectionOverlay, CollabOverlay
- *   TimerEndGlow, BoardPill, BoardFoot, SelectionBar, CollabChrome, FindBar,
+ *   TimerEndGlow, BoardPill, BoardFoot, SelectionBar, LinkCard, CollabChrome, FindBar,
  *   VersionHistory                   the history panel and a past version's preview
  * ```
  */
@@ -28,6 +28,7 @@ import { useBoardRecovery, showBoardMedia } from './services/load-recovery.ts';
 import { startBoard } from './services/boot.ts';
 import { BoardPill } from './ui/BoardPill.tsx';
 import { BoardContextMenu } from './ui/ContextMenu.tsx';
+import { LinkCard } from './ui/LinkCard.tsx';
 import { SelectionBar } from './ui/SelectionBar.tsx';
 import { TimerEndGlow } from './ui/Timer.tsx';
 import { BoardFoot } from './ui/Toolbar.tsx';
@@ -128,6 +129,7 @@ export function App() {
           <BoardPill />
           <BoardFoot />
           <SelectionBar />
+          <LinkCard />
           <CollabChrome />
           <FindBar />
           <VersionHistory />

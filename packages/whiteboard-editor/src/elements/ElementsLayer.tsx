@@ -43,6 +43,7 @@ import { useBoard } from '../state/board.ts';
 import { useCamera } from '../state/camera.ts';
 import { currentMeasures, reportMeasure, useMeasures } from '../state/measures.ts';
 import { useShown, useShownAdditions, useShownElement } from '../state/shown.ts';
+import { useTheme } from '../state/theme.ts';
 import { BOARD_ITEMS_LIST_LABEL } from './describe.ts';
 import { HtmlView } from './HtmlView.tsx';
 import { ImageView, StickerView } from './MediaViews.tsx';
@@ -226,7 +227,7 @@ function LayerBookkeeping() {
       // Reading order and backdrops.
       const view = useElementView.getState();
       const reading = new Map(orderElementsForReading(elements, measures).map((element, index) => [element.id, index + 1] as const));
-      const backdrops = textBackdropColors(elements, measures);
+      const backdrops = textBackdropColors(elements, measures, useTheme.getState().scheme);
       const patch: Partial<typeof view> = {};
       if (!sameNumberMap(view.reading, reading)) Object.assign(patch, { reading, readingSize: reading.size });
       if (!sameStringMap(view.backdrops, backdrops)) patch.backdrops = backdrops;
@@ -243,10 +244,14 @@ function LayerBookkeeping() {
     const offFrozen = useElementView.subscribe((state, previous) => {
       if (state.frozen !== previous.frozen) schedule();
     });
+    const offScheme = useTheme.subscribe((state, previous) => {
+      if (state.scheme !== previous.scheme) schedule();
+    });
     return () => {
       offBoard();
       offMeasures();
       offFrozen();
+      offScheme();
       if (frame !== 0) cancelAnimationFrame(frame);
     };
   }, []);

@@ -55,6 +55,7 @@ import {
   shapeOutlineColor,
   shapePathData,
   shapeStrokePaint,
+  showsTextPlaceholder,
   strokePointsToPath,
   themedInkColor,
   type ArrowElement,
@@ -170,7 +171,7 @@ export function spritePlace(element: BoardElement, scope: ItemScope): SpritePlac
     case 'shape':
       return element.text.trim() === '' ? undefined : { box: { x: element.x, y: element.y, w: element.w, h: element.h }, rotation, picture: false };
     case 'text': {
-      const box = element.text.trim() === '' ? undefined : elementLayoutBox(element, scope.measures);
+      const box = element.text.trim() === '' && !showsTextPlaceholder(element) ? undefined : elementLayoutBox(element, scope.measures);
       return box && { box: inflate(box, 2), rotation, picture: false };
     }
     case 'arrow': {

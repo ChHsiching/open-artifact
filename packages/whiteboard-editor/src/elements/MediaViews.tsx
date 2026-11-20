@@ -5,18 +5,21 @@
  * Uploaded files are stored as `/_blob/<id>`, served from the host's root
  * ({@link resolveAssetUrl}); drawings are restyled to the color
  * scheme's pen. A linked picture opens its link from the arrow in its
- * corner (or on a Mod-click), see {@link PassiveLink}. A video plays on
+ * corner, see {@link PassiveLink}. A video plays on
  * a click of its play button, one at a time (`video-playback.ts`).
  */
 
-import { memo, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { memo, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
 import { flushSync } from 'react-dom';
 import { ArrowUpRight, Play } from 'lucide-react';
-import { FACE_STICKER_ART, IMAGE_FRAME_PADDING, imageCropCss, isSvgBase64DataUrl, stickerLabel, type ElementId, type ImageElement, type StickerElement } from '@open-artifact/whiteboard-core';
-import { drawnImagePen, drawnImageSrcForPen } from '../export/drawn-svg.ts';
+import { FACE_STICKER_ART, IMAGE_FRAME_PADDING, imageCropCss, imageDrawingLook, isSvgBase64DataUrl, stickerLabel, type ColorScheme, type ElementId, type ImageElement, type StickerElement } from '@open-artifact/whiteboard-core';
+import { drawnImagePen, drawnImageSrc } from '../export/drawn-svg.ts';
+import { isRasterLook } from '../lib/drawing-looks.ts';
+import { lookRequestKey, requestDrawingLook, type LookRequest } from '../services/drawing-looks.ts';
 import { announce, notify } from '../services/announce.ts';
 import { maybeSession } from '../services/session.ts';
 import { useCamera } from '../state/camera.ts';
+import { useDrawingLooks } from '../state/drawing-looks.ts';
 import { usePresence } from '../state/presence.ts';
 import { useSelection } from '../state/selection.ts';
 import { useColorScheme } from '../state/theme.ts';
@@ -47,6 +50,38 @@ function isDrawing(src: string): boolean {
   return isSvgBase64DataUrl(src) || src.startsWith('data:image/svg+xml');
 }
 
+/** The painting of a drawing in a textured look, if it has one. */
+function textureRequest(element: ImageElement, scheme: ColorScheme, scale: number): LookRequest | undefined {
+  const look = imageDrawingLook(element);
+  if (look === undefined || !isRasterLook(look)) return undefined;
+  return { src: element.src, look, scheme, w: element.w, h: element.h, scale };
+}
+
+/**
+ * The painted look of a drawing in a textured look, once it is ready; asked
+ * for only while `view` is in the viewport.
+ */
+function usePaintedLook(request: LookRequest | undefined, view: RefObject<HTMLDivElement | null>): string | undefined {
+  const key = request === undefined ? undefined : lookRequestKey(request).key;
+  const painted = useDrawingLooks((state) => (key === undefined ? undefined : state.painted.get(key)));
+  const [inView, setInView] = useState(false);
+  useEffect(() => {
+    const node = view.current;
+    if (request === undefined || node === null) return;
+    if (typeof IntersectionObserver === 'undefined') {
+      setInView(true);
+      return;
+    }
+    const observer = new IntersectionObserver((entries) => setInView(entries.some((entry) => entry.isIntersecting)));
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [request === undefined, view]);
+  useEffect(() => {
+    if (request !== undefined && inView && painted === undefined) void requestDrawingLook(request);
+  }, [key, inView, painted]);
+  return painted;
+}
+
 /* ------------------------------------------------------------------------ */
 /* Picture and video                                                        */
 /* ------------------------------------------------------------------------ */
@@ -56,7 +91,10 @@ export const ImageView = memo(function ImageView({ element }: { element: ImageEl
   const scheme = useColorScheme();
   const item = useItemProps(element);
   const plain = isDrawing(element.src);
-  const src = plain ? drawnImageSrcForPen(element.src, drawnImagePen(scheme)) : resolveAssetUrl(element.src);
+  const view = useRef<HTMLDivElement>(null);
+  const scale = useDrawingLooks((state) => state.scale);
+  const painted = usePaintedLook(plain ? textureRequest(element, scheme, scale) : undefined, view);
+  const src = painted ?? (plain ? drawnImageSrc(element, drawnImagePen(scheme)) : resolveAssetUrl(element.src));
   const style: ViewStyle = { left: element.x, top: element.y, width: element.w, height: element.h, ...rotationStyle(element), ...(plain ? {} : { padding: IMAGE_FRAME_PADDING }) };
   const crop = element.crop ? (imageCropCss(element.crop) as ViewStyle) : undefined;
   const media =
@@ -69,6 +107,7 @@ export const ImageView = memo(function ImageView({ element }: { element: ImageEl
   return (
     <div
       {...item}
+      ref={view}
       className={plain ? 'wb-el wb-image wb-image-plain' : 'wb-el wb-image'}
       style={style}
       {...(element.video !== undefined ? { onPointerDownCapture: (event: ReactPointerEvent<HTMLDivElement>) => watchVideoPress(event, element.id) } : {})}
@@ -81,7 +120,7 @@ export const ImageView = memo(function ImageView({ element }: { element: ImageEl
         </>
       )}
       {target !== undefined ? (
-        <PassiveLink href={target} className="wb-image-link" aria-label={`Open ${linkDisplayUrl(target)}`}>
+        <PassiveLink href={target} link={element.href} className="wb-image-link" aria-label={`Open ${linkDisplayUrl(target)}`}>
           <span className="wb-image-go" data-wb-opens="" aria-hidden="true">
             <ArrowUpRight size={14} />
           </span>

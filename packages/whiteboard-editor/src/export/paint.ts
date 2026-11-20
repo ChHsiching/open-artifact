@@ -57,6 +57,7 @@ import {
   hasRoomForContainerTitle,
   htmlDocumentTitle,
   iconStickerOf,
+  escapeInlineMarkdown,
   imageCropNormalizedViewport,
   inkColorOnFill,
   isEmojiStickerArt,
@@ -81,8 +82,10 @@ import {
   shapePathData,
   shapeStrokePaint,
   shapeTextInsets,
+  showsTextPlaceholder,
   singleLineTitleText,
   strokePointsToPath,
+  tableCellPaints,
   tableColumnIds,
   tableRowIds,
   textBackdropColors,
@@ -125,7 +128,9 @@ import {
   tableCellShape,
   tableHeadColors,
   tableHeadWeight,
+  tableTintDividers,
   textAlignOf,
+  type TableCellDividers,
 } from './look.ts';
 import { clipToRect, drawRasterTextLines, layoutRasterTextLines, traceRoundedRect, type RasterLine, type TextLook } from './raster-text.ts';
 import { canvasFontFor, truncateToWidth } from './text-layout.ts';
@@ -192,6 +197,9 @@ export function paintBoardGrid(ctx: Ctx, area: Box, scale: number, scheme: Color
 interface RasterTableCell {
   shape: ShapeElement;
   head: boolean;
+  /** The background of a tinted cell. */
+  tint?: string;
+  dividers?: TableCellDividers;
   look: TextLook;
   lines: RasterLine[];
 }
@@ -199,19 +207,30 @@ interface RasterTableCell {
 /** Lays out every cell of a table, and each row's height. */
 export function layoutRasterTableCells(ctx: Ctx, table: TableElement, scheme: ColorScheme): { laid: RasterTableCell[][]; heights: number[] } {
   const headColors = tableHeadColors(table, scheme);
+  const paints = tableCellPaints(table, scheme);
+  const dividers = tableTintDividers(table, paints);
   const laid = tableRowIds(table).map((rowId) =>
     tableColumnIds(table).map((columnId): RasterTableCell => {
       const shape = tableCellShape(table, rowId, columnId);
       const head = shape.hollow !== true;
+      const paint = paints[rowId]?.[columnId];
       const style = TEXT_SIZE_STYLES[shape.size ?? 'body'];
       const look: TextLook = {
         px: style.px,
         weight: head ? tableHeadWeight(table) : style.weight,
         bold: style.bold,
-        ink: head ? headColors.ink : paperTextColor(shape, scheme),
-        chip: head ? headColors.chip : defaultChipColor(scheme),
+        ink: head ? headColors.ink : (paint?.ink ?? paperTextColor(shape, scheme)),
+        chip: head ? headColors.chip : paint !== undefined ? chipColorOn(paint.fill) : defaultChipColor(scheme),
       };
-      return { shape, head, look, lines: layoutRasterTextLines(ctx, shape.text, look, shape.w - 2 * TABLE_CELL_PADDING.padX, textAlignOf(shape)) };
+      const cellDividers = dividers[rowId]?.[columnId];
+      return {
+        shape,
+        head,
+        ...(paint !== undefined ? { tint: paint.fill } : {}),
+        ...(cellDividers !== undefined ? { dividers: cellDividers } : {}),
+        look,
+        lines: layoutRasterTextLines(ctx, shape.text, look, shape.w - 2 * TABLE_CELL_PADDING.padX, textAlignOf(shape)),
+      };
     }),
   );
   const heights = laid.map(
@@ -408,21 +427,26 @@ function paintShape(scope: PaintScope, el: ShapeElement): void {
   ctx.restore();
 }
 
-/** Paints free text in the ink that reads on whatever is behind it. */
+/** Paints free text in the ink that reads on whatever is behind it (a placeholder only on screen, faint). */
 function paintText(scope: PaintScope, el: TextElement): void {
   const { ctx, options, backdrops } = scope;
+  const hinted = showsTextPlaceholder(el);
+  if (hinted && !scope.textOnly) return;
   const backdrop = backdrops.get(el.id);
   const look: TextLook = {
     ...TEXT_SIZE_STYLES[el.size],
     ink: inkColorOnFill(el.color, backdrop, options.scheme),
     chip: backdrop !== undefined ? chipColorOn(backdrop) : defaultChipColor(options.scheme),
   };
-  const lines = layoutRasterTextLines(ctx, el.text, look, el.wrap ?? Infinity, textAlignOf(el));
+  const lines = layoutRasterTextLines(ctx, hinted ? escapeInlineMarkdown(el.placeholder) : el.text, look, el.wrap ?? Infinity, textAlignOf(el));
+  ctx.save();
+  if (hinted) ctx.globalAlpha = backdrop !== undefined ? 0.7 : 0.6;
   drawRasterTextLines(ctx, lines, look, el.x, el.y, look.px * TEXT_LINE_HEIGHT, {
     side: textAlignOf(el),
     w: el.wrap ?? Math.max(0, ...lines.map((line) => line.w)),
     unpicked: el.textAlign === undefined,
   });
+  ctx.restore();
 }
 
 /**
@@ -524,7 +548,7 @@ function paintCard(scope: PaintScope, box: Box, radius: number): void {
   ctx.fillStyle = dark ? DARK_THEME_INK : DARK_CONTRAST_TEXT;
 }
 
-/** Paints a table: paper, header fill, cells and grid lines, rows snapped to whole pixels. */
+/** Paints a table: paper, header fill, tinted cells, cells and grid lines (in the paper color between tinted cells), rows snapped to whole pixels. */
 function paintTable(scope: PaintScope, el: TableElement): void {
   const { ctx, options, palette } = scope;
   const box = elementLayoutBox(el, options.measures);
@@ -546,9 +570,14 @@ function paintTable(scope: PaintScope, el: TableElement): void {
     let x = box.x;
     const rowBottom = snapY(y + (heights[rowIndex] ?? 0));
     for (const cell of row) {
-      if (cell.head) {
-        ctx.fillStyle = head.fill;
+      const background = cell.head ? head.fill : cell.tint;
+      if (background !== undefined) {
+        ctx.fillStyle = background;
         ctx.fillRect(x, y, cell.shape.w, rowBottom - y);
+      }
+      if (cell.dividers?.right) {
+        ctx.fillStyle = palette.paper;
+        ctx.fillRect(x + cell.shape.w - 1, y, 1, rowBottom - y);
       }
       drawRasterTextLines(ctx, cell.lines, cell.look, x + TABLE_CELL_PADDING.padX, y + TABLE_CELL_PADDING.padY, cell.look.px * TABLE_CELL_PADDING.line, {
         side: textAlignOf(cell.shape),
@@ -558,8 +587,16 @@ function paintTable(scope: PaintScope, el: TableElement): void {
       x += cell.shape.w;
     }
     y += heights[rowIndex] ?? 0;
-    ctx.fillStyle = lineColor;
-    if (rowIndex < laid.length - 1) ctx.fillRect(box.x + 1, rowBottom - 1, box.w - 2, 1);
+    if (rowIndex < laid.length - 1) {
+      ctx.fillStyle = lineColor;
+      ctx.fillRect(box.x + 1, rowBottom - 1, box.w - 2, 1);
+      ctx.fillStyle = palette.paper;
+      let cellX = box.x;
+      for (const cell of row) {
+        if (cell.dividers?.bottom) ctx.fillRect(cellX, rowBottom - 1, cell.shape.w, 1);
+        cellX += cell.shape.w;
+      }
+    }
   });
   ctx.restore();
   ctx.strokeStyle = lineColor;
@@ -799,7 +836,7 @@ export function drawBoardCanvas(options: PaintOptions): HTMLCanvasElement {
     ctx,
     options,
     byId: new Map(elements.map((element) => [element.id, element])),
-    backdrops: textBackdropColors(withMeasuredNoteHeights(elements, measures), measures),
+    backdrops: textBackdropColors(withMeasuredNoteHeights(elements, measures), measures, scheme),
     dark: scheme === 'dark',
     palette,
   };

@@ -79,6 +79,16 @@ export function fitRect(rect: Rect, width: number, height: number, options: FitO
   return fitRectIn(rect, width, height, { ...options, minZoom: options.minZoom ?? MIN_ZOOM, maxZoom: options.maxZoom ?? MAX_FIT_ZOOM });
 }
 
+/** How long a camera glide takes, ms. */
+export const CAMERA_GLIDE_MS = 220;
+
+/** The camera `t` (0–1) of the way through a glide from `from` to `to`, easing out. */
+export function glideCameraAt(from: Camera, to: Camera, t: number): Camera {
+  const along = Math.min(1, Math.max(0, t));
+  const eased = 1 - (1 - along) ** 3;
+  return { x: from.x + (to.x - from.x) * eased, y: from.y + (to.y - from.y) * eased, zoom: from.zoom + (to.zoom - from.zoom) * eased };
+}
+
 /* -------------------------------------------------------------------------- */
 /* Grid                                                                       */
 /* -------------------------------------------------------------------------- */

@@ -75,9 +75,9 @@ import { useSelection } from '../state/selection.ts';
 import { useColorScheme } from '../state/theme.ts';
 import { effectiveTool, useTool } from '../state/tool.ts';
 import { useCoarsePointer } from '../ui/hooks.ts';
-import { CONNECT_SIDES, sideDotPoint } from '../tools/hit.ts';
-import { DRAG_THRESHOLD_PX } from '../tools/gesture.ts';
+import { sideDotPoint } from '../tools/hit.ts';
 import { SIDE_DOTS_MIN_SIZE, SIDE_DOT_OFFSET_PX } from '../tools/place.ts';
+import { sideDotTitle, sideDotsWithRoom } from '../lib/side-dots.ts';
 import { gestureKey } from '../tools/select.ts';
 import { AreaMarquee } from './AreaMarquee.tsx';
 import { CROP_IMAGE_CHANGED_ELSEWHERE, cropTargetChanged } from './crop-guard.ts';
@@ -93,9 +93,7 @@ import {
   resizeGesture,
   resizeHandlesFor,
   selectionFrame,
-  DOT_CLICK_ITEM_COUNT,
   hoverSideDot,
-  sideDotArrow,
   sideDotGesture,
   sideDotItem,
   useSideDotHover,
@@ -217,10 +215,9 @@ interface MarksProps {
   offer: DotOffer | undefined;
 }
 
-/** What a click on the hovered side dot would add: the faint item, and the arrow joining it. */
+/** What a click on the hovered side dot would add: the faint item. */
 interface DotOffer {
   next: NextItem;
-  arrow?: { d: string; head: string | undefined; color: InkColor };
 }
 
 /** The passive marks: guides, rubber band, outlines, the pen stroke and the arrow being drawn. */
@@ -282,9 +279,9 @@ function Marks({ camera, scheme, marquee, guides, hover, section, connect, hairl
   );
 }
 
-/** The faint item (dashed) and arrow a click on the hovered side dot would add. */
+/** The faint item (dashed) a click on the hovered side dot would add. */
 function DotOfferMarks({ offer, scheme, zoom }: { offer: DotOffer; scheme: ColorScheme; zoom: number }): ReactNode {
-  const { next, arrow } = offer;
+  const { next } = offer;
   const style = { '--wb-offer-px': `${1 / zoom}px`, color: paperTextColor(next, scheme) } as CSSProperties;
   return (
     <g className="wb-sel-dot-offer" style={style}>
@@ -293,12 +290,6 @@ function DotOfferMarks({ offer, scheme, zoom }: { offer: DotOffer; scheme: Color
       ) : (
         <path d={roundedPolygonPathData(next.kind, next.w, next.h, true)} fill={shapeFillPaint(next)} transform={`translate(${next.x} ${next.y})`} />
       )}
-      {arrow ? (
-        <g className="wb-sel-draft" data-faint="" stroke={inkPaint(arrow.color, scheme)} strokeWidth={ARROW_STROKE.width}>
-          <path d={arrow.d} />
-          {arrow.head ? <path d={arrow.head} /> : null}
-        </g>
-      ) : null}
     </g>
   );
 }
@@ -353,7 +344,7 @@ function FrameHandles({
   handles: readonly HandleName[];
   turnable: boolean;
   turn: number;
-  dots: readonly ArrowSide[];
+  dots: readonly SideDotChoice[];
   dotsFor: BoardElement | undefined;
   turning: string | undefined;
 }): ReactNode {
@@ -380,28 +371,25 @@ function FrameHandles({
           {turning}
         </span>
       ) : null}
-      {dotsFor !== undefined ? dots.map((side) => <SideDot key={side} element={dotsFor} side={side} />) : null}
+      {dotsFor !== undefined ? dots.map(({ side, adds }) => <SideDot key={side} element={dotsFor} side={side} adds={adds} />) : null}
     </>
   );
 }
 
-/** What a side dot's tooltip says, by what a click on it adds. */
-function sideDotTitle(element: BoardElement): string | undefined {
-  if (element.type === 'note') return 'Click to add a sticky note';
-  if (element.type === 'shape') return 'Click to add a connected shape, drag to draw an arrow';
-  return undefined;
+/** A side dot that shows, and whether a click on it adds an item (one fits beside or below). */
+interface SideDotChoice {
+  side: ArrowSide;
+  adds: boolean;
 }
 
 /**
- * A side dot: drag to draw an arrow from that side. On a note or a shape,
- * a click adds the next item there, which shows faintly while the pointer
- * rests on the dot (not with Shift held on a shape's dot).
+ * A side dot: drag to draw an arrow from that side. When the next item fits,
+ * a click adds it there, and it shows faintly while the pointer rests on the dot.
  */
-function SideDot({ element, side }: { element: BoardElement; side: ArrowSide }): ReactNode {
-  const adds = element.type === 'note' || element.type === 'shape';
+function SideDot({ element, side, adds }: { element: BoardElement; side: ArrowSide; adds: boolean }): ReactNode {
   const track = (event: ReactPointerEvent<HTMLElement>): void => {
     if (!adds || event.buttons !== 0) return;
-    hoverSideDot(element.type === 'shape' && event.shiftKey ? null : { id: element.id, side });
+    hoverSideDot({ id: element.id, side });
   };
   return (
     <div
@@ -409,7 +397,7 @@ function SideDot({ element, side }: { element: BoardElement; side: ArrowSide }):
       data-side={side}
       data-no-pan
       aria-hidden="true"
-      title={sideDotTitle(element)}
+      title={sideDotTitle(element.type, adds)}
       onPointerEnter={track}
       onPointerMove={track}
       onPointerLeave={(event) => {
@@ -624,14 +612,27 @@ function dotsFit(element: BoardElement, measures: ElementMeasures, zoom: number)
   return box !== undefined && zoom >= SIDE_DOTS_MIN_SIZE.zoom && Math.max(box.w, box.h) * zoom >= SIDE_DOTS_MIN_SIZE.px;
 }
 
+/**
+ * The side dots of an item that have room around them, and whether a click
+ * on each adds the next item.
+ */
+function sideDotChoices(element: BoardElement, elements: readonly BoardElement[], measures: ElementMeasures, zoom: number, coarse: boolean): SideDotChoice[] {
+  const box = elementLayoutBox(element, measures);
+  if (!box) return [];
+  return sideDotsWithRoom(element, box, elementTurn(element), zoom, coarse, elements, measures).map((side) => ({
+    side,
+    adds: sideDotItem(element, side, 0, elements, measures) !== undefined,
+  }));
+}
+
 /** The side dots of a hovered (unselected) item. */
-function HoverDots({ element, camera, measures }: { element: BoardElement; camera: Camera; measures: ElementMeasures }): ReactNode {
+function HoverDots({ element, dots, camera, measures }: { element: BoardElement; dots: readonly SideDotChoice[]; camera: Camera; measures: ElementMeasures }): ReactNode {
   const box = elementLayoutBox(element, measures);
   if (!box) return null;
   return (
     <div className="wb-hover-dots" style={frameStyle(screenFrame(camera, box, elementTurn(element)))}>
-      {CONNECT_SIDES.map((side) => (
-        <SideDot key={side} element={element} side={side} />
+      {dots.map(({ side, adds }) => (
+        <SideDot key={side} element={element} side={side} adds={adds} />
       ))}
     </div>
   );
@@ -759,32 +760,23 @@ export function SelectionOverlay(): ReactNode {
       ? { box: connectBox, turn: elementTurn(connectElement), ...(connectTarget?.side ? { dot: sideDotPoint(connectBox, connectTarget.side, camera.zoom, true) } : {}) }
       : undefined;
 
-  // What a click on the hovered side dot would add, while the pointer rests
-  // on it or holds it without moving (the dot's item is still showing dots).
+  // The dots with room around them, for the selected or the hovered item.
+  const dotChoices = useMemo(() => (dotsFor ? sideDotChoices(dotsFor, elements, measures, camera.zoom, coarse) : []), [dotsFor, elements, measures, camera.zoom, coarse]);
+  const hoverDotChoices = useMemo(
+    () => (hoverDots ? sideDotChoices(hoverDots, elements, measures, camera.zoom, coarse) : []),
+    [hoverDots, elements, measures, camera.zoom, coarse],
+  );
+
+  // What a click on the hovered side dot would add, while the pointer rests on it (not while it drags).
   const dotHover = useSideDotHover((state) => state.dot);
   const content = useBoard((state) => state.board.content);
-  const toolInk = useTool((state) => state.ink);
   const dotOwner = dotHover && (dotHover.id === dotsFor?.id || dotHover.id === hoverDots?.id) ? byId.get(dotHover.id) : undefined;
-  const pressMoved = dotHover?.pressedAt !== undefined && draft !== null && Math.hypot(draft.to.x - dotHover.pressedAt.x, draft.to.y - dotHover.pressedAt.y) * camera.zoom > DRAG_THRESHOLD_PX;
-  const offering = dotOwner !== undefined && editable && (transform === null ? dotHover?.pressedAt === undefined : transform === 'arrow' && !pressMoved);
+  const offering = dotOwner !== undefined && editable && transform === null;
   const offer = useMemo((): DotOffer | undefined => {
     if (!offering || !dotOwner || !dotHover) return undefined;
     const next = sideDotItem(dotOwner, dotHover.side, dotHover.tilt, elements, measures);
-    if (!next || wouldExceedElementLimit(content, next.type === 'shape' ? DOT_CLICK_ITEM_COUNT : 1)) return undefined;
-    if (next.type !== 'shape') return { next };
-    const arrow = sideDotArrow(dotOwner.id, dotHover.side, next.id, toolInk);
-    const line = measuredArrowGeometry(arrow, new Map(byId).set(next.id, next), measures);
-    if (!line) return { next };
-    const points = arrowPoints(line);
-    const [tip, before] = [points[points.length - 1]!, points[points.length - 2]!];
-    const head = Math.hypot(tip[0] - before[0], tip[1] - before[1]) > ARROW_STROKE.head ? arrowHeadPath({ x: tip[0], y: tip[1] }, { x: before[0], y: before[1] }) : undefined;
-    return { next, arrow: { d: polylinePath(points), head, color: toolInk } };
-  }, [offering, dotOwner, dotHover, elements, measures, content, byId, toolInk]);
-
-  // A press that ended (or a dot that went away) no longer holds the dot.
-  useEffect(() => {
-    if (transform === null && dotHover?.pressedAt !== undefined) useSideDotHover.setState({ dot: null });
-  }, [transform, dotHover]);
+    return next && !wouldExceedElementLimit(content) ? { next } : undefined;
+  }, [offering, dotOwner, dotHover, elements, measures, content]);
 
   // “Add a title” over an untitled section the engine draws. A live view above the canvas shows its own; a
   // view under the canvas has no hole for an untitled title (it may be there only for a neighbour's text).
@@ -807,7 +799,9 @@ export function SelectionOverlay(): ReactNode {
   const titleHint = glow ? hintFor(glow) : asking?.type === 'container' && asking.text.trim() === '' ? hintFor(asking) : undefined;
 
   const arrowLines = lines.map(({ arrow, line }) => ({ id: arrow.id, d: polylinePath(arrowPoints(line)) }));
-  const screen = frame ? screenFrame(camera, frame.box, frame.turn) : undefined;
+  // A lone note's ring leans with its tilt (the engine's outline already does).
+  const ringTurn = frame ? frame.turn + (lone?.type === 'note' && !engineFrames ? lone.tilt : 0) : 0;
+  const screen = frame ? screenFrame(camera, frame.box, ringTurn) : undefined;
 
   return (
     <div className="wb-sel" data-transform={transform ?? undefined} data-typing={typing || undefined} style={{ '--wb-dot-offset': `${SIDE_DOT_OFFSET_PX}px` } as CSSProperties}>
@@ -822,13 +816,13 @@ export function SelectionOverlay(): ReactNode {
         hairlines={engineOn ? [] : hairlines}
         groups={groups}
         arrowLines={typing ? [] : arrowLines}
-        draft={offer?.arrow ? null : draft}
+        draft={draft}
         ink={ink}
         offer={offer}
       />
       {screen && croppingImage === undefined && !titling ? (
         <div className="wb-sel-frame" data-engine={engineFrames || undefined} data-locked={locked || undefined} data-thin={typing || undefined} data-sides={handles.length === 2 || undefined} style={frameStyle(screen)}>
-          <FrameHandles handles={handles} turnable={turnable} turn={screen.turn} dots={CONNECT_SIDES} dotsFor={dotsFor} turning={turning} />
+          <FrameHandles handles={handles} turnable={turnable} turn={screen.turn} dots={dotChoices} dotsFor={dotsFor} turning={turning} />
         </div>
       ) : null}
       {loneArrow && !typing ? (
@@ -842,7 +836,7 @@ export function SelectionOverlay(): ReactNode {
         />
       ) : null}
       {titleHint ? <SectionTitleHint element={titleHint} zoom={camera.zoom} at={screenPoint(camera, titleHint.x, titleHint.y)} glowing={titleHint.id === glow?.id} /> : null}
-      {hoverDots ? <HoverDots element={hoverDots} camera={camera} measures={measures} /> : null}
+      {hoverDots ? <HoverDots element={hoverDots} dots={hoverDotChoices} camera={camera} measures={measures} /> : null}
       {croppingImage ? <CropFrame image={croppingImage} camera={camera} /> : null}
     </div>
   );

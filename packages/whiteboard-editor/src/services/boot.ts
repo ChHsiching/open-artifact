@@ -12,16 +12,21 @@ import { installBenchHook } from '../engine/bench.ts';
 import { installHover } from '../tools/index.ts';
 import { watchAgent } from './agent.ts';
 import { announce } from './announce.ts';
+import { startDrawingLooks } from './drawing-looks.ts';
 import { startAutoFit } from './auto-fit.ts';
 import { installClipboard } from './clipboard.ts';
+import { startCropMemory } from './crop.ts';
 import { installDrop } from './drop.ts';
 import { startExport } from './export.ts';
 import { installKeyboard } from './keyboard.ts';
+import { installRegions } from './regions.ts';
 import { startSession } from './session.ts';
 import { startShell } from './shell.ts';
 import { startSync } from './sync.ts';
 import { installTextEditHost } from './text-host.ts';
 import { startTextMetrics } from './text-metrics.ts';
+import { startTextPush } from './text-push.ts';
+import { startTurnedAnchors } from './turned-anchor.ts';
 import { startVersionHistory } from './version-history.ts';
 import { keepCameraRemembered, restoreCamera } from './viewport.ts';
 
@@ -53,10 +58,15 @@ export async function startBoard(): Promise<() => void> {
   stops.push(startAutoFit({ ownView }));
   stops.push(startCollab());
   stops.push(startExport());
+  stops.push(startDrawingLooks());
   stops.push(startVersionHistory());
   stops.push(installKeyboard());
+  stops.push(installRegions());
+  stops.push(startCropMemory());
   stops.push(installClipboard());
   stops.push(installTextEditHost());
+  stops.push(startTextPush());
+  stops.push(startTurnedAnchors());
   stops.push(installBenchHook());
   const surface = surfaceRef.current;
   if (surface) {

@@ -29,6 +29,7 @@ import {
   shapeFillPaint,
   shapePathData,
   shapeTextInsetStyle,
+  showsTextPlaceholder,
   textProfileForElement,
   type ContainerElement,
   type NoteElement,
@@ -41,7 +42,7 @@ import { useCamera } from '../state/camera.ts';
 import { currentMeasures, useMeasures } from '../state/measures.ts';
 import { useColorScheme } from '../state/theme.ts';
 import { useSectionHover } from '../tools/hover.ts';
-import { editTextActionLabel } from './describe.ts';
+import { editTextActionLabel, placeholderHintId, placeholderNeedsDescription } from './describe.ts';
 import { useIsFeatured, useMeasureNode } from './hooks.ts';
 import { useSelection } from '../state/selection.ts';
 import { AgentChip, useItemProps } from './item.tsx';
@@ -162,7 +163,9 @@ export const TextView = memo(function TextView({ element }: { element: TextEleme
   const editing = useEditing(element.id, 'element');
   const backdrop = useElementView((state) => state.backdrops.get(element.id));
   const font = paperFont(element.size);
-  const ref = useMeasureNode<HTMLDivElement>(element.id, 'wh', `${element.text}|${element.size}|${element.wrap ?? ''}|${editing !== null}`);
+  const hinted = showsTextPlaceholder(element);
+  const ref = useMeasureNode<HTMLDivElement>(element.id, 'wh', `${element.text}|${element.size}|${element.wrap ?? ''}|${editing !== null}|${hinted ? element.placeholder : ''}`);
+  const hintId = hinted && placeholderNeedsDescription(element.placeholder) ? placeholderHintId(element.id) : undefined;
   const style: ViewStyle = {
     left: element.x,
     top: element.y,
@@ -173,9 +176,14 @@ export const TextView = memo(function TextView({ element }: { element: TextEleme
     '--wb-ink': inkColorOnFill(element.color, backdrop, scheme),
     ...(backdrop !== undefined ? { '--wb-paper-chip': chipColorOn(backdrop) } : {}),
   };
-  const className = `wb-el wb-text wb-text-${element.size}${element.wrap !== undefined ? ' wb-text-wrap' : ''}`;
+  const className = `wb-el wb-text wb-text-${element.size}${element.wrap !== undefined ? ' wb-text-wrap' : ''}${hinted ? ' wb-text-hinted' : ''}`;
   return (
-    <div {...item} ref={ref} className={className} style={style}>
+    <div {...item} {...(hintId !== undefined ? { 'aria-describedby': hintId } : {})} ref={ref} className={className} style={style} data-wb-backdrop={backdrop !== undefined || undefined}>
+      {hinted ? (
+        <div className="wb-text-hint" aria-hidden="true">
+          {element.placeholder}
+        </div>
+      ) : null}
       {editing ? (
         <TextEditor
           target={editing}
@@ -183,11 +191,18 @@ export const TextView = memo(function TextView({ element }: { element: TextEleme
           onChange={(text) => writeElementText(element.id, text)}
           profile={TEXT_PROFILES.text}
           label={editTextActionLabel(element)}
-          hint="Type something"
+          describedBy={hintId}
+          hint={hinted ? '' : 'Type something'}
+          className={hinted ? 'wb-edit-over-hint' : undefined}
         />
-      ) : (
+      ) : hinted ? null : (
         <RichText text={element.text} profile={TEXT_PROFILES.text} font={font} />
       )}
+      {hintId !== undefined ? (
+        <span id={hintId} hidden>
+          {element.placeholder}
+        </span>
+      ) : null}
       <AgentChip element={element} />
     </div>
   );

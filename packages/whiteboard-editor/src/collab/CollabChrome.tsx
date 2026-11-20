@@ -47,7 +47,7 @@ function AskStatusList() {
   const list = [...asks.values()].sort((a, b) => a.at - b.at).slice(-4);
   if (list.length === 0) return null;
   return (
-    <Card className="wb-ask-status">
+    <Card className="wb-ask-status" data-wb-region="ask-status" tabIndex={-1}>
       <ul aria-label="Requests to the agent" aria-live="polite" className="flex w-full flex-col gap-0.5">
         {list.map((ask) => (
           <AskRow key={ask.key} ask={ask} />
