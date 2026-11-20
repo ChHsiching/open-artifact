@@ -29,8 +29,8 @@ export const TextInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLIn
 /** Props of {@link CommitInput}. */
 export interface CommitInputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange'> {
   value: string;
-  /** Called on Enter or blur, only when the text changed. */
-  onCommit: (value: string) => void;
+  /** Called on Enter or blur, only when the text changed. Returning `false` refuses the text: the field shows `value` again. */
+  onCommit: (value: string) => void | boolean;
   /** Called with the draft as it is typed, and with `value` again when Escape puts it back. */
   onDraftChange?: (draft: string) => void;
 }
@@ -50,7 +50,10 @@ export function CommitInput({ value, onCommit, onDraftChange, className, ...rest
       settled.current = false;
       return;
     }
-    if (draft !== value) onCommit(draft);
+    if (draft !== value && onCommit(draft) === false) {
+      setDraft(value);
+      onDraftChange?.(value);
+    }
   };
   return (
     <input

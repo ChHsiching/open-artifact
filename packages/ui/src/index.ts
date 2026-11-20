@@ -12,6 +12,7 @@ export * from './overlays.tsx';
 export * from './fields.tsx';
 export * from './layout.tsx';
 export * from './keys.ts';
+export * from './clicks.ts';
 export * from './focusables.ts';
 export * from './scroll.tsx';
 export * from './history.tsx';
