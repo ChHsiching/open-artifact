@@ -11,8 +11,8 @@
  * DOM grid is left out, so holes show plain paper); the camera layer
  * keeps the element views whose text shows through the canvas's holes,
  * and a second camera layer above the canvas holds the live elements and
- * the other board-unit content (`children`), kept on the engine's camera
- * every frame.
+ * the other board-unit content (`children`). Both layers follow the
+ * engine's camera every frame.
  */
 
 import { useEffect, useRef, type CSSProperties, type ReactNode } from 'react';
@@ -57,10 +57,10 @@ export function BoardSurface({ elements, live, children, overlay }: BoardSurface
   // The canvas engine (unless `?open_artifact_engine=off`; the DOM draws the board when it cannot start).
   useEffect(() => {
     const element = surface.current;
-    if (!engine || !element || !canvas.current || !liveLayer.current) return;
+    if (!engine || !element || !canvas.current || !layer.current || !liveLayer.current) return;
     const abort = new AbortController();
     let stop: (() => void) | undefined;
-    void startEngineBoard({ surface: element, canvas: canvas.current, live: liveLayer.current }, abort.signal).then((board) => {
+    void startEngineBoard({ surface: element, canvas: canvas.current, elements: layer.current, live: liveLayer.current }, abort.signal).then((board) => {
       if (board) stop = () => board.destroy();
     });
     return () => {
@@ -90,21 +90,20 @@ export function BoardSurface({ elements, live, children, overlay }: BoardSurface
     };
   }, []);
 
-  // The camera transform, applied without re-rendering.
+  // The DOM-only camera transform. With the engine on, both layers move with its frames.
   useEffect(() => {
     const element = layer.current;
-    if (!element) return;
+    if (engine || !element) return;
     const apply = (): void => {
       const { camera } = useCamera.getState();
-      element.style.transform = cameraLayerTransform(camera, window.devicePixelRatio || 1);
+      element.style.transform = cameraLayerTransform(camera);
       element.toggleAttribute('data-wb-zoomed-out', camera.zoom < 1);
-      liveLayer.current?.toggleAttribute('data-wb-zoomed-out', camera.zoom < 1);
     };
     apply();
     return useCamera.subscribe((state, previous) => {
       if (state.camera !== previous.camera) apply();
     });
-  }, []);
+  }, [engine]);
 
   // Wheel, trackpad and pinch; a pinch cancels the one-finger gesture in progress.
   const active = useRef<{ pointerId: number; gesture: Gesture } | null>(null);

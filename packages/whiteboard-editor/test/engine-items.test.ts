@@ -7,7 +7,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { containerTitleScaleForZoom, normalizeElement, type BoardElement, type ElementsById } from '@open-artifact/whiteboard-core';
-import { elementBodyItems, elementSpriteItem, engineResizes, isAlwaysLive, itemOwner, sectionTitleSpot, spritePlace, type ItemScope } from '../src/engine/items.ts';
+import { elementBodyItems, elementSpriteItem, isAlwaysLive, itemOwner, sectionTitleSpot, spritePlace, type ItemScope } from '../src/engine/items.ts';
 import { engineRequested } from '../src/engine/mode.ts';
 import { parseSpriteKey, SPRITE_SCALE_RANGE, spriteBucket, spriteHash, spriteKey } from '../src/engine/sprite-keys.ts';
 
@@ -40,7 +40,7 @@ describe('engine items', () => {
     assert.equal(body?.id, 'n1');
     assert.deepEqual([body?.x, body?.y, body?.w], [10, 20, 160]);
     assert.equal(body?.movable, true);
-    assert.equal(body?.resizable, true);
+    assert.equal(body?.resizable, false);
     assert.equal(body?.layer, 1);
     assert.equal(body?.z, 12);
   });
@@ -116,11 +116,10 @@ describe('engine items', () => {
     assert.ok(place && place.box.y + place.box.h === 0 && place.box.w > 20 && place.box.w < 600, 'the title sprite sits just above the section, as wide as its title');
   });
 
-  it('lets the canvas resize only unturned blocks, sections and pictures', () => {
-    assert.equal(engineResizes(note('n1', 0, 0, ''), true), true);
-    assert.equal(engineResizes(note('n1', 0, 0, ''), false), false);
-    assert.equal(engineResizes(element({ type: 'shape', id: 's1', kind: 'rect', x: 0, y: 0, w: 100, h: 100, turn: 30 }), true), false);
-    assert.equal(engineResizes(element({ type: 'text', id: 't1', x: 0, y: 0, text: 'x' }), true), false);
+  it('leaves card resizing to the board so the canvas and DOM receive the same geometry', () => {
+    const card = shape('s1', 0, 0, 'Status');
+    const [body] = elementBodyItems(card, 0, scopeOf([card]), false);
+    assert.equal(body?.resizable, false);
   });
 });
 

@@ -34,6 +34,8 @@ describe('whiteboard', { skip: skipFor('whiteboard') }, () => {
       video: { type: 'image', x: 560, y: 0, w: 160, h: 100, src: '_blob/' + pictureId, video: '_blob/' + videoId },
       overlay: { type: 'shape', kind: 'rect', x: 550, y: -15, w: 60, h: 60, color: 'green', text: 'Top' },
       box: { type: 'shape', kind: 'database', x: 300, y: 180, w: 120, h: 90, text: 'Store', color: 'blue', by: 'agent' },
+      plain: { type: 'text', x: 350, y: 300, size: 'large', text: '**上线日 周二**' },
+      resizeCard: { type: 'shape', kind: 'rounded', x: 0, y: 345, w: 260, h: 150, color: 'yellow', size: 'body', text: '**上线日 周二**\n保留发布说明和检查项' },
     };
     for (const sub of ['db/elements', 'db/board', '_blobs']) fs.mkdirSync(path.join(root, sub), { recursive: true });
     fs.writeFileSync(path.join(root, 'db/board/meta.json'), JSON.stringify({ v: 1, title: 'Editable diagram', order: Object.keys(elements) }));
@@ -62,6 +64,142 @@ describe('whiteboard', { skip: skipFor('whiteboard') }, () => {
     const part = await fetch(image, { headers: { Range: 'bytes=0-7' } });
     assert.equal(part.status, 206);
     assert.deepEqual(Buffer.from(await part.arrayBuffer()), bytes.subarray(0, 8));
+  });
+
+  it('keeps text aligned with live elements throughout a canvas pan', { skip: noBrowser }, async () => {
+    const entry = new URL(url);
+    entry.searchParams.set('open_artifact_bench', '1');
+    const p = await browser.load(entry.href, { ready });
+    try {
+      await p.cdp('Emulation.setDeviceMetricsOverride', { width: 1200, height: 800, deviceScaleFactor: 2, mobile: false });
+      await p.evaluate('window.__openArtifactWhiteboard.setCamera({ x: -100, y: -100, zoom: 0.6 })');
+      assert.ok(await p.waitFor(`(() => {
+        const layer = document.querySelector('.wb-layer');
+        const transform = new DOMMatrixReadOnly(getComputedStyle(layer).transform);
+        return transform.a === 0.6 && transform.e === 60 && transform.f === 60 &&
+          !window.__openArtifactWhiteboard.state().moving;
+      })()`), 'the requested camera has been painted');
+      const readPositions = `(() => {
+        const text = document.querySelector('.wb-layer:not(.wb-live-layer) #wb-plain');
+        const live = document.querySelector('.wb-live-layer #wb-card');
+        if (!text || !live) return null;
+        const a = text.getBoundingClientRect();
+        const b = live.getBoundingClientRect();
+        const holes = window.__openArtifactWhiteboard?.state().stats?.holes;
+        return { x: a.x, y: a.y, liveX: b.x, liveY: b.y, holes, visibility: getComputedStyle(text).visibility };
+      })()`;
+      assert.ok(await p.waitFor(`(${readPositions})?.holes > 0`, 3000), 'the canvas shows DOM text through its holes before panning');
+      const initial = await p.evaluate(readPositions);
+      const start = await p.evaluate(`(() => {
+        const r = document.querySelector('[data-testid="board-canvas"]').getBoundingClientRect();
+        return { x: r.left + 850, y: r.top + 450 };
+      })()`);
+      await p.cdp('Input.dispatchMouseEvent', { ...start, type: 'mousePressed', button: 'middle', buttons: 4, clickCount: 1 });
+      const steps = [[40.18, 16.32], [40.42, 16.38], [40.7, 16.42], [56.95, 30.7]];
+      for (const [dx, dy] of steps) {
+        await p.cdp('Input.dispatchMouseEvent', { type: 'mouseMoved', x: start.x + dx, y: start.y + dy, buttons: 4 });
+        assert.ok(await p.waitFor(`(() => {
+          const current = ${readPositions};
+          return document.querySelector('[data-wb-moving]') &&
+            Math.abs(current?.liveX - ${initial.liveX + dx}) < 0.04 &&
+            Math.abs(current?.liveY - ${initial.liveY + dy}) < 0.04;
+        })()`, 3000), 'the live layer follows the fractional pointer position');
+        const current = await p.evaluate(readPositions);
+        assert.equal(current?.visibility, 'visible', 'ordinary text stays visible while the camera moves');
+        assert.equal(current.holes, initial.holes, 'the canvas keeps its text holes open while panning');
+        assert.ok(Math.abs((current.x - current.liveX) - (initial.x - initial.liveX)) <= 0.01, 'horizontal spacing stays fixed');
+        assert.ok(Math.abs((current.y - current.liveY) - (initial.y - initial.liveY)) <= 0.01, 'vertical spacing stays fixed');
+        assert.ok(Math.abs(current.x - initial.x - dx) < 0.04, 'text follows fractional horizontal motion');
+        assert.ok(Math.abs(current.y - initial.y - dy) < 0.04, 'text follows fractional vertical motion');
+      }
+      const end = await p.evaluate(readPositions);
+      const [endX, endY] = steps.at(-1);
+      await p.cdp('Input.dispatchMouseEvent', { type: 'mouseReleased', x: start.x + endX, y: start.y + endY, button: 'middle', buttons: 0, clickCount: 1 });
+      assert.ok(await p.waitFor("!document.querySelector('[data-wb-moving]')"));
+      assert.deepEqual(await p.evaluate(readPositions), end, 'the text stays in place when the pan ends');
+      await p.cdp('Input.dispatchMouseEvent', { ...start, type: 'mouseWheel', deltaX: 0, deltaY: -8, modifiers: 2 });
+      assert.ok(await p.waitFor(`document.querySelector('[data-wb-moving]') &&
+        window.__openArtifactWhiteboard.state().camera.zoom > 0.6`, 3000));
+      assert.equal((await p.evaluate(readPositions)).holes, initial.holes, 'zooming at a readable scale also keeps DOM text painted');
+      assert.deepEqual(p.problems, []);
+    } finally { await p.close(); }
+  });
+
+  it('keeps the card text painted through move and resize previews', { skip: noBrowser }, async () => {
+    const entry = new URL(url);
+    entry.searchParams.set('open_artifact_bench', '1');
+    const p = await browser.load(entry.href, { ready });
+    try {
+      const card = '#wb-resizeCard';
+      const readCard = `(() => {
+        const element = document.querySelector('${card}');
+        if (!element) return null;
+        const box = element.getBoundingClientRect();
+        return { x: box.x, y: box.y, w: box.width, h: box.height,
+          text: element.querySelector('.wb-shape-text')?.textContent,
+          holes: window.__openArtifactWhiteboard.state().stats?.holes };
+      })()`;
+      const ink = async ({ x, y, w, h }) => {
+        const { data } = await p.cdp('Page.captureScreenshot', {
+          format: 'png', captureBeyondViewport: false,
+          clip: { x: Math.ceil(x) + 8, y: Math.ceil(y) + 8, width: Math.floor(w) - 16, height: Math.floor(h) - 16, scale: 1 },
+        });
+        return p.evaluate(`(async () => {
+          const image = new Image();
+          image.src = 'data:image/png;base64,${data}';
+          await image.decode();
+          const ctx = new OffscreenCanvas(image.width, image.height).getContext('2d');
+          ctx.drawImage(image, 0, 0);
+          const { data: rgba } = ctx.getImageData(0, 0, image.width, image.height);
+          let ink = 0;
+          for (let i = 0; i < rgba.length; i += 4) {
+            if (rgba[i] + rgba[i + 1] + rgba[i + 2] < 420) ink++;
+          }
+          return ink;
+        })()`);
+      };
+      const pointer = (type, x, y, buttons) => p.cdp('Input.dispatchMouseEvent', { type, x, y, button: 'left', buttons, clickCount: 1 });
+      assert.ok(await p.waitFor(`(${readCard})?.holes > 0`));
+      const initial = await p.evaluate(readCard);
+      const initialInk = await ink(initial);
+      assert.ok(initialInk > 100, 'the text is present in the composed pixels');
+      const x = initial.x + initial.w / 2;
+      const y = initial.y + initial.h / 2;
+      await pointer('mousePressed', x, y, 1);
+      await pointer('mouseMoved', x + 30, y, 1);
+      assert.ok(await p.waitFor(`(${readCard})?.x > ${initial.x + 15}`, 3000), 'the rendered card moves while held');
+      const moved = await p.evaluate(readCard);
+      assert.equal(moved.text, initial.text);
+      assert.ok(await ink(moved) >= initialInk * 0.8, 'the moving card still paints its text');
+      await pointer('mouseReleased', x + 30, y, 0);
+
+      const handle = '.wb-handle[data-handle="se"]';
+      assert.ok(await p.waitFor(`document.querySelector('${handle}')`));
+      const corner = await p.evaluate(`(() => {
+        const box = document.querySelector('${handle}').getBoundingClientRect();
+        return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+      })()`);
+      await pointer('mousePressed', corner.x, corner.y, 1);
+      let priorWidth = moved.w;
+      for (const dx of [24, -28, -50]) {
+        await pointer('mouseMoved', corner.x + dx, corner.y + 16, 1);
+        const changed = dx > 0 ? `> ${priorWidth + 8}` : `< ${priorWidth - 8}`;
+        assert.ok(await p.waitFor(`(${readCard})?.w ${changed}`, 3000), 'the displayed width follows the resize handle before release');
+        const preview = await p.evaluate(readCard);
+        priorWidth = preview.w;
+        assert.ok(Math.abs(preview.x - moved.x) < 0.04, 'the opposite edge stays fixed');
+        assert.equal(preview.text, initial.text);
+        assert.ok(await ink(preview) >= initialInk * 0.8, 'the preview keeps painting the original words');
+      }
+      const last = await p.evaluate(readCard);
+      await pointer('mouseReleased', corner.x - 50, corner.y + 16, 0);
+      const stored = () => JSON.parse(fs.readFileSync(path.join(root, 'db/elements/resizeCard.json')));
+      assert.ok(await until(() => stored().w < 240));
+      assert.equal(stored().text, '**上线日 周二**\n保留发布说明和检查项');
+      assert.equal(stored().size, 'body');
+      assert.deepEqual(await p.evaluate(readCard), last, 'releasing the pointer keeps the final preview');
+      assert.deepEqual(p.problems, []);
+    } finally { await p.close(); }
   });
 
   for (const renderer of ['canvas', 'DOM']) {

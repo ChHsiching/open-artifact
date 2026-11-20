@@ -216,8 +216,7 @@ body {
   touch-action: none;
 }
 
-/* While the camera or a drag moves, sprites draw all text: the element views under the canvas and the selection overlay rest. */
-.wb-surface[data-wb-moving] > .wb-layer:not(.wb-live-layer),
+/* The screen-space selection overlay follows the camera and element layout after they settle. */
 .wb-surface[data-wb-moving] .wb-sel {
   visibility: hidden;
 }

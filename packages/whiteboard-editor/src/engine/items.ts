@@ -25,7 +25,6 @@ import {
   CONTAINER_TITLE_GAP,
   CONTAINER_TITLE_GAP_SCALED,
   CONTAINER_TITLE_PADDING_X,
-  ELEMENT_KIND_AFFORDANCES,
   NOTE_SHADOWS,
   SECTION_LINE_WIDTH,
   arrowCircleCenter,
@@ -128,12 +127,6 @@ export function isAlwaysLive(element: BoardElement): boolean {
 export function itemRotation(element: BoardElement): number {
   const degrees = elementTurn(element) + (element.type === 'note' ? element.tilt : 0);
   return (degrees * Math.PI) / 180;
-}
-
-/** True when the canvas may resize the element itself (lone selection, its own handles). */
-export function engineResizes(element: BoardElement, editable: boolean): boolean {
-  if (!editable || isElementLocked(element) || !ELEMENT_KIND_AFFORDANCES[element.type].resizes || elementTurn(element) !== 0) return false;
-  return element.type === 'note' || element.type === 'shape' || element.type === 'container' || element.type === 'image';
 }
 
 function inflate(box: Box, by: number): Box {
@@ -386,11 +379,8 @@ export function elementBodyItems(element: BoardElement, order: number, scope: It
     layer,
     z,
     movable: scope.editable && !locked,
-    resizable: engineResizes(element, scope.editable),
-    lockAspect: element.type === 'image',
-    // Pictures resize from their corners only, as the selection overlay offers.
-    handles: element.type === 'image' ? 'corners' : 'all',
-    // The selection overlay draws hover (its outline follows groups and sections).
+    // The selection overlay handles resizing and hover for every element type.
+    resizable: false,
     hover: false,
   } as CanvasItem;
   const items: CanvasItem[] = [body];

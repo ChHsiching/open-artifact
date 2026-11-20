@@ -62,7 +62,6 @@ import {
 import { elementInkColor, paperTextColor } from '../export/look.ts';
 import type { Camera, Point } from '../lib/camera.ts';
 import { screenToBoard } from '../lib/camera.ts';
-import { engineResizes } from '../engine/items.ts';
 import { useEngineView } from '../engine/mode.ts';
 import { SectionTitleHint } from '../elements/BlockViews.tsx';
 import { useSectionHover } from '../tools/hover.ts';
@@ -718,7 +717,7 @@ export function SelectionOverlay(): ReactNode {
 
   // Handles: only for an editable, unlocked selection with the Select tool, outside text editing and crop mode.
   const active = editable && selecting && !locked && !typing && croppingImage === undefined;
-  const handles = active && !(engineFrames && engineResizes(lone, editable)) ? resizeHandlesFor(boxes) : [];
+  const handles = active ? resizeHandlesFor(boxes) : [];
   const turnable = active && boxes.length > 0 && canTurnSelection(elements, new Set(ids));
   const dotsFor =
     editable &&
