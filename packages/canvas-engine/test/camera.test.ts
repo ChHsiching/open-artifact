@@ -54,6 +54,6 @@ test('fitting centers the rect within the insets and caps the zoom', () => {
 
 test('helpers for DOM layers and labels', () => {
   assert.deepEqual(centerOn({ x: 0, y: 0 }, 2, 400, 200), { zoom: 2, x: -100, y: -50 });
-  assert.equal(cameraLayerTransform({ x: 10.3, y: -4, zoom: 0.5 }), 'translate3d(-5.15px, 2px, 0) scale(0.5)');
+  assert.equal(cameraLayerTransform({ x: 10.3, y: 0, zoom: 1 }, 2), 'translate(-10.5px, 0px) scale(1)');
   assert.equal(zoomPercent(0.756), '76%');
 });

@@ -49,7 +49,6 @@ const paintings = new Map<string, Painting>();
 const pending = new Map<string, Promise<string | undefined>>();
 /** Keys that could not be painted (they stay plain). */
 const unpaintable = new Set<string>();
-const listeners = new Set<(key: string) => void>();
 
 let worker: Worker | null | undefined;
 let nextJobId = 1;
@@ -116,18 +115,6 @@ function keep(key: string, painting: Painting): void {
   const same = [...paintings].filter(([, other]) => other.group === painting.group).map(([other]) => other);
   for (const old of same.slice(0, Math.max(0, same.length - PAINTINGS_PER_SOURCE))) free(old);
   publish();
-  for (const listener of listeners) listener(key);
-}
-
-/** The object URL of a painted look, if it is ready. */
-export function paintedLookUrl(key: string): string | undefined {
-  return paintings.get(key)?.url;
-}
-
-/** Calls `listener` with each key once its look is painted; returns a stop function. */
-export function onLookPainted(listener: (key: string) => void): () => void {
-  listeners.add(listener);
-  return () => void listeners.delete(listener);
 }
 
 /**

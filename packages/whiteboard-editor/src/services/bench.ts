@@ -11,7 +11,6 @@ import type { Camera } from '../lib/camera.ts';
 import { useCamera } from '../state/camera.ts';
 import { currentMeasures } from '../state/measures.ts';
 import { useSelection } from '../state/selection.ts';
-import { engineRef, useEngineView } from './mode.ts';
 
 /** What `window.__openArtifactWhiteboard` offers. */
 export interface WhiteboardBench {
@@ -23,7 +22,7 @@ export interface WhiteboardBench {
   elements(ids: readonly ElementId[]): Array<BoardElement | null>;
   /** Moves the camera. */
   setCamera(camera: Camera): void;
-  /** Where an arrow is drawn now (with the canvas engine, a drag's preview included), or `null`. */
+  /** Where an arrow is drawn now, or `null`. */
   arrowLine(id: ElementId): { x1: number; y1: number; x2: number; y2: number } | null;
 }
 
@@ -51,18 +50,11 @@ export function installBenchHook(search: string = location.search): () => void {
       return elements.length;
     },
     state() {
-      const view = useEngineView.getState();
-      const engine = engineRef.current;
       return {
-        engine: view.status,
-        moving: view.moving,
-        domElements: view.dom.size,
-        liveElements: view.live.length,
         elementViews: document.querySelectorAll('.wb-layer [data-wb-id]').length,
         elements: useBoard.getState().board.content.elements.length,
         camera: useCamera.getState().camera,
         selection: useSelection.getState().ids,
-        stats: engine ? engine.stats() : null,
       };
     },
     elements(ids) {
@@ -73,7 +65,7 @@ export function installBenchHook(search: string = location.search): () => void {
       useCamera.getState().setCamera(camera);
     },
     arrowLine(id) {
-      const byId = (engineRef.current ? engineRef.drawn : null) ?? useBoard.getState().byId;
+      const { byId } = useBoard.getState();
       const arrow = byId.get(id);
       const line = arrow?.type === 'arrow' ? measuredArrowGeometry(arrow, byId, currentMeasures()) : undefined;
       return line ? { x1: line.x1, y1: line.y1, x2: line.x2, y2: line.y2 } : null;

@@ -279,38 +279,6 @@ function useTitleScale(box: RefObject<HTMLDivElement | null>, element: Container
   }, [box, element, editing, shown]);
 }
 
-/**
- * The title of a section the canvas engine draws (it has no view of its own
- * then), drawn again above the canvas: “Add a title” over an untitled one,
- * and, under the pointer, the title in the accent. The
- * same title box as the view's, in a layer at the section's top-left corner
- * scaled to the zoom.
- */
-export function SectionTitleHint({ element, zoom, at, glowing }: { element: ContainerElement; zoom: number; at: { x: number; y: number }; glowing: boolean }) {
-  const empty = element.text.trim() === '';
-  const profile = textProfileForElement(element) ?? TEXT_PROFILES.title;
-  const scheme = useColorScheme();
-  const box = useRef<HTMLDivElement>(null);
-  useTitleScale(box, element, false, true);
-  const style: ViewStyle = {
-    left: at.x,
-    top: at.y,
-    width: element.w,
-    transform: `scale(${zoom})`,
-    '--wb-ink': sectionInkColor(element.color, scheme),
-  };
-  return (
-    <div className="wb-sel-title-hint" style={style} aria-hidden="true">
-      <div ref={box} className={glowing ? 'wb-container-title wb-glowing' : 'wb-container-title'} dir="auto" style={{ '--wb-title-lift': ZOOMED_OUT_TITLE_LIFT } as ViewStyle}>
-        {element.locked ? <Lock className="wb-container-lock" size={12} aria-label="Locked" /> : null}
-        <span className="wb-container-title-text">
-          {empty ? <span className="wb-container-hint">Add a title</span> : <RichText text={element.text} profile={profile} />}
-        </span>
-      </div>
-    </div>
-  );
-}
-
 /** The title of a section, scaled to the zoom imperatively (no re-render on zoom). */
 function SectionTitle({ element }: { element: ContainerElement }) {
   const editing = useEditing(element.id, 'element');

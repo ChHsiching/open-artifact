@@ -18,10 +18,6 @@
  * `--wb-zoom` current with a camera subscription, and section titles scale
  * themselves the same way.
  *
- * With the canvas engine on (`engine/mode.ts`) the layer draws only the
- * elements whose text shows through the canvas,
- * and {@link LiveElements} draws the interactive ones above the canvas.
- *
  * The layer also does the bookkeeping that needs the whole board: section
  * growth around their contents, nested title room, reading order for
  * screen readers, the fills behind free text, and dropping the measures of
@@ -54,7 +50,6 @@ import { useBoardRecovery } from '../services/load-recovery.ts';
 import { rotationStyle } from './style.ts';
 import { elementDomId, useItemProps } from './item.tsx';
 import { useElementView } from './view-state.ts';
-import { useEngineView } from '../engine/mode.ts';
 
 /** How long an element takes to glide into place after its drawn place jumped, ms. */
 export const SETTLE_GLIDE_MS = 160;
@@ -123,15 +118,10 @@ function useZoomVariable(root: RefObject<HTMLDivElement | null>): void {
 export function ElementsLayer() {
   const stored = useBoard(useShallow((state) => layerOrder(state.board.content.elements)));
   const additions = useShownAdditions();
-  const engine = useEngineView(useShallow((state) => ({ status: state.status, dom: state.dom, live: state.live })));
   const ids = useMemo(() => {
     const present = new Set(stored);
-    const all = additions.length === 0 ? stored : [...stored, ...additions.filter((id) => !present.has(id))];
-    if (engine.status === 'starting') return [];
-    if (engine.status !== 'on') return all;
-    const live = new Set(engine.live);
-    return all.filter((id) => engine.dom.has(id) && !live.has(id));
-  }, [stored, additions, engine]);
+    return additions.length === 0 ? stored : [...stored, ...additions.filter((id) => !present.has(id))];
+  }, [stored, additions]);
   const owns = useElementView(useShallow((state) => [...state.reading.keys()]));
   const root = useRef<HTMLDivElement>(null);
   useZoomVariable(root);
@@ -146,22 +136,6 @@ export function ElementsLayer() {
     </div>
   );
 }
-
-/** The elements that stay interactive DOM above the engine canvas (embeds, the timer, what is being typed in or cropped), in draw order. */
-export function LiveElements() {
-  const ids = useEngineView((state) => (state.status === 'on' ? state.live : NO_IDS));
-  const root = useRef<HTMLDivElement>(null);
-  useZoomVariable(root);
-  return (
-    <div ref={root} className="wb-elements">
-      {ids.map((id) => (
-        <ElementView key={id} id={id} />
-      ))}
-    </div>
-  );
-}
-
-const NO_IDS: readonly ElementId[] = [];
 
 /**
  * Starts the queued settle glides (see `state/shown.ts`) once the elements
