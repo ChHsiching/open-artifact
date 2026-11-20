@@ -386,7 +386,7 @@ export class TypeServers {
     return new Promise((resolveReady, rejectReady) => {
       let child: ChildProcess;
       try {
-        child = spawn(command, start.args, { cwd: type.dir, env, stdio: ['ignore', 'pipe', 'pipe'] });
+        child = spawn(command, start.args, { cwd: type.dir, env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
       } catch (error) {
         log.end();
         rejectReady(error);
