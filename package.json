@@ -16,7 +16,8 @@
     "typecheck": "tsc -p tsconfig.json",
     "test": "node --test \"packages/*/test/*.test.ts\" \"plugins/dsh/test/*.test.ts\"",
     "check": "npm run typecheck && npm test",
-    "e2e": "node e2e/run.mjs"
+    "e2e": "node e2e/run.mjs",
+    "test-artifacts": "node test-artifacts/home.mjs"
   },
   "devDependencies": {
     "@tailwindcss/vite": "4.3.3",
