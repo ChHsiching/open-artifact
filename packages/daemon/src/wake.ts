@@ -31,6 +31,12 @@ import { sessionKeyOf, type ArtifactStore } from './store.ts';
 /** Session key of the inbox that takes wakes of artifacts with no owner. */
 export const UNOWNED_KEY = 'unowned';
 
+/**
+ * How long a nudge counts as still on its way, ms: while it is and the session has not taken its inbox, another wake
+ * joins that inbox without a nudge of its own (the turn the first one starts hands over every waiting message).
+ */
+export const NUDGE_REPEAT_MS = 5 * 60_000;
+
 /** How one wake ended up. */
 export interface WakeResult {
   via: WakeVia;
@@ -76,6 +82,8 @@ export class WakeRouter {
   private readonly pending = new Map<string, Pending>();
   /** Send times in the last minute, by artifact id. */
   private readonly sent = new Map<string, number[]>();
+  /** When each session key was last nudged. */
+  private readonly nudged = new Map<string, number>();
 
   constructor(options: WakeRouterOptions) {
     this.options = options;
@@ -160,9 +168,19 @@ export class WakeRouter {
       }
     }
     const key = (target && sessionKeyOf(target)) || UNOWNED_KEY;
+    const waiting = inbox.count(key) > 0;
     const { taken } = inbox.append(key, { kind: 'wake', ...payload });
     log(`wake ${id} -> inbox ${key}${taken ? ' (taken by a wait)' : ''}`);
-    if (!taken && target) this.options.nudge?.(target, payload);
+    if (!taken && target && this.options.nudge) {
+      // A nudge still on its way starts a turn that takes this message too; a second one would only queue an empty turn.
+      const last = this.nudged.get(key);
+      if (waiting && last !== undefined && Date.now() - last < NUDGE_REPEAT_MS) {
+        log(`wake ${id}: ${key} already nudged; joins its inbox`);
+      } else {
+        this.nudged.set(key, Date.now());
+        this.options.nudge(target, payload);
+      }
+    }
     const via: WakeVia = taken ? 'wait' : 'inbox';
     emit?.({ type: 'wake/state', artifactId: id, via });
     return { via };

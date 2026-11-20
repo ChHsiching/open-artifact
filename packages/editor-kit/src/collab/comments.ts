@@ -373,8 +373,27 @@ export function createComments<A>(adapter: CommentsAdapter<A>): CommentsControll
       }
     },
     async sendAllToAgent() {
+      if (!capability || !canSendToAgent()) return;
       const open = store.getState().threads.filter((t) => controller.canSendThread(t));
-      for (const thread of open) await controller.sendToAgent(thread.id);
+      if (!open.length) return;
+      // All at once: the host merges what reaches it within a short window into one message, so the agent gets
+      // every thread in one turn. One after another, each would wait out the window and arrive (or queue) alone.
+      if (adapter.sendToAgent) {
+        await Promise.all(open.map((thread) => adapter.sendToAgent!(thread, anchorOf(thread))));
+        return;
+      }
+      const cap = capability;
+      const results = await Promise.allSettled(open.map((thread) => cap.sendToAgent(thread.id)));
+      let sent = 0;
+      for (const result of results) {
+        if (result.status === 'fulfilled') {
+          put(result.value);
+          sent++;
+        }
+      }
+      if (sent) notify(sentNotice(adapter.agentName?.() || 'the agent', adapter.agentWakesIdle?.()));
+      const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+      if (failure) failed(failure.reason);
     },
     canSendThread(thread) {
       if (thread.status !== 'open') return false;
