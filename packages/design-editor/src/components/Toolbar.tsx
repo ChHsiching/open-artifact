@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { boardsOnPage } from '@open-artifact/design-core';
-import { Button, CommitInput, Dialog, cn } from '@open-artifact/ui';
+import { Button, CommitInput, Dialog, cn, isComposingKey } from '@open-artifact/ui';
 import { useDocument, type SaveState } from '../state/document.ts';
 import { PEN_WEIGHTS, useView, type PenStyle, type Tool } from '../state/view.ts';
 import { useAgent } from '../services/agent.ts';
@@ -246,7 +246,7 @@ function RenameDialog({ id, onClose }: { id: string | null; onClose: () => void 
         value={name}
         onChange={(event) => setName(event.target.value)}
         onKeyDown={(event) => {
-          if (event.key === 'Enter') commit();
+          if (event.key === 'Enter' && !isComposingKey(event.nativeEvent)) commit();
         }}
       />
     </Dialog>

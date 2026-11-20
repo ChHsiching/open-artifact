@@ -61,6 +61,16 @@ describe('shell model', () => {
     assert.equal(new URL(pageAddress({ ...boot, type: 'design' }, address + '#slide-1')!).hash, '');
   });
 
+  it('hands a design its page or a readable place link, and nothing else', () => {
+    const boot = { id: 'canvas', page: 'http://localhost:8000/', type: 'design' };
+    const address = 'http://localhost:8100/a/canvas';
+    for (const hash of ['#page=review', '#page-review', '#artboard-screens-sign-in', '#play-main']) {
+      assert.equal(new URL(pageAddress(boot, address + hash)!).hash, hash);
+    }
+    assert.equal(new URL(pageAddress(boot, address + '#page=review&x=1')!).hash, '#page=review');
+    assert.equal(new URL(pageAddress(boot, address + '#artboard-a=b')!).hash, '');
+  });
+
   it('names the agent: host, then boot, then fallback', () => {
     assert.equal(agentNameOf({ origin: 'x', caps: {}, agentName: 'Helper' }, { agentName: 'Boot' }, 'Agent'), 'Helper');
     assert.equal(agentNameOf(null, { agentName: 'Boot' }, 'Agent'), 'Boot');

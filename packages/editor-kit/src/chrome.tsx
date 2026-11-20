@@ -23,6 +23,7 @@ import { Check, ChevronRight } from 'lucide-react';
 import { forwardRef, useEffect, useState, type ButtonHTMLAttributes, type CSSProperties, type HTMLAttributes, type ReactElement, type ReactNode } from 'react';
 import type { ChromeDraw, ShellConnection } from '@open-artifact/runtime';
 import { cn } from '@open-artifact/ui';
+import { menuFit } from './menu-fit.ts';
 
 /** A floating chrome card. */
 export const Card = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(function Card({ className, ...rest }, ref) {
@@ -208,7 +209,7 @@ export function ChromeMenu({
       )}
       <BaseMenu.Portal>
         <BaseMenu.Positioner side={side} align={align} sideOffset={sideOffset} className="z-[1000]">
-          <BaseMenu.Popup {...marked(mark)} className={cn(popupBase, className)}>
+          <BaseMenu.Popup {...marked(mark)} className={cn(popupBase, className)} style={menuFit(className)}>
             {children}
           </BaseMenu.Popup>
         </BaseMenu.Positioner>
@@ -291,7 +292,7 @@ export function ChromeSubmenu({
       </BaseMenu.SubmenuTrigger>
       <BaseMenu.Portal>
         <BaseMenu.Positioner sideOffset={4} className="z-[1000]">
-          <BaseMenu.Popup {...marked(mark)} className={cn(popupBase, className)}>
+          <BaseMenu.Popup {...marked(mark)} className={cn(popupBase, className)} style={menuFit(className)}>
             {children}
           </BaseMenu.Popup>
         </BaseMenu.Positioner>

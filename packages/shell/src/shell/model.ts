@@ -96,6 +96,9 @@ export function switchPool(library: ArtifactView[], owner: Owner | null | undefi
   return { inSession, list: [...pool].sort((a, b) => changedAt(b) - changedAt(a)) };
 }
 
+/** A readable Design link to a page, an artboard or a running artboard; the editor resolves the name. */
+const DESIGN_PLACE_FRAGMENT = /^#(?:page|artboard|play)-[^=&]+$/;
+
 /** The shareable page of a Design canvas. Keep only its page id from the fragment. */
 export function designPageFragment(fragment: string): string {
   const page = new URLSearchParams(fragment.replace(/^#/, '')).get('page');
@@ -133,7 +136,7 @@ export function pageAddress(boot: Pick<ShellBoot, 'page' | 'id'> & Partial<Pick<
     }
     if (boot.type === 'sheets') at.hash = sheetPageFragment(shell.hash);
     if (boot.type === 'design') {
-      const hash = designPageFragment(shell.hash);
+      const hash = DESIGN_PLACE_FRAGMENT.test(shell.hash) ? shell.hash : designPageFragment(shell.hash);
       if (hash) at.hash = hash;
     }
     if (boot.type === 'design' || boot.type === 'slides') {

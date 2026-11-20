@@ -16,8 +16,8 @@ import { useComments, canComment } from './comments.ts';
 import { session } from './session.ts';
 import { collabChromeReport, handleCollabCommand, subscribeCollab } from './collab.ts';
 
-/** What the Export tab depends on now. */
-function exportScene(): ExportScene {
+/** What the Export tab (or, without a Shell, the focused view's Export menu) depends on now. */
+export function exportScene(): ExportScene {
   const view = useView.getState();
   const { boards } = useDocument.getState().canvas;
   const path = selectedArtboard(view, boards);

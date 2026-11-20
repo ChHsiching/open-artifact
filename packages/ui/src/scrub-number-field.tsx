@@ -201,6 +201,9 @@ export function ScrubNumberField({
   const onPointerDown = (event: PointerEvent<HTMLSpanElement>) => {
     if (disabled || event.button !== 0) return;
     event.preventDefault();
+    // A field typed into elsewhere commits before the scrub writes its own value.
+    const typing = document.activeElement;
+    if (typing instanceof HTMLElement && typing !== inputRef.current && (typing.matches('input, textarea') || typing.isContentEditable)) typing.blur();
     event.currentTarget.setPointerCapture(event.pointerId);
     const start = mixed || value === null ? (min ?? 0) : value;
     scrub.current = { start, current: start, travel: 0, carry: 0, pointerId: event.pointerId };

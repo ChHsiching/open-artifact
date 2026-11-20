@@ -136,6 +136,22 @@ export type ChromeExportState = 'started' | 'done' | 'busy' | 'unsupported' | 'd
 
 export const CHROME_REQUEST = /^[A-Za-z0-9_-]{16,64}$/;
 
+// ---- clipboard relay: page → Shell -------------------------------------------------------------------------------
+
+/**
+ * Formats the Shell writes to the clipboard for the page. A browser that
+ * keeps the clipboard from framed pages (whatever the frame's `allow`) still
+ * lets the top window write it right after a press in the frame; the page then
+ * sends `clipboard_write` and the Shell writes in its place.
+ */
+export const CLIPBOARD_TYPES: readonly string[] = ['text/plain', 'text/html', 'image/png', 'image/svg+xml'];
+
+/** A `clipboard_write` id. */
+export const CLIPBOARD_ID = /^[A-Za-z0-9_-]{1,64}$/;
+
+/** Largest clipboard content, all formats together, the Shell writes for the page. */
+export const MAX_CLIPBOARD_BYTES = 64 * 1024 * 1024;
+
 /** What the page reports to the Shell. Every part is optional. */
 export interface ChromeReport {
   /** Current document title in a type-server shell. */
@@ -275,11 +291,16 @@ export type CapToShell =
 
 /** Shell → page. */
 export type ShellToPage =
-  /** `draws`: what this Shell draws for the page (absent from older Shells). */
-  | { openArtifact: 'chrome_hello'; draws?: ChromeDraw[] }
+  /**
+   * `draws`: what this Shell draws for the page (absent from older Shells).
+   * `clipboard`: the Shell takes `clipboard_write` (absent from older Shells).
+   */
+  | { openArtifact: 'chrome_hello'; draws?: ChromeDraw[]; clipboard?: boolean }
   | ({ openArtifact: 'chrome_cmd' } & ChromeCommand)
   /** Files of the artifact changed on disk (agent writes). */
   | { openArtifact: 'files_changed'; paths: string[] }
+  /** What became of a `clipboard_write`: written, or the reason it was not. */
+  | { openArtifact: 'clipboard_done'; id: string; error?: string }
   | CapToPage;
 
 /** Page → Shell. */
@@ -296,6 +317,14 @@ export type PageToShell =
   | { openArtifact: 'chrome_export'; request: string; state: ChromeExportState; reason?: string }
   /** The page applied `files_changed` itself; the Shell does not reload it. */
   | { openArtifact: 'files_changed_ok' }
+  /**
+   * Write these formats ({@link CLIPBOARD_TYPES}) to the clipboard. Sent at
+   * once on the person's press, while the Shell may still write; the content
+   * follows in `clipboard_data` (an image can take a while to draw).
+   */
+  | { openArtifact: 'clipboard_write'; id: string; types: string[] }
+  /** The content of a `clipboard_write`, one Blob per format, or why there is none. */
+  | { openArtifact: 'clipboard_data'; id: string; items?: Record<string, Blob>; error?: string }
   | CapToShell;
 
 // ---- host: Shell ⇄ embedding host --------------------------------------------------------------------------------

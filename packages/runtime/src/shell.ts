@@ -38,6 +38,16 @@ export interface ShellConnection {
   readonly draws: ReadonlySet<ChromeDraw>;
   /** Called after each `chrome_hello` (the Shell's `draws` may have changed). */
   onHello(handler: (draws: ReadonlySet<ChromeDraw>) => void): () => void;
+  /** The Shell writes the clipboard for the page ({@link ShellConnection.writeClipboard}); false until it says hello. */
+  readonly writesClipboard: boolean;
+  /**
+   * Has the Shell write these formats to the clipboard, for a browser that
+   * keeps the clipboard from framed pages. Call it on the person's press,
+   * without awaiting anything first: the Shell can only write right after
+   * one. An image may still be drawing (a promise). Rejects with the Shell's
+   * reason, or when the Shell does not write the clipboard.
+   */
+  writeClipboard(items: Record<string, Blob | PromiseLike<Blob>>): Promise<void>;
   /** Answers an `export_format` command: `started`, then `done` or `declined` (or at once `busy`/`unsupported`). */
   exportState(request: string, state: ChromeExportState, reason?: string): void;
   /** Sends the full report; call again whenever any part changes. */
@@ -61,6 +71,9 @@ export interface ShellConnection {
   dispose(): void;
 }
 
+/** How long {@link ShellConnection.writeClipboard} waits for the Shell (the content may take a while to draw). */
+const CLIPBOARD_TIMEOUT_MS = 3 * 60_000;
+
 /** Protocol version spoken by this module. */
 export const SHELL_PROTOCOL = CHROME_PROTOCOL;
 
@@ -83,6 +96,10 @@ export function connectShell(): ShellConnection | null {
 
   let lastReport: ChromeReport = {};
   let draws: ReadonlySet<ChromeDraw> = new Set();
+  let writesClipboard = false;
+  let clipboardSeq = 0;
+  /** `clipboard_write`s waiting for `clipboard_done`, by id. */
+  const clipboardWaiting = new Map<string, { resolve: () => void; reject: (error: Error) => void }>();
   const helloHandlers = new Set<(draws: ReadonlySet<ChromeDraw>) => void>();
   const commandHandlers = new Set<(command: ChromeCommand) => ChromeExportItem[] | void>();
   const filesHandlers = new Set<(paths: string[]) => boolean>();
@@ -100,6 +117,7 @@ export function connectShell(): ShellConnection | null {
       case 'chrome_hello': {
         const said = (data as { draws?: unknown }).draws;
         draws = new Set(Array.isArray(said) ? (said.filter((d) => typeof d === 'string') as ChromeDraw[]) : []);
+        writesClipboard = (data as { clipboard?: unknown }).clipboard === true;
         for (const handler of helloHandlers) handler(draws);
         post({ openArtifact: 'chrome_report', protocol: SHELL_PROTOCOL, report: lastReport });
         break;
@@ -112,6 +130,15 @@ export function connectShell(): ShellConnection | null {
             post({ openArtifact: 'chrome_exports', id: command.id, items });
           }
         }
+        break;
+      }
+      case 'clipboard_done': {
+        const { id, error } = data as { id?: unknown; error?: unknown };
+        const waiting = typeof id === 'string' ? clipboardWaiting.get(id) : undefined;
+        if (!waiting) break;
+        clipboardWaiting.delete(id as string);
+        if (typeof error === 'string') waiting.reject(new Error(error || 'The clipboard was not written.'));
+        else waiting.resolve();
         break;
       }
       case 'files_changed': {
@@ -135,6 +162,31 @@ export function connectShell(): ShellConnection | null {
     onHello(handler) {
       helloHandlers.add(handler);
       return () => helloHandlers.delete(handler);
+    },
+    get writesClipboard() {
+      return writesClipboard;
+    },
+    writeClipboard(items) {
+      if (!writesClipboard) return Promise.reject(new Error('The Shell does not write the clipboard.'));
+      const id = `c${++clipboardSeq}`;
+      const types = Object.keys(items);
+      // Sent before anything is awaited: the Shell starts its write while the press still counts.
+      post({ openArtifact: 'clipboard_write', id, types });
+      const done = new Promise<void>((resolve, reject) => {
+        // A Shell that went away never answers.
+        const timer = setTimeout(() => {
+          if (clipboardWaiting.delete(id)) reject(new Error('The Shell did not answer.'));
+        }, CLIPBOARD_TIMEOUT_MS);
+        clipboardWaiting.set(id, {
+          resolve: () => (clearTimeout(timer), resolve()),
+          reject: (error) => (clearTimeout(timer), reject(error)),
+        });
+      });
+      void Promise.all(types.map((type) => Promise.resolve(items[type]!))).then(
+        (blobs) => post({ openArtifact: 'clipboard_data', id, items: Object.fromEntries(types.map((type, i) => [type, blobs[i]!])) }),
+        (error: unknown) => post({ openArtifact: 'clipboard_data', id, error: error instanceof Error ? error.message : String(error) }),
+      );
+      return done;
     },
     exportState(request, state, reason) {
       post({ openArtifact: 'chrome_export', request, state, ...(reason ? { reason } : {}) });
@@ -168,6 +220,8 @@ export function connectShell(): ShellConnection | null {
     },
     dispose() {
       window.removeEventListener('message', onMessage);
+      for (const waiting of clipboardWaiting.values()) waiting.reject(new Error('The Shell connection closed.'));
+      clipboardWaiting.clear();
       commandHandlers.clear();
       filesHandlers.clear();
       helloHandlers.clear();

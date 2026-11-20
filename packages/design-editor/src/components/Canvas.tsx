@@ -62,6 +62,8 @@ import { bezierPathData, relativeNodes, sampleBezier, type BezierNode } from '..
 import { CropOverlay } from './CropOverlay.tsx';
 import { NodeEditor } from './NodeEditor.tsx';
 import { announce } from '../services/announce.ts';
+import { endsMode } from '../lib/mode-keys.ts';
+import { isTextField } from '@open-artifact/editor-kit';
 
 /** Resize handle directions. */
 export type Handle = 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'nw';
@@ -342,7 +344,7 @@ export function Canvas() {
       return;
     }
     const onKey = (event: KeyboardEvent): void => {
-      if (!pathDraft.current || (event.key !== 'Enter' && event.key !== 'Escape')) return;
+      if (!pathDraft.current || !endsMode(event, isTextField(event.target))) return;
       event.preventDefault();
       event.stopPropagation();
       finishPath();
@@ -371,7 +373,9 @@ export function Canvas() {
     viewportSize.height = element.clientHeight;
     if (pendingFit.current && element.clientWidth > 0) {
       pendingFit.current = false;
-      zoomToFit();
+      if (pendingFit.boards) zoomToBoards(pendingFit.boards);
+      else zoomToFit();
+      pendingFit.boards = null;
     }
     return () => observer.disconnect();
   }, []);

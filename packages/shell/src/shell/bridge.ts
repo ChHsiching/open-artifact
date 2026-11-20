@@ -6,9 +6,10 @@
  *   every load (with what the Shell draws: save state, page actions,
  *   export formats, the share notice), `chrome_report` back, `chrome_cmd`
  *   from the bar's buttons, `chrome_exports` for a v1 page's Export tab,
- *   `chrome_export` for what became of an `export_format`, and
+ *   `chrome_export` for what became of an `export_format`,
  *   `files_changed` (the frame reloads unless the page answers
- *   `files_changed_ok` within a second);
+ *   `files_changed_ok` within a second), and `clipboard_write` /
+ *   `clipboard_data` / `clipboard_done` (`clipboard.ts`);
  * - **capability broker**, also with the page: `cap_want`/`cap` from the
  *   page's `window.openartifact`, run by `broker.ts` against the page's
  *   backend and answered with `cap_grant`/`cap_r`/`cap_ack`/`cap_ev`;
@@ -24,6 +25,7 @@ import { CHROME_DRAWS, isShellMessage } from '@open-artifact/protocol';
 import { toast } from '@open-artifact/ui';
 import { t } from '../lib/i18n.ts';
 import { call as brokerCall, want as brokerWant, type PagePost } from './broker.ts';
+import { browserClipboard, createClipboardRelay } from './clipboard.ts';
 import { actionOf, exportRequestId, showsComments, normalizeReport, type ExportEntry, sheetPageFragment } from './model.ts';
 import { useShell } from './store.ts';
 
@@ -41,6 +43,12 @@ const formatsWaiting = new Map<string, string>();
 /** Pending reload after `files_changed`, cleared by `files_changed_ok`. */
 let filesTimer: ReturnType<typeof setTimeout> | null = null;
 
+/** Writes the clipboard for the page, where this browser can. */
+const clipboardEnv = browserClipboard();
+const clipboard = clipboardEnv
+  ? createClipboardRelay(clipboardEnv, (id, error) => toPage({ openArtifact: 'clipboard_done', id, ...(error === undefined ? {} : { error }) }))
+  : null;
+
 /** The Shell runs inside another window. */
 export const embedded = window.parent !== window;
 
@@ -54,6 +62,7 @@ export function attachFrame(element: HTMLIFrameElement | null, origin: string): 
 export function frameLoaded(): void {
   useShell.getState().setReport({});
   formatsWaiting.clear();
+  clipboard?.clear();
   helloOnFirstReport = true;
   sendChromeHello();
 }
@@ -61,7 +70,7 @@ export function frameLoaded(): void {
 function sendChromeHello(): void {
   const boot = useShell.getState().boot;
   const standaloneDesign = boot?.type === 'design' && boot.typeServer;
-  toPage({ openArtifact: 'chrome_hello', draws: CHROME_DRAWS.filter(draw => draw !== 'actions' || !standaloneDesign) });
+  toPage({ openArtifact: 'chrome_hello', draws: CHROME_DRAWS.filter(draw => draw !== 'actions' || !standaloneDesign), ...(clipboard ? { clipboard: true } : {}) });
 }
 
 /** Sends a chrome message to the page. */
@@ -208,6 +217,12 @@ function onPageMessage(message: PageToShell, event: MessageEvent): void {
       break;
     case 'cap':
       void brokerCall(message, event, toPageCap);
+      break;
+    case 'clipboard_write':
+      clipboard?.start(message.id, message.types);
+      break;
+    case 'clipboard_data':
+      clipboard?.data(message.id, message.items, message.error);
       break;
     case 'files_changed_ok':
       if (filesTimer) clearTimeout(filesTimer);

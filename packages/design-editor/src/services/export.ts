@@ -31,6 +31,7 @@ import type { ExportJob } from '../lib/export-formats.ts';
 import { assetName, blobRefs, canvasIndexHtml, dataUrl, exportReadme, relativePath, rewriteRefs, standaloneCanvas, standaloneDocument, TEXT_FILE, type ExportedBoard } from '../lib/export-html.ts';
 import { dirOf, frameDocument } from '../lib/frame.ts';
 import { flowPages, flowPaper, type PageSlice } from '../lib/pagination.ts';
+import { readUploadFiles, SKIP_REASONS, type ReadUpload } from '../lib/upload-reader.ts';
 import { pageBookmark, pageLinks, pageRuns } from '../lib/pdf-text.ts';
 import { useDocument } from '../state/document.ts';
 import { useView } from '../state/view.ts';
@@ -405,22 +406,21 @@ const runtimeCode = (): Promise<string> =>
   fetch(urls().runtime).then((response) => (response.ok ? response.text() : Promise.reject(new Error('The board runtime could not be read.'))));
 
 /** Uploads (`/_blob/…`) the text files name, read from the host; `missing` lists those that could not be read. */
-async function readUploads(files: ReadonlyMap<string, Uint8Array | string>): Promise<{ found: Map<string, { data: Uint8Array; type: string | null }>; missing: { ref: string; usedIn: string[] }[] }> {
+async function readUploads(files: ReadonlyMap<string, Uint8Array | string>): Promise<{ found: Map<string, ReadUpload>; missing: { ref: string; usedIn: string[]; why: string }[] }> {
   const usedIn = new Map<string, string[]>();
   for (const [name, data] of files) {
     if (typeof data !== 'string') continue;
     for (const ref of blobRefs(data)) usedIn.set(ref, [...(usedIn.get(ref) ?? []), name]);
   }
-  const found = new Map<string, { data: Uint8Array; type: string | null }>();
-  const missing: { ref: string; usedIn: string[] }[] = [];
-  for (const [ref, names] of usedIn) {
-    try {
-      const response = await fetch(new URL(ref, location.href));
-      if (!response.ok) throw new Error(String(response.status));
-      found.set(ref, { data: new Uint8Array(await response.arrayBuffer()), type: response.headers.get('content-type') });
-    } catch {
-      missing.push({ ref, usedIn: names });
-    }
+  const refs = [...usedIn.keys()];
+  const read = await readUploadFiles(refs.map((ref) => new URL(ref, location.href).href));
+  const found = new Map<string, ReadUpload>();
+  const missing: { ref: string; usedIn: string[]; why: string }[] = [];
+  for (const ref of refs) {
+    const url = new URL(ref, location.href).href;
+    const upload = read.found.get(url);
+    if (upload) found.set(ref, upload);
+    else missing.push({ ref, usedIn: usedIn.get(ref)!, why: SKIP_REASONS[read.skipped.get(url) ?? 'unreadable'] });
   }
   return { found, missing };
 }
@@ -429,7 +429,7 @@ async function readUploads(files: ReadonlyMap<string, Uint8Array | string>): Pro
  * Files for a folder export: uploads copied under `assets/` and every text
  * file's references to them rewritten to relative paths.
  */
-function withAssets(files: ReadonlyMap<string, Uint8Array | string>, uploads: Map<string, { data: Uint8Array; type: string | null }>): ZipEntry[] {
+function withAssets(files: ReadonlyMap<string, Uint8Array | string>, uploads: Map<string, ReadUpload>): ZipEntry[] {
   const names = new Map([...uploads].map(([ref, upload]) => [ref, assetName(ref, upload.type)]));
   const entries: ZipEntry[] = [];
   for (const [name, original] of files) {

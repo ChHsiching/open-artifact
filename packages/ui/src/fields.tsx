@@ -9,9 +9,9 @@ import { Switch as BaseSwitch } from '@base-ui/react/switch';
 import { ToggleGroup } from '@base-ui/react/toggle-group';
 import { Toggle } from '@base-ui/react/toggle';
 import { Check, ChevronDown } from 'lucide-react';
-import { forwardRef, useEffect, useState, type InputHTMLAttributes, type ReactNode } from 'react';
+import { forwardRef, useEffect, useRef, useState, type InputHTMLAttributes, type ReactNode } from 'react';
 import { cn } from './cn.ts';
-import { preventRepeatedActivation } from './keys.ts';
+import { isComposingKey, preventRepeatedActivation } from './keys.ts';
 import { POPUP_CLASS } from './menu.tsx';
 
 /** Shared look of single-line inputs. */
@@ -31,6 +31,8 @@ export interface CommitInputProps extends Omit<InputHTMLAttributes<HTMLInputElem
   value: string;
   /** Called on Enter or blur, only when the text changed. */
   onCommit: (value: string) => void;
+  /** Called with the draft as it is typed, and with `value` again when Escape puts it back. */
+  onDraftChange?: (draft: string) => void;
 }
 
 /**
@@ -38,25 +40,40 @@ export interface CommitInputProps extends Omit<InputHTMLAttributes<HTMLInputElem
  * restores the last committed value. Inspector edits use it so every
  * keystroke does not become a document write.
  */
-export function CommitInput({ value, onCommit, className, ...rest }: CommitInputProps) {
+export function CommitInput({ value, onCommit, onDraftChange, className, ...rest }: CommitInputProps) {
   const [draft, setDraft] = useState(value);
   useEffect(() => setDraft(value), [value]);
+  /** Set by Enter and Escape, which already decided: the blur they cause commits nothing more. */
+  const settled = useRef(false);
   const commit = () => {
+    if (settled.current) {
+      settled.current = false;
+      return;
+    }
     if (draft !== value) onCommit(draft);
   };
   return (
     <input
       className={cn(INPUT_CLASS, className)}
       value={draft}
-      onChange={(event) => setDraft(event.target.value)}
+      onChange={(event) => {
+        setDraft(event.target.value);
+        onDraftChange?.(event.target.value);
+      }}
       onBlur={commit}
       onKeyDown={(event) => {
+        if (isComposingKey(event.nativeEvent)) return;
         if (event.key === 'Enter') {
           commit();
+          settled.current = true;
           (event.target as HTMLInputElement).blur();
+          settled.current = false;
         } else if (event.key === 'Escape') {
+          settled.current = true;
           setDraft(value);
+          onDraftChange?.(value);
           (event.target as HTMLInputElement).blur();
+          settled.current = false;
         }
       }}
       {...rest}

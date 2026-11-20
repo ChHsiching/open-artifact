@@ -250,6 +250,33 @@ editorSuite({
       } finally { await shell.close(); }
     });
 
+    it('readable links open an artboard on its page, or run it, and settle on the page link', T, async () => {
+      const { url } = await ctx.openNew('design-place-links', (_ctx, root) => {
+        copyFixture('design', root);
+        const index = canvasOf(root);
+        index.pages = [{ id: 'first', name: 'First page' }, { id: 'review', name: 'Review page' }];
+        index.boards['Main.dc.html'].page = 'review';
+        fs.writeFileSync(path.join(root, 'project/canvas.json'), JSON.stringify(index));
+      });
+      const browser = await ctx.browser();
+      const onPage = name => `document.querySelector('button[aria-label^="Pages:"]')?.innerText.includes(${JSON.stringify(name)})`;
+      const shell = await browser.load(url + '#artboard-main', { ready: onPage('Review page') });
+      try {
+        assert.ok(await shell.waitFor(onPage('Review page')), 'opened the artboard\'s page');
+        assert.ok(await shell.waitFor("window === top && location.hash === '#page=review'"), 'the address names the page');
+        assert.ok(await shell.waitFor(`document.querySelector('[data-board-title="Main.dc.html"] .text-accent')`), 'the artboard is selected');
+        assert.deepEqual(shell.problems, []);
+      } finally { await shell.close(); }
+      const playing = await browser.load(url + '#play-main-dc-html', { ready: onPage('Review page') });
+      try {
+        assert.ok(await playing.waitFor(buttonNamed('Stop playing')), 'the artboard runs on the canvas');
+      } finally { await playing.close(); }
+      const unknown = await browser.load(url + '#artboard-nowhere', { ready: onPage('First page') });
+      try {
+        assert.ok(await unknown.waitFor(onPage('First page')), 'an unknown name opens the canvas as usual');
+      } finally { await unknown.close(); }
+    });
+
     it('guest links open the global comment controls with the guest role', T, async () => {
       const root = tmpDir('design-guest-frame');
       copyFixture('design', root);
@@ -487,6 +514,143 @@ editorSuite({
         assert.equal(Object.keys(canvasOf(root).notes).length, 0);
         assert.deepEqual(page.problems, []);
       } finally { await page.close(); }
+    });
+
+    it('property fields: font search, Enter keeps focus, ⌘Z undoes; a linked element shows its link; menus fit a short window', T, async () => {
+      const { root, url } = await ctx.openNew('fields', (_ctx, root) => {
+        copyFixture('design', root);
+        const board = path.join(root, BOARD);
+        fs.writeFileSync(board, fs.readFileSync(board, 'utf8').replace('</p>', '</p><a href="https://example.com/docs?ref=1" style="font-size: 24px">Read the docs</a>'));
+      });
+      const page = await (await ctx.browser()).load(new URL('index.html', url).href, { ready: textIn('Smoke canvas'), settle: 800 });
+      const mod = { meta: process.platform === 'darwin', ctrl: process.platform !== 'darwin' };
+      const pointAt = selector => page.evaluate(`(() => {
+        const frame = document.querySelector('iframe[data-board="Main.dc.html"]');
+        const rect = frame.getBoundingClientRect();
+        const box = frame.contentDocument.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();
+        const zoom = rect.width / frame.offsetWidth;
+        return [rect.left + (box.left + box.width / 2) * zoom, rect.top + (box.top + box.height / 2) * zoom];
+      })()`);
+      const boardText = () => fs.readFileSync(path.join(root, BOARD), 'utf8');
+      try {
+        // A linked element shows a card with its address; an unlinked one shows none.
+        await page.hover(...await pointAt('a'));
+        assert.ok(await page.waitFor(`document.querySelector('[data-hover-link]')?.innerText.includes('example.com/docs')`), 'the link card shows');
+        assert.ok(await page.evaluate(`!!document.querySelector('[data-hover-link] [aria-label="Open https://example.com/docs?ref=1"]')`));
+        await page.hover(...await pointAt('p'));
+        assert.ok(await page.waitFor(`!document.querySelector('[data-hover-link]')`, 5000), 'the card goes once the pointer leaves the link');
+
+        await page.click(...await pointAt('h1'));
+        await clickOn(page, buttonNamed('Properties'));
+        assert.ok(await page.waitFor(buttonNamed('Font')), 'the properties panel shows the text fields');
+        await clickOn(page, buttonNamed('Font'));
+        assert.ok(await page.waitFor(`document.activeElement?.getAttribute('aria-label') === 'Search fonts'`));
+        await page.type('Helv');
+        assert.ok(await page.waitFor(`(() => { const shown = [...document.querySelectorAll('[role=option]')]; return shown.length === 1 && /helv/i.test(shown[0].textContent); })()`), 'the search narrows the list');
+        await page.press('Enter');
+        assert.ok(await until(() => /<h1 style=.[^>]*font-family:[^;>]*Helvetica Neue/.test(boardText()), 10000), 'the font searched for is saved');
+
+        const size = `document.querySelector('input[aria-label="Font size"]')`;
+        await clickOn(page, size);
+        await page.evaluate(`${size}.select()`);
+        await page.type('40');
+        await page.press('Enter');
+        assert.ok(await until(() => /<h1 style=.[^>]*font-size: 40px/.test(boardText()), 10000), 'Enter commits the size');
+        assert.ok(await page.waitFor(`document.activeElement === ${size}`), 'Enter keeps the field focused');
+        await page.press('z', mod);
+        assert.ok(await until(() => !/font-size: 40px/.test(boardText()), 10000), '⌘Z in the committed field undoes the edit');
+        assert.ok(await until(() => /font-family:[^;>]*Helvetica Neue/.test(boardText()), 2000), 'only the last edit is undone');
+
+        await page.press('Escape');
+        await page.cdp('Emulation.setDeviceMetricsOverride', { width: 1000, height: 273, deviceScaleFactor: 1, mobile: false });
+        await page.waitFor('innerHeight === 273');
+        const inBoard = await page.evaluate(`(() => {
+          const rect = document.querySelector('iframe[data-board="Main.dc.html"]').getBoundingClientRect();
+          const top = Math.max(rect.top, 0), bottom = Math.min(rect.bottom, innerHeight);
+          return [Math.max(rect.left, 0) + 40, (top + bottom) / 2];
+        })()`);
+        await page.rightClick(...inBoard);
+        const menu = `document.querySelector('[role=menu]')`;
+        assert.ok(await page.waitFor(menu));
+        const fit = await page.evaluate(`(() => { const el = ${menu}; return { bottom: el.getBoundingClientRect().bottom, top: el.getBoundingClientRect().top, overflow: getComputedStyle(el).overflowY, scrolls: el.scrollHeight > el.clientHeight }; })()`);
+        assert.ok(fit.top >= -1 && fit.bottom <= 274, JSON.stringify(fit));
+        assert.equal(fit.overflow, 'auto');
+        assert.ok(fit.scrolls, 'the long menu scrolls inside the short window');
+        await page.cdp('Emulation.clearDeviceMetricsOverride', {});
+        assert.deepEqual(page.problems, []);
+      } finally { await page.close(); }
+    });
+
+    it('an artboard link selects the artboard, and Shift+Cmd+C copies it as a PNG', T, async () => {
+      const { url } = await ctx.openNew('copy-png');
+      const editor = new URL('index.html', url);
+      const page = await (await ctx.browser()).load(editor.href + '#artboard-main', { ready: `document.querySelector('[data-board-title="Main.dc.html"] .text-accent')`, settle: 800 });
+      try {
+        assert.equal(await page.evaluate('location.hash'), '');
+        await page.cdp('Browser.grantPermissions', { origin: editor.origin, permissions: ['clipboardReadWrite', 'clipboardSanitizedWrite'] });
+        await page.press('c', { meta: process.platform === 'darwin', ctrl: process.platform !== 'darwin', shift: true });
+        assert.ok(await page.waitFor(textIn('Copied as PNG'), 20000), 'the copy finished');
+        const types = await page.evaluate('navigator.clipboard.read().then(items => items.flatMap(item => item.types))');
+        assert.deepEqual(types, ['image/png']);
+        assert.deepEqual(page.problems, []);
+      } finally {
+        await page.close();
+      }
+    });
+
+    it('without a Shell, the focused artboard has its own Export menu', T, async () => {
+      const { url } = await ctx.openNew('focused-export');
+      const browser = await ctx.browser();
+      // The host saves exports to the Downloads folder; a browser download lands there too.
+      const dir = ctx.downloads;
+      fs.mkdirSync(dir, { recursive: true });
+      await browser.downloadsTo(dir);
+      const pngs = () => fs.readdirSync(dir).filter(name => name.endsWith('.png'));
+      const before = pngs().length;
+      const page = await browser.load(new URL('index.html', url).href, { ready: textIn('Smoke canvas'), settle: 800 });
+      try {
+        await clickOn(page, `document.querySelector('[data-board-title="Main.dc.html"] button[aria-label="Focus"], [data-board-title="Main.dc.html"] button[aria-label="Play full screen"]')`, 'Focus');
+        assert.ok(await page.waitFor(buttonNamed('Back to canvas')), 'the focused view opened');
+        await clickOn(page, buttonNamed('Export'));
+        const item = `[...document.querySelectorAll('[role=menuitem]')].find(item => item.textContent.includes('Selected artboard, 1×') && item.getAttribute('aria-disabled') !== 'true')`;
+        assert.ok(await page.waitFor(item), 'the menu lists the PNG of this artboard');
+        await clickOn(page, item, 'PNG 1×');
+        assert.ok(await until(() => pngs().length > before, 30000), `no PNG saved: ${fs.readdirSync(dir)}`);
+        await clickOn(page, buttonNamed('Back to canvas'));
+        assert.ok(await page.waitFor(`!(${buttonNamed('Export')})`), 'the canvas has no Export menu');
+        assert.deepEqual(page.problems, []);
+      } finally {
+        await page.close();
+      }
+    });
+
+    it('where the browser keeps the clipboard from the framed editor, the Shell copies the PNG', T, async () => {
+      const { url } = await ctx.openNew('copy-png-shell');
+      const browser = await ctx.browser();
+      const shell = await browser.load(url + '#artboard-main', { ready: `document.querySelector('[data-board-title="Main.dc.html"] .text-accent')` });
+      const frame = `document.querySelector('iframe[name="open-artifact-shell"]')`;
+      try {
+        assert.ok(await shell.waitFor(`document.querySelector('[data-board-title="Main.dc.html"] .text-accent')`), 'the artboard is selected');
+        await shell.cdp('Browser.grantPermissions', { origin: new URL(url).origin, permissions: ['clipboardReadWrite', 'clipboardSanitizedWrite'] });
+        // Act like a browser that refuses framed pages whatever the frame's allow says.
+        await shell.evaluate(`(() => {
+          const win = ${frame}.contentWindow;
+          win.refused = 0;
+          const refuse = async () => { win.refused++; throw new win.DOMException('Write permission denied.', 'NotAllowedError'); };
+          win.navigator.clipboard.write = refuse;
+          win.navigator.clipboard.writeText = refuse;
+          win.focus();
+        })()`);
+        await shell.evaluate('navigator.clipboard.writeText("before")');
+        await shell.press('c', { meta: process.platform === 'darwin', ctrl: process.platform !== 'darwin', shift: true });
+        assert.ok(await shell.waitFor(textIn('Copied as PNG'), 20000), 'the copy finished');
+        assert.equal(await shell.evaluate(`${frame}.contentWindow.refused`), 1, 'the editor tried the clipboard itself first');
+        const types = await shell.evaluate('navigator.clipboard.read().then(items => items.flatMap(item => item.types))');
+        assert.deepEqual(types, ['image/png']);
+        const size = await shell.evaluate(`navigator.clipboard.read().then(items => items[0].getType('image/png')).then(blob => blob.size)`);
+        assert.ok(size > 1000, `a real image (${size} bytes)`);
+        assert.deepEqual(shell.problems, []);
+      } finally { await shell.close(); }
     });
 
     it('Pages → Add page writes the page to canvas.json', T, async () => {

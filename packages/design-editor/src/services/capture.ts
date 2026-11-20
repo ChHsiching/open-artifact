@@ -8,9 +8,11 @@
  */
 
 import { cssUrls, blobToDataUrl, elementSvg, foreignObjectSvg, loadSvgImage, maxCaptureScale, SVG_NS, type CaptureLimits } from '@open-artifact/export-kit';
+import { canWriteClipboard, writeClipboard } from '@open-artifact/editor-kit';
 import { toast } from '@open-artifact/ui';
 import { useView, type ElementSelection } from '../state/view.ts';
 import { frameOf } from './frames.ts';
+import { maybeSession } from './session.ts';
 
 export type CaptureFormat = 'png' | 'svg' | 'html';
 
@@ -27,9 +29,9 @@ export function canCaptureSelection(): boolean {
   return selection.kind === 'objects' && selection.boards.length === 1 && selection.notes.length === 0;
 }
 
-/** True when the browser can put the formats on the clipboard. */
+/** True when the formats can go on the clipboard (by the browser, or the Shell framing the editor). */
 export function canCopyAs(): boolean {
-  return typeof ClipboardItem !== 'undefined' && Boolean(navigator.clipboard?.write);
+  return canWriteClipboard(maybeSession()?.shell);
 }
 
 /**
@@ -543,28 +545,30 @@ export async function copyAs(format: CaptureFormat): Promise<void> {
     return;
   }
   busy = true;
+  // Start the clipboard write on the press; the content can finish later. Where
+  // the browser keeps the clipboard from the framed editor, the Shell writes it.
+  const content: Promise<Blob | string> = format === 'png' ? selectionPng(element)
+    : format === 'svg' ? captureSvg(element).then(({ svg }) => svg)
+      : captureHtml(element).then((html) => {
+        if (!html.trim()) throw new Error('The element is empty.');
+        if (html.length > MAX_HTML) throw new Error('The element is too large to copy as HTML.');
+        return html;
+      });
+  const as = (type: string): Promise<Blob> => {
+    const blob = content.then((value) => (value instanceof Blob ? value : new Blob([value], { type })));
+    blob.catch(() => undefined); // reported below, from `content`
+    return blob;
+  };
+  const items: Record<string, Promise<Blob>> = format === 'png' ? { 'image/png': as('image/png') }
+    : format === 'svg' ? { 'text/plain': as('text/plain'), ...(typeof ClipboardItem === 'undefined' || ClipboardItem.supports?.('image/svg+xml') ? { 'image/svg+xml': as('image/svg+xml') } : {}) }
+      : { 'text/html': as('text/html'), 'text/plain': as('text/plain') };
   try {
-    if (format === 'png') {
-      // Start the clipboard write in the click handler; the image can finish later.
-      await navigator.clipboard.write([new ClipboardItem({ 'image/png': selectionPng(element) })]);
-    } else if (format === 'svg') {
-      const { svg } = await captureSvg(element);
-      const items: Record<string, Blob> = { 'text/plain': new Blob([svg], { type: 'text/plain' }) };
-      if (ClipboardItem.supports?.('image/svg+xml')) items['image/svg+xml'] = new Blob([svg], { type: 'image/svg+xml' });
-      try {
-        await navigator.clipboard.write([new ClipboardItem(items)]);
-      } catch {
-        await navigator.clipboard.writeText(svg);
-      }
-    } else {
-      const html = await captureHtml(element);
-      if (!html.trim()) throw new Error('The element is empty.');
-      if (html.length > MAX_HTML) throw new Error('The element is too large to copy as HTML.');
-      await navigator.clipboard.write([new ClipboardItem({ 'text/html': new Blob([html], { type: 'text/html' }), 'text/plain': new Blob([html], { type: 'text/plain' }) })]);
-    }
+    await writeClipboard(items, maybeSession()?.shell);
     toast.add({ title: `Copied as ${format.toUpperCase()}` });
   } catch (error) {
-    toast.add({ title: `Couldn’t copy as ${format.toUpperCase()}`, description: error instanceof Error ? error.message : String(error) });
+    // Say what went wrong with the content, rather than how the clipboard took it.
+    const reason = await content.then(() => error, (failure: unknown) => failure);
+    toast.add({ title: `Couldn’t copy as ${format.toUpperCase()}`, description: reason instanceof Error ? reason.message : String(reason) });
   } finally {
     busy = false;
   }

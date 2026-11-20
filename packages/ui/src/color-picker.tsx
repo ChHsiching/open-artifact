@@ -306,10 +306,19 @@ export function ColorPickerPanel({
     commit(text(fixed));
   };
 
+  /** A color typed into the text field and not committed yet: shown in the picker only. */
+  const [typed, setTyped] = useState<Hsva | null>(null);
+  const previewText = (raw: string) => {
+    const trimmed = raw.trim();
+    const next = raw === shownText ? null : parseColor(/^[0-9a-f]{3,8}$/i.test(trimmed) ? `#${trimmed}` : trimmed);
+    setTyped(next ? rgbaToHsva(alpha ? next.rgba : { ...next.rgba, a: 1 }, hsva.h) : null);
+  };
+
   const pickText = (raw: string) => {
-    const typed = raw.trim();
-    if (!typed) return;
-    const hexless = /^[0-9a-f]{3,8}$/i.test(typed) ? `#${typed}` : typed;
+    setTyped(null);
+    const entered = raw.trim();
+    if (!entered) return;
+    const hexless = /^[0-9a-f]{3,8}$/i.test(entered) ? `#${entered}` : entered;
     const next = parseColor(hexless);
     if (next) {
       setHsva(rgbaToHsva(alpha ? next.rgba : { ...next.rgba, a: 1 }, hsva.h));
@@ -318,7 +327,7 @@ export function ColorPickerPanel({
       return;
     }
     // Other CSS colors (`var(--x)`, `color-mix()`) pass through when the browser reads them.
-    if (typeof CSS !== 'undefined' && CSS.supports('color', typed)) commit(typed);
+    if (typeof CSS !== 'undefined' && CSS.supports('color', entered)) commit(entered);
   };
 
   const pickSwatch = (swatch: { value: string; css?: string }) => {
@@ -333,7 +342,8 @@ export function ColorPickerPanel({
   };
 
   const dropper = typeof window !== 'undefined' && 'EyeDropper' in window ? (window as unknown as { EyeDropper: new () => EyeDropperLike }).EyeDropper : null;
-  const rgb = hsvaToRgba({ ...hsva, a: 1 });
+  const seen = typed ?? hsva;
+  const rgb = hsvaToRgba({ ...seen, a: 1 });
   const solid = formatColor(rgb, 'hex');
   const shownText = value !== null && !parsed ? value : text(hsva);
   const current = value ?? null;
@@ -349,12 +359,12 @@ export function ColorPickerPanel({
 
   return (
     <div className={cn('flex w-60 flex-col gap-3', className)}>
-      <ColorArea hsva={hsva} onDrag={drag} onSettle={settle} />
+      <ColorArea hsva={seen} onDrag={drag} onSettle={settle} />
       <ColorSlider
         label="Hue"
-        value={hsva.h / 360}
+        value={seen.h / 360}
         background="linear-gradient(to right, #f00 0%, #ff0 16.67%, #0f0 33.33%, #0ff 50%, #00f 66.67%, #f0f 83.33%, #f00 100%)"
-        thumb={`hsl(${hsva.h} 100% 50%)`}
+        thumb={`hsl(${seen.h} 100% 50%)`}
         valueText={`${Math.round(hsva.h)} degrees`}
         onDrag={(t) => drag({ ...hsva, h: Math.min(359.9, t * 360) })}
         onSettle={(t) => settle({ ...hsva, h: Math.min(359.9, t * 360) })}
@@ -362,9 +372,9 @@ export function ColorPickerPanel({
       {alpha ? (
         <ColorSlider
           label="Opacity"
-          value={hsva.a}
+          value={seen.a}
           background={`linear-gradient(to right, transparent, ${solid}), ${CHECKERBOARD}`}
-          thumb={formatColor({ ...rgb, a: hsva.a }, 'rgb')}
+          thumb={formatColor({ ...rgb, a: seen.a }, 'rgb')}
           valueText={`${Math.round(hsva.a * 100)}%`}
           onDrag={(t) => drag({ ...hsva, a: Math.round(t * 100) / 100 })}
           onSettle={(t) => settle({ ...hsva, a: Math.round(t * 100) / 100 })}
@@ -375,9 +385,9 @@ export function ColorPickerPanel({
         <span
           aria-hidden="true"
           className="size-7 shrink-0 rounded-control shadow-[inset_0_0_0_1px_rgb(0_0_0/0.12)]"
-          style={{ background: `linear-gradient(${formatColor(hsvaToRgba(hsva), 'rgb')}, ${formatColor(hsvaToRgba(hsva), 'rgb')}), ${CHECKERBOARD}` }}
+          style={{ background: `linear-gradient(${formatColor(hsvaToRgba(seen), 'rgb')}, ${formatColor(hsvaToRgba(seen), 'rgb')}), ${CHECKERBOARD}` }}
         />
-        <CommitInput aria-label="Color value" value={shownText} onCommit={pickText} spellCheck={false} className="font-mono text-[12px]" />
+        <CommitInput aria-label="Color value" value={shownText} onCommit={pickText} onDraftChange={previewText} spellCheck={false} className="font-mono text-[12px]" />
         {dropper ? (
           <button
             type="button"

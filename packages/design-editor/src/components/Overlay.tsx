@@ -21,6 +21,9 @@ import { askAgentToFix } from '../services/agent.ts';
 import { noteBounds } from '../lib/notes.ts';
 import type { Handle } from './Canvas.tsx';
 import { LayoutGuides } from './LayoutGuides.tsx';
+import { HoverLink } from './HoverLink.tsx';
+import { linkAround } from '../lib/hover-link.ts';
+import { templateOf } from '../services/agent.ts';
 import { SelectionBar } from './SelectionBar.tsx';
 import { useScale } from '../services/scale.ts';
 import { viewportSize } from '../services/viewport.ts';
@@ -130,6 +133,15 @@ export function Overlay({ boards, engine = false }: OverlayProps) {
     return elementBoxes(hover.board, [hover.tid], null, camera);
   }, [hover, selection, textEdit, camera, layoutTick, canvas]);
 
+  // A hovered element inside a link shows its address; a selected one carries it on the selection bar.
+  const hoverLink = useMemo(() => {
+    const box = hoverBoxes[0];
+    const source = hover ? sources[hover.board]?.source : undefined;
+    if (!hover || !box || source == null || playing) return null;
+    const href = linkAround(templateOf(source), hover.tid);
+    return href ? { href, left: box.left, top: box.top, height: box.height } : null;
+  }, [hover, hoverBoxes, sources, playing]);
+
   const objectBoxes = useMemo(() => {
     if (selection.kind !== 'objects') return [];
     const out: { key: string; box: Box; board?: string; note?: string }[] = [];
@@ -222,6 +234,7 @@ export function Overlay({ boards, engine = false }: OverlayProps) {
       {hoverBoxes.map((box, index) => (
         <div key={`h${index}`} className="absolute border border-accent/70" style={box} />
       ))}
+      <HoverLink link={hoverLink} />
       {selectedBoxes.map((box, index) => (
         <div key={`s${index}`} className={cn('absolute border-2', textEdit ? 'border-accent/40' : 'border-accent')} style={box} />
       ))}
