@@ -28,6 +28,7 @@ export {
   ZOOM_PRESETS,
   ZOOM_STEPS,
   ZOOM_STEP_EPSILON,
+  cameraLayerTransform,
   centerOn,
   panBy,
   sameCamera,
@@ -60,11 +61,6 @@ export function clampZoom(zoom: number, min = MIN_ZOOM, max = MAX_ZOOM): number 
 
 /** Board point → screen point. */
 export const boardToScreen: (camera: Camera, point: Point) => Point = worldToScreen;
-
-/** Match the canvas projection without rounding the DOM layers separately. */
-export function cameraLayerTransform({ x, y, zoom }: Camera): string {
-  return `translate3d(${-x * zoom}px, ${-y * zoom}px, 0) scale(${zoom})`;
-}
 
 /** Screen point → board point. */
 export const screenToBoard: (camera: Camera, point: Point) => Point = screenToWorld;

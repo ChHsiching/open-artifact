@@ -116,9 +116,12 @@ export function snapCameraOffset(offset: number, zoom: number, pixelRatio: numbe
   return Math.round(-offset * zoom * pixelRatio) / pixelRatio;
 }
 
-/** The CSS transform of a DOM layer that follows the camera. */
-export function cameraLayerTransform(camera: CameraState, pixelRatio: number): string {
-  return `translate(${snapCameraOffset(camera.x, camera.zoom, pixelRatio)}px, ${snapCameraOffset(camera.y, camera.zoom, pixelRatio)}px) scale(${camera.zoom})`;
+/**
+ * The CSS transform of a DOM layer that follows the camera. Unrounded, as the
+ * canvas draws, so DOM text seen through the canvas stays on its shapes.
+ */
+export function cameraLayerTransform({ x, y, zoom }: CameraState): string {
+  return `translate3d(${-x * zoom}px, ${-y * zoom}px, 0) scale(${zoom})`;
 }
 
 /** The zoom label, e.g. `100%`. */
