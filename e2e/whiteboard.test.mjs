@@ -380,6 +380,26 @@ describe('whiteboard', { skip: skipFor('whiteboard') }, () => {
     });
   });
 
+  // 2026-11-20: a board opened while its pane was still narrow kept that zoom once the pane widened, most of it off screen.
+  it('fits the board again when the view widens before anyone uses the page, and not after', { skip: noBrowser }, async () => {
+    const p = await browser.load('about:blank', { ready: 'true' });
+    try {
+      await p.cdp('Emulation.setDeviceMetricsOverride', { width: 420, height: 320, deviceScaleFactor: 1, mobile: false });
+      await p.cdp('Page.navigate', { url: url + '?open_artifact_bench=1' });
+      const zoom = 'window.__openArtifactWhiteboard?.state().camera.zoom';
+      assert.ok(await p.waitFor(`${zoom} > 0 && ${zoom} < 0.9`, 10000), 'fitted to the narrow view');
+      const narrow = await p.evaluate(zoom);
+      await p.cdp('Emulation.clearDeviceMetricsOverride');
+      assert.ok(await p.waitFor(`${zoom} > ${narrow} + 0.05`, 5000), `fitted again to the wide view, zoom ${await p.evaluate(zoom)}`);
+      const wide = await p.evaluate(zoom);
+      await p.press('Escape');
+      await p.cdp('Emulation.setDeviceMetricsOverride', { width: 420, height: 320, deviceScaleFactor: 1, mobile: false });
+      assert.ok(await p.waitFor('innerWidth === 420'));
+      await new Promise(resolve => setTimeout(resolve, 500));
+      assert.equal(await p.evaluate(zoom), wide, 'the view is the viewer\'s once they used the page');
+    } finally { await p.close(); }
+  });
+
   it('recovers after an interrupted load and restores pictures on request', { skip: noBrowser }, async () => {
     const p = await browser.load(url, { ready });
     try {
