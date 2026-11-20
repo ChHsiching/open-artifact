@@ -9,9 +9,6 @@
  * their outlines, arrows their heads and labels, pictures their frame and
  * tape; embeds and link cards become plain cards with their titles; the
  * shared timer is not drawn.
- *
- * The same painters draw element sprites for the canvas renderer
- * ({@link paintElementSprite}): text without bodies, and whole pictures.
  */
 
 import {
@@ -57,7 +54,6 @@ import {
   hasRoomForContainerTitle,
   htmlDocumentTitle,
   iconStickerOf,
-  escapeInlineMarkdown,
   imageCropNormalizedViewport,
   inkColorOnFill,
   isEmojiStickerArt,
@@ -247,8 +243,6 @@ interface PaintScope {
   backdrops: ReadonlyMap<string, string>;
   dark: boolean;
   palette: (typeof BOARD_THEME_COLORS)[ColorScheme];
-  /** Paint only text (sprites over bodies drawn elsewhere): no note paper, no shape body. */
-  textOnly?: boolean;
 }
 
 /** Paints an arrow: its line (knocked out under text it crosses), heads and label. */
@@ -342,17 +336,15 @@ function paintNote(scope: PaintScope, el: NoteElement, turn: number): void {
   ctx.rotate((el.tilt * Math.PI) / 180);
   const angle = ((el.tilt + turn) * Math.PI) / 180;
   ctx.translate(-w / 2, -h / 2);
-  if (!scope.textOnly) {
-    ctx.fillStyle = blockColorHex(el.color);
-    for (const shadow of NOTE_SHADOWS[options.scheme]) {
-      ctx.shadowColor = shadow.ink;
-      ctx.shadowBlur = shadow.blur * options.frame.scale;
-      ctx.shadowOffsetX = (shadow.x * Math.cos(angle) - shadow.y * Math.sin(angle)) * options.frame.scale;
-      ctx.shadowOffsetY = (shadow.x * Math.sin(angle) + shadow.y * Math.cos(angle)) * options.frame.scale;
-      ctx.fillRect(0, 0, w, h);
-    }
-    ctx.shadowColor = 'transparent';
+  ctx.fillStyle = blockColorHex(el.color);
+  for (const shadow of NOTE_SHADOWS[options.scheme]) {
+    ctx.shadowColor = shadow.ink;
+    ctx.shadowBlur = shadow.blur * options.frame.scale;
+    ctx.shadowOffsetX = (shadow.x * Math.cos(angle) - shadow.y * Math.sin(angle)) * options.frame.scale;
+    ctx.shadowOffsetY = (shadow.x * Math.sin(angle) + shadow.y * Math.cos(angle)) * options.frame.scale;
+    ctx.fillRect(0, 0, w, h);
   }
+  ctx.shadowColor = 'transparent';
   if (showAuthor && el.author !== undefined) {
     ctx.save();
     ctx.fillStyle = contrastTextColorOn(el.color);
@@ -405,7 +397,7 @@ function paintShapeBody(scope: PaintScope, el: ShapeElement, fill: string): void
 function paintShape(scope: PaintScope, el: ShapeElement): void {
   const { ctx, options } = scope;
   const fill = shapeFillColor(el);
-  if (!scope.textOnly) paintShapeBody(scope, el, fill);
+  paintShapeBody(scope, el, fill);
   if (!el.text) return;
   const insets = shapeTextInsets(el.kind, el.w, el.h);
   const box = {
@@ -427,20 +419,18 @@ function paintShape(scope: PaintScope, el: ShapeElement): void {
   ctx.restore();
 }
 
-/** Paints free text in the ink that reads on whatever is behind it (a placeholder only on screen, faint). */
+/** Paints free text in the ink that reads on whatever is behind it (a placeholder shows only on screen). */
 function paintText(scope: PaintScope, el: TextElement): void {
   const { ctx, options, backdrops } = scope;
-  const hinted = showsTextPlaceholder(el);
-  if (hinted && !scope.textOnly) return;
+  if (showsTextPlaceholder(el)) return;
   const backdrop = backdrops.get(el.id);
   const look: TextLook = {
     ...TEXT_SIZE_STYLES[el.size],
     ink: inkColorOnFill(el.color, backdrop, options.scheme),
     chip: backdrop !== undefined ? chipColorOn(backdrop) : defaultChipColor(options.scheme),
   };
-  const lines = layoutRasterTextLines(ctx, hinted ? escapeInlineMarkdown(el.placeholder) : el.text, look, el.wrap ?? Infinity, textAlignOf(el));
+  const lines = layoutRasterTextLines(ctx, el.text, look, el.wrap ?? Infinity, textAlignOf(el));
   ctx.save();
-  if (hinted) ctx.globalAlpha = backdrop !== undefined ? 0.7 : 0.6;
   drawRasterTextLines(ctx, lines, look, el.x, el.y, look.px * TEXT_LINE_HEIGHT, {
     side: textAlignOf(el),
     w: el.wrap ?? Math.max(0, ...lines.map((line) => line.w)),
@@ -706,18 +696,18 @@ function paintElement(scope: PaintScope, el: BoardElement, turn: number): void {
   }
 }
 
-/** Paints a section's title above it at a title scale, on a halo of paper. */
 /**
  * Where a section title is drawn, in board units: its scale, how far the
  * bottom of its line sits above the section, and how far its text starts
  * from the section's left edge.
  */
-export interface SectionTitleSpot {
+interface SectionTitleSpot {
   scale: number;
   gap: number;
   inset: number;
 }
 
+/** Paints a section's title above it at a title scale, on a halo of paper. */
 function paintSectionTitle(scope: PaintScope, el: ContainerElement, spot: SectionTitleSpot): void {
   const { ctx, options, palette } = scope;
   const { scale, gap, inset } = spot;
@@ -749,77 +739,6 @@ function paintSectionTitles(scope: PaintScope): void {
     if (el.type !== 'container' || el.text.trim() === '' || !hasRoomForContainerTitle(el, 1)) continue;
     const scale = containerTitleScaleForZoom(1);
     paintSectionTitle(scope, el, { scale, gap: CONTAINER_TITLE_GAP * scale, inset: CONTAINER_TITLE_PADDING_X * scale });
-  }
-}
-
-/** What an element sprite is painted from (see {@link paintElementSprite}). */
-export interface SpritePaint {
-  scheme: ColorScheme;
-  measures: ElementMeasures;
-  /** The shown elements, for arrow ends and label placement. */
-  byId: ElementsById;
-  /** Fills behind free text, by text id. */
-  backdrops: ReadonlyMap<string, string>;
-  /** Loaded pictures by source. */
-  images: ReadonlyMap<string, HTMLImageElement>;
-  /** The source each image element draws, by element id. */
-  imageSources: ReadonlyMap<string, string>;
-  /** Sticker art: rendered icons by lucide icon name, Noto emoji by `emojiArtKey`. */
-  icons: ReadonlyMap<string, HTMLImageElement>;
-  showAuthors: boolean;
-  faceName(personId: string): string | undefined;
-  /** Device pixels per board unit of the sprite (shadow offsets and blurs are in pixels). */
-  scale: number;
-  /** Where a section's title is drawn; without it a section paints no title. */
-  title?: SectionTitleSpot;
-}
-
-/**
- * Paints the sprite of one element, unrotated and untilted, in board units
- * (the caller maps its sprite box onto the canvas): the text of notes,
- * shapes and free text without their bodies, an arrow's label, a section's
- * title, and the whole picture of images, stickers, link cards, tables and
- * embed cards. The canvas renderer draws everything else itself.
- */
-export function paintElementSprite(ctx: Ctx, el: BoardElement, paint: SpritePaint): void {
-  const scope: PaintScope = {
-    ctx,
-    options: {
-      elements: [],
-      title: '',
-      measures: paint.measures,
-      // Sticker rims are stamped this far off and shadowed back: well clear of a sprite.
-      frame: { board: { x: 0, y: 0, w: 4 * MAX_ELEMENT_SIZE, h: 0 }, width: 0, height: 0, scale: paint.scale, titleBar: 0 },
-      scheme: paint.scheme,
-      images: paint.images,
-      imageSources: paint.imageSources,
-      icons: paint.icons,
-      showAuthors: paint.showAuthors,
-      faceName: paint.faceName,
-    },
-    byId: paint.byId,
-    backdrops: paint.backdrops,
-    dark: paint.scheme === 'dark',
-    palette: BOARD_THEME_COLORS[paint.scheme],
-    textOnly: true,
-  };
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-  switch (el.type) {
-    case 'note':
-      return paintNote(scope, { ...el, tilt: 0 }, 0);
-    case 'arrow': {
-      const line = measuredArrowGeometry(el, paint.byId, paint.measures);
-      if (line) paintArrowLabel(scope, el, line, arrowHeads(el));
-      return;
-    }
-    case 'container':
-      return paint.title ? paintSectionTitle(scope, el, paint.title) : undefined;
-    case 'stroke':
-    case 'timer':
-      return;
-    default:
-      return paintElement(scope, el, 0);
   }
 }
 

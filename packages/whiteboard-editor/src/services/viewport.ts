@@ -158,8 +158,6 @@ export interface ViewportGestureOptions {
   /** Called when a two-finger gesture starts (cancel any one-finger gesture in progress). */
   onGestureStart?(): void;
   onGestureEnd?(): void;
-  /** True for wheel events handled elsewhere (the canvas engine's own wheel pan and zoom). */
-  skipWheel?(event: WheelEvent): boolean;
 }
 
 /**
@@ -176,7 +174,6 @@ export function attachViewportGestures(options: ViewportGestureOptions): () => v
   };
 
   const onWheel = (event: WheelEvent): void => {
-    if (options.skipWheel?.(event)) return;
     const decision = wheel.decide(event.timeStamp, event.ctrlKey || event.metaKey, event.deltaX !== 0 || event.deltaY !== 0, () => scrollsNatively(event.target, element));
     if (decision === 'native') return;
     event.preventDefault();

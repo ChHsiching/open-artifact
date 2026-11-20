@@ -8,7 +8,7 @@
 import { surfaceRef } from '../canvas/BoardSurface.tsx';
 import { startCollab } from '../collab/index.ts';
 import { followColorScheme } from '../state/theme.ts';
-import { installBenchHook } from '../engine/bench.ts';
+import { installBenchHook } from './bench.ts';
 import { installHover } from '../tools/index.ts';
 import { watchAgent } from './agent.ts';
 import { announce } from './announce.ts';

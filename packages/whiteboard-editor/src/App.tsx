@@ -6,9 +6,7 @@
  * .wb-root
  *   BoardContextMenu                 right-click / long-press menus
  *     BoardSurface
- *       camera layer (board units)   ElementsLayer, UploadPlaceholders, CollabBoardLayer
- *       engine canvas                the board, when the canvas engine runs
- *       live layer (board units)     LiveElements and the rest, above the canvas
+ *       camera layer (board units)   ElementsLayer, UploadPlaceholders, CollabBoardLayer, NextItemOffer
  *       overlay (screen units)       SelectionOverlay, CollabOverlay
  *   TimerEndGlow, BoardPill, BoardFoot, SelectionBar, LinkCard, CollabChrome, FindBar,
  *   VersionHistory                   the history panel and a past version's preview
@@ -20,7 +18,7 @@ import { EmptyState } from '@open-artifact/ui';
 import { LoaderCircle, TriangleAlert } from 'lucide-react';
 import { BoardSurface } from './canvas/BoardSurface.tsx';
 import { CollabBoardLayer, CollabChrome, CollabOverlay, UploadPlaceholders } from './collab/index.ts';
-import { ElementsLayer, LiveElements } from './elements/ElementsLayer.tsx';
+import { ElementsLayer } from './elements/ElementsLayer.tsx';
 import { FindBar } from './find/FindBar.tsx';
 import { NextItemOffer } from './selection/NextItemOffer.tsx';
 import { SelectionOverlay } from './selection/SelectionOverlay.tsx';
@@ -112,7 +110,6 @@ export function App() {
             ) : null
           }
           elements={<ElementsLayer />}
-          live={<LiveElements />}
         >
           {ready ? <UploadPlaceholders /> : null}
           {ready ? <CollabBoardLayer /> : null}

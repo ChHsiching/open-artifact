@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 import { useBoard } from '../state/board.ts';
-import { engineRequested, useEngineView } from '../engine/mode.ts';
 
 export const useBoardRecovery = create(() => ({ paused: false }));
 const SETTLE_MS = 5000;
@@ -24,7 +23,6 @@ function guard(storage: Storage, key: string, retry: boolean, release: () => voi
   if (paused && !retry) {
     sessionStorage.setItem(key + ':paused', '1');
     useBoardRecovery.setState({ paused: true });
-    useEngineView.setState({ status: 'off' });
   }
   storage.setItem(key, '1');
   finishGuard = clear;
@@ -65,6 +63,5 @@ export async function showBoardMedia(): Promise<void> {
   finishGuard?.();
   try { sessionStorage.removeItem(marker() + ':paused'); } catch { /* Storage can be disabled. */ }
   await prepareBoardLoad(true);
-  if (engineRequested()) useEngineView.setState({ status: 'starting' });
   useBoardRecovery.setState({ paused: false });
 }

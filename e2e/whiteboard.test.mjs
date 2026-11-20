@@ -66,7 +66,7 @@ describe('whiteboard', { skip: skipFor('whiteboard') }, () => {
     assert.deepEqual(Buffer.from(await part.arrayBuffer()), bytes.subarray(0, 8));
   });
 
-  it('keeps text aligned with live elements throughout a canvas pan', { skip: noBrowser }, async () => {
+  it('keeps board text visible and on whole device pixels throughout a pan', { skip: noBrowser }, async () => {
     const entry = new URL(url);
     entry.searchParams.set('open_artifact_bench', '1');
     const p = await browser.load(entry.href, { ready });
@@ -74,53 +74,45 @@ describe('whiteboard', { skip: skipFor('whiteboard') }, () => {
       await p.cdp('Emulation.setDeviceMetricsOverride', { width: 1200, height: 800, deviceScaleFactor: 2, mobile: false });
       await p.evaluate('window.__openArtifactWhiteboard.setCamera({ x: -100, y: -100, zoom: 0.6 })');
       assert.ok(await p.waitFor(`(() => {
-        const layer = document.querySelector('.wb-layer');
-        const transform = new DOMMatrixReadOnly(getComputedStyle(layer).transform);
-        return transform.a === 0.6 && transform.e === 60 && transform.f === 60 &&
-          !window.__openArtifactWhiteboard.state().moving;
+        const transform = new DOMMatrixReadOnly(getComputedStyle(document.querySelector('.wb-layer')).transform);
+        return transform.a === 0.6 && transform.e === 60 && transform.f === 60;
       })()`), 'the requested camera has been painted');
       const readPositions = `(() => {
-        const text = document.querySelector('.wb-layer:not(.wb-live-layer) #wb-plain');
-        const live = document.querySelector('.wb-live-layer #wb-card');
-        if (!text || !live) return null;
+        const text = document.querySelector('.wb-layer #wb-plain');
+        const card = document.querySelector('.wb-layer #wb-card');
+        if (!text || !card) return null;
         const a = text.getBoundingClientRect();
-        const b = live.getBoundingClientRect();
-        const holes = window.__openArtifactWhiteboard?.state().stats?.holes;
-        return { x: a.x, y: a.y, liveX: b.x, liveY: b.y, holes, visibility: getComputedStyle(text).visibility };
+        const b = card.getBoundingClientRect();
+        const t = new DOMMatrixReadOnly(getComputedStyle(document.querySelector('.wb-layer')).transform);
+        return { x: a.x, y: a.y, cardX: b.x, cardY: b.y, e: t.e, f: t.f, visibility: getComputedStyle(text).visibility };
       })()`;
-      assert.ok(await p.waitFor(`(${readPositions})?.holes > 0`, 3000), 'the canvas shows DOM text through its holes before panning');
       const initial = await p.evaluate(readPositions);
       const start = await p.evaluate(`(() => {
-        const r = document.querySelector('[data-testid="board-canvas"]').getBoundingClientRect();
+        const r = document.querySelector('[data-testid="board-surface"]').getBoundingClientRect();
         return { x: r.left + 850, y: r.top + 450 };
       })()`);
+      const onDevicePixel = (v) => Math.abs(v * 2 - Math.round(v * 2)) < 1e-6;
       await p.cdp('Input.dispatchMouseEvent', { ...start, type: 'mousePressed', button: 'middle', buttons: 4, clickCount: 1 });
       const steps = [[40.18, 16.32], [40.42, 16.38], [40.7, 16.42], [56.95, 30.7]];
-      for (const [dx, dy] of steps) {
+      for (const [i, [dx, dy]] of steps.entries()) {
+        // 2026-11-20: Chrome can drop the capture while the button is still down, which ended the pan.
+        if (i === 2) await p.evaluate(`document.querySelector('[data-testid="board-surface"]').dispatchEvent(new PointerEvent('lostpointercapture', { pointerId: 1, pointerType: 'mouse', buttons: 4 }))`);
         await p.cdp('Input.dispatchMouseEvent', { type: 'mouseMoved', x: start.x + dx, y: start.y + dy, buttons: 4 });
         assert.ok(await p.waitFor(`(() => {
           const current = ${readPositions};
-          return document.querySelector('[data-wb-moving]') &&
-            Math.abs(current?.liveX - ${initial.liveX + dx}) < 0.04 &&
-            Math.abs(current?.liveY - ${initial.liveY + dy}) < 0.04;
-        })()`, 3000), 'the live layer follows the fractional pointer position');
+          return Math.abs(current?.x - ${initial.x + dx}) <= 0.26 && Math.abs(current?.y - ${initial.y + dy}) <= 0.26;
+        })()`, 3000), 'the text follows the pointer to within half a device pixel');
         const current = await p.evaluate(readPositions);
-        assert.equal(current?.visibility, 'visible', 'ordinary text stays visible while the camera moves');
-        assert.equal(current.holes, initial.holes, 'the canvas keeps its text holes open while panning');
-        assert.ok(Math.abs((current.x - current.liveX) - (initial.x - initial.liveX)) <= 0.01, 'horizontal spacing stays fixed');
-        assert.ok(Math.abs((current.y - current.liveY) - (initial.y - initial.liveY)) <= 0.01, 'vertical spacing stays fixed');
-        assert.ok(Math.abs(current.x - initial.x - dx) < 0.04, 'text follows fractional horizontal motion');
-        assert.ok(Math.abs(current.y - initial.y - dy) < 0.04, 'text follows fractional vertical motion');
+        assert.equal(current.visibility, 'visible', 'text stays visible while the camera moves');
+        assert.ok(onDevicePixel(current.e) && onDevicePixel(current.f), 'the camera layer sits on whole device pixels');
+        assert.ok(Math.abs((current.x - current.cardX) - (initial.x - initial.cardX)) <= 0.01, 'horizontal spacing stays fixed');
+        assert.ok(Math.abs((current.y - current.cardY) - (initial.y - initial.cardY)) <= 0.01, 'vertical spacing stays fixed');
       }
       const end = await p.evaluate(readPositions);
       const [endX, endY] = steps.at(-1);
       await p.cdp('Input.dispatchMouseEvent', { type: 'mouseReleased', x: start.x + endX, y: start.y + endY, button: 'middle', buttons: 0, clickCount: 1 });
-      assert.ok(await p.waitFor("!document.querySelector('[data-wb-moving]')"));
+      await new Promise((resolve) => setTimeout(resolve, 100));
       assert.deepEqual(await p.evaluate(readPositions), end, 'the text stays in place when the pan ends');
-      await p.cdp('Input.dispatchMouseEvent', { ...start, type: 'mouseWheel', deltaX: 0, deltaY: -8, modifiers: 2 });
-      assert.ok(await p.waitFor(`document.querySelector('[data-wb-moving]') &&
-        window.__openArtifactWhiteboard.state().camera.zoom > 0.6`, 3000));
-      assert.equal((await p.evaluate(readPositions)).holes, initial.holes, 'zooming at a readable scale also keeps DOM text painted');
       assert.deepEqual(p.problems, []);
     } finally { await p.close(); }
   });
@@ -136,8 +128,7 @@ describe('whiteboard', { skip: skipFor('whiteboard') }, () => {
         if (!element) return null;
         const box = element.getBoundingClientRect();
         return { x: box.x, y: box.y, w: box.width, h: box.height,
-          text: element.querySelector('.wb-shape-text')?.textContent,
-          holes: window.__openArtifactWhiteboard.state().stats?.holes };
+          text: element.querySelector('.wb-shape-text')?.textContent };
       })()`;
       const ink = async ({ x, y, w, h }) => {
         const { data } = await p.cdp('Page.captureScreenshot', {
@@ -159,7 +150,7 @@ describe('whiteboard', { skip: skipFor('whiteboard') }, () => {
         })()`);
       };
       const pointer = (type, x, y, buttons) => p.cdp('Input.dispatchMouseEvent', { type, x, y, button: 'left', buttons, clickCount: 1 });
-      assert.ok(await p.waitFor(`(${readCard})?.holes > 0`));
+      assert.ok(await p.waitFor(`(${readCard})?.text`));
       const initial = await p.evaluate(readCard);
       const initialInk = await ink(initial);
       assert.ok(initialInk > 100, 'the text is present in the composed pixels');
@@ -202,35 +193,30 @@ describe('whiteboard', { skip: skipFor('whiteboard') }, () => {
     } finally { await p.close(); }
   });
 
-  for (const renderer of ['canvas', 'DOM']) {
-    it(`edits a non-first cell, saves it, and reopens it with the ${renderer} renderer`, { skip: noBrowser }, async () => {
-      const entry = new URL(url);
-      if (renderer === 'DOM') entry.searchParams.set('open_artifact_engine', 'off');
-      const p = await browser.load(entry.href, { ready });
-      try {
-        assert.ok(await p.waitFor(`document.querySelector('${cell}')`));
-        if (renderer === 'canvas') assert.ok(await p.waitFor("document.querySelector('[data-wb-engine=on]')"));
-        assert.equal(await p.evaluate("document.querySelector('#wb-card a').href"), webCardHref);
-        assert.ok(await p.waitFor("document.querySelector('#wb-picture img')?.naturalWidth === 2"));
-        const point = await p.evaluate(`(() => { const r = document.querySelector('${cell}').getBoundingClientRect(); return [r.x + r.width/2, r.y + r.height/2]; })()`);
-        await p.clickTimes(...point, 2);
-        assert.ok(await p.waitFor(`document.querySelector('${cell} [contenteditable=true]')`, 3000), 'editor opens inside the clicked cell');
-        await p.type(renderer);
-        await p.press('Escape');
-        const saved = () => JSON.parse(fs.readFileSync(path.join(root, 'db/elements/table1.json'))).rows.r2;
-        assert.ok(await until(() => saved().c2.includes(renderer)));
-        assert.equal(saved().c1, 'A');
-        await p.cdp('Page.reload', {});
-        assert.ok(await p.waitFor(`document.querySelector('${cell}')?.innerText.includes('${renderer}')`));
-        assert.deepEqual(p.problems, []);
-      } finally { await p.close(); }
-    });
-  }
+  it('edits a non-first cell, saves it, and reopens it', { skip: noBrowser }, async () => {
+    const p = await browser.load(url, { ready });
+    try {
+      assert.ok(await p.waitFor(`document.querySelector('${cell}')`));
+      assert.equal(await p.evaluate("document.querySelector('#wb-card a').href"), webCardHref);
+      assert.ok(await p.waitFor("document.querySelector('#wb-picture img')?.naturalWidth === 2"));
+      const point = await p.evaluate(`(() => { const r = document.querySelector('${cell}').getBoundingClientRect(); return [r.x + r.width/2, r.y + r.height/2]; })()`);
+      await p.clickTimes(...point, 2);
+      assert.ok(await p.waitFor(`document.querySelector('${cell} [contenteditable=true]')`, 3000), 'editor opens inside the clicked cell');
+      await p.type('Edited');
+      await p.press('Escape');
+      const saved = () => JSON.parse(fs.readFileSync(path.join(root, 'db/elements/table1.json'))).rows.r2;
+      assert.ok(await until(() => saved().c2.includes('Edited')));
+      assert.equal(saved().c1, 'A');
+      await p.cdp('Page.reload', {});
+      assert.ok(await p.waitFor(`document.querySelector('${cell}')?.innerText.includes('Edited')`));
+      assert.deepEqual(p.problems, []);
+    } finally { await p.close(); }
+  });
 
   it('plays and pauses an imported video from the canvas', { skip: noBrowser }, async () => {
     const p = await browser.load(url, { ready });
     try {
-      assert.ok(await p.waitFor("document.querySelector('.wb-live-layer #wb-overlay')"));
+      assert.ok(await p.waitFor("document.querySelector('.wb-layer #wb-overlay')"));
       const top = await p.evaluate(`(() => {
         const r = document.querySelector('#wb-overlay').getBoundingClientRect();
         return document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)?.closest('[data-wb-id]')?.dataset.wbId;
@@ -641,10 +627,7 @@ describe('whiteboard', { skip: skipFor('whiteboard') }, () => {
     const centre = sel => `(() => { const r = document.querySelector('${sel}').getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()`;
     const region = "document.activeElement?.closest('[data-wb-region]')?.dataset.wbRegion";
     const { url: boardUrl } = await run.json(['open', board, '--type', 'whiteboard', '--json']);
-    // The DOM renderer, so the picture and its crop handles are elements to find.
-    const entry = new URL(boardUrl);
-    entry.searchParams.set('open_artifact_engine', 'off');
-    const p = await browser.load(entry.href, { ready });
+    const p = await browser.load(boardUrl, { ready });
     const f6 = async (shift = false) => {
       for (const type of ['rawKeyDown', 'keyUp']) await p.cdp('Input.dispatchKeyEvent', { type, key: 'F6', code: 'F6', windowsVirtualKeyCode: 117, modifiers: shift ? 8 : 0 });
     };
@@ -725,9 +708,7 @@ describe('whiteboard', { skip: skipFor('whiteboard') }, () => {
     fs.writeFileSync(path.join(board, 'db/board/meta.json'), JSON.stringify({ v: 1, title: 'Looks', order: Object.keys(elements) }));
     for (const [id, el] of Object.entries(elements)) fs.writeFileSync(path.join(board, 'db/elements', id + '.json'), JSON.stringify(el));
     const { url: boardUrl } = await run.json(['open', board, '--type', 'whiteboard', '--json']);
-    const entry = new URL(boardUrl);
-    entry.searchParams.set('open_artifact_engine', 'off');
-    const p = await browser.load(entry.href, { ready });
+    const p = await browser.load(boardUrl, { ready });
     const img = id => `document.querySelector('#wb-${id} img')`;
     try {
       assert.ok(await p.waitFor(`${img('wash')}?.src.startsWith('blob:') && ${img('wash')}.naturalWidth > 0`, 15000), 'the watercolor look is painted');

@@ -13,12 +13,6 @@
  * (unmounting it would drop the pointer capture and cancel the gesture), so
  * handles that should not show during a transform are hidden with CSS via
  * the root's `data-transform`.
- *
- * With the canvas engine on, the canvas draws the outline of each selected
- * item (and the resize handles of a lone note, shape, section or picture),
- * so the overlay leaves out the hairlines, a lone item's frame border and
- * those handles; the rest (turn handle, side dots, arrow handles, crop, the
- * board tools' rubber band and guides) stays here.
  */
 
 import { useEffect, useMemo, useRef, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
@@ -49,7 +43,6 @@ import {
   type ArrowSide,
   type BoardElement,
   type Box,
-  type ContainerElement,
   type ColorScheme,
   type CropHandle,
   type ElementId,
@@ -62,8 +55,6 @@ import {
 import { elementInkColor, paperTextColor } from '../export/look.ts';
 import type { Camera, Point } from '../lib/camera.ts';
 import { screenToBoard } from '../lib/camera.ts';
-import { useEngineView } from '../engine/mode.ts';
-import { SectionTitleHint } from '../elements/BlockViews.tsx';
 import { useSectionHover } from '../tools/hover.ts';
 import { canEditBoard } from '../services/actions.ts';
 import { announce, notify } from '../services/announce.ts';
@@ -657,7 +648,6 @@ export function SelectionOverlay(): ReactNode {
   const ink = useInteraction((state) => state.ink);
   const scheme = useColorScheme();
   const coarse = useCoarsePointer();
-  const engineOn = useEngineView((state) => state.status === 'on');
 
   // Crop mode ends when the image is no longer the selection.
   useEffect(() => {
@@ -699,9 +689,6 @@ export function SelectionOverlay(): ReactNode {
   const lone = boxes.length === 1 && selected.length === 1 ? boxes[0] : undefined;
   const loneArrow = selected.length === 1 && lines.length === 1 ? lines[0] : undefined;
   const croppingImage = cropping !== null && lone?.id === cropping && lone.type === 'image' ? lone : undefined;
-  // The engine outlines a lone item it draws (not one typed in, cropped or always live).
-  const engineLive = useEngineView((state) => state.live);
-  const engineFrames = engineOn && lone !== undefined && editing?.id !== lone.id && croppingImage === undefined && !engineLive.includes(lone.id);
 
   // Leg handles of a lone arrow. While an arrow handle is dragged they stay
   // as they were when it started (hidden), so the pressed one keeps its
@@ -777,8 +764,6 @@ export function SelectionOverlay(): ReactNode {
     return next && !wouldExceedElementLimit(content) ? { next } : undefined;
   }, [offering, dotOwner, dotHover, elements, measures, content]);
 
-  // “Add a title” over an untitled section the engine draws. A live view above the canvas shows its own; a
-  // view under the canvas has no hole for an untitled title (it may be there only for a neighbour's text).
   const sectionHoverId = useSectionHover((state) => state.id);
   const commenting = useTool((state) => state.commentMode);
   // The section under the pointer (not picked, not locked, not being edited) glows in the accent.
@@ -790,16 +775,10 @@ export function SelectionOverlay(): ReactNode {
       : undefined;
   const glowBox = glow ? elementLayoutBox(glow, measures) : undefined;
   const section = glow && glowBox ? { box: glowBox, turn: elementTurn(glow) } : undefined;
-  const askingId = lone?.type === 'container' ? lone.id : (sectionHoverId ?? hoverId);
-  const asking = askingId !== null && askingId !== undefined ? byId.get(askingId) : undefined;
-  // The canvas draws a titled section's title itself; over it, the glowing one is drawn again in the accent.
-  const hintFor = (candidate: BoardElement | undefined): ContainerElement | undefined =>
-    engineOn && editable && selecting && !commenting && candidate?.type === 'container' && editing?.id !== candidate.id && !engineLive.includes(candidate.id) ? candidate : undefined;
-  const titleHint = glow ? hintFor(glow) : asking?.type === 'container' && asking.text.trim() === '' ? hintFor(asking) : undefined;
 
   const arrowLines = lines.map(({ arrow, line }) => ({ id: arrow.id, d: polylinePath(arrowPoints(line)) }));
-  // A lone note's ring leans with its tilt (the engine's outline already does).
-  const ringTurn = frame ? frame.turn + (lone?.type === 'note' && !engineFrames ? lone.tilt : 0) : 0;
+  // A lone note's ring leans with its tilt.
+  const ringTurn = frame ? frame.turn + (lone?.type === 'note' ? lone.tilt : 0) : 0;
   const screen = frame ? screenFrame(camera, frame.box, ringTurn) : undefined;
 
   return (
@@ -812,7 +791,7 @@ export function SelectionOverlay(): ReactNode {
         hover={hover}
         section={section}
         connect={connect}
-        hairlines={engineOn ? [] : hairlines}
+        hairlines={hairlines}
         groups={groups}
         arrowLines={typing ? [] : arrowLines}
         draft={draft}
@@ -820,7 +799,7 @@ export function SelectionOverlay(): ReactNode {
         offer={offer}
       />
       {screen && croppingImage === undefined && !titling ? (
-        <div className="wb-sel-frame" data-engine={engineFrames || undefined} data-locked={locked || undefined} data-thin={typing || undefined} data-sides={handles.length === 2 || undefined} style={frameStyle(screen)}>
+        <div className="wb-sel-frame" data-locked={locked || undefined} data-thin={typing || undefined} data-sides={handles.length === 2 || undefined} style={frameStyle(screen)}>
           <FrameHandles handles={handles} turnable={turnable} turn={screen.turn} dots={dotChoices} dotsFor={dotsFor} turning={turning} />
         </div>
       ) : null}
@@ -834,7 +813,6 @@ export function SelectionOverlay(): ReactNode {
           editable={editable && selecting && !isElementLocked(loneArrow.arrow)}
         />
       ) : null}
-      {titleHint ? <SectionTitleHint element={titleHint} zoom={camera.zoom} at={screenPoint(camera, titleHint.x, titleHint.y)} glowing={titleHint.id === glow?.id} /> : null}
       {hoverDots ? <HoverDots element={hoverDots} dots={hoverDotChoices} camera={camera} measures={measures} /> : null}
       {croppingImage ? <CropFrame image={croppingImage} camera={camera} /> : null}
     </div>
