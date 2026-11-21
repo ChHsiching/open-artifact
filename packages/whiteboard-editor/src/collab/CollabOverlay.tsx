@@ -1,7 +1,6 @@
 /**
  * Collaboration drawings in screen units, above the board: the labels of
- * the agent's claims, its cursor while it draws (the build show), other
- * people's cursors (and edge marks), comment
+ * the agent's claims, other people's cursors (and edge marks), comment
  * pins and cards, the corner grip of an area being asked or commented
  * about, the idea mark and this viewer's cursor chat line.
  *
@@ -13,7 +12,6 @@ import { CLAIM_FADE_MS } from '@open-artifact/whiteboard-core';
 import { boardToScreen } from '../lib/camera.ts';
 import { useCamera } from '../state/camera.ts';
 import { AreaGrips } from './AreaGrip.tsx';
-import { BuildLayer } from './BuildLayer.tsx';
 import { CommentPins } from './CommentPins.tsx';
 import { CursorChatBox } from './CursorChatBox.tsx';
 import { useClaimViews, useFading } from './hooks.ts';
@@ -51,7 +49,6 @@ export function CollabOverlay() {
     <div className="wb-collab-overlay">
       <ClaimLabels />
       <PeerCursors />
-      <BuildLayer />
       <AreaGrips />
       <CommentPins />
       <IdeaMark />

@@ -1,6 +1,7 @@
 /**
  * Tests of how requests to the agent move through their statuses, and of
- * the words shown while the agent works (activity labels, working words).
+ * the words shown while the agent works (activity labels, working words,
+ * the stagger of new elements).
  */
 
 import assert from 'node:assert/strict';
@@ -17,6 +18,10 @@ import {
 } from '../src/collab/ask-status.ts';
 import {
   activityAnnouncement,
+  APPEAR_MAX_ITEMS,
+  APPEAR_MAX_STEP_MS,
+  APPEAR_SPAN_MS,
+  appearDelays,
   askActivity,
   elementActivity,
   nextWorkingWord,
@@ -102,5 +107,23 @@ describe('nextWorkingWord', () => {
 
   it('picks from the list', () => {
     assert.ok(WORKING_WORDS.includes(nextWorkingWord(undefined, () => 0.3)));
+  });
+});
+
+describe('appearDelays', () => {
+  it('starts the first at once and spreads the rest', () => {
+    assert.deepEqual(appearDelays(0), []);
+    assert.deepEqual(appearDelays(1), [0]);
+    const three = appearDelays(3);
+    assert.equal(three[0], 0);
+    assert.equal(three[1], APPEAR_MAX_STEP_MS);
+    assert.equal(three[2], 2 * APPEAR_MAX_STEP_MS);
+  });
+
+  it('fits a large batch in the span and stops animating past the cap', () => {
+    const delays = appearDelays(APPEAR_MAX_ITEMS + 5);
+    assert.equal(delays.length, APPEAR_MAX_ITEMS + 5);
+    assert.equal(delays[APPEAR_MAX_ITEMS - 1], APPEAR_SPAN_MS);
+    assert.equal(delays[APPEAR_MAX_ITEMS], undefined);
   });
 });

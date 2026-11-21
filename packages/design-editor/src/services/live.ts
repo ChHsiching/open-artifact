@@ -72,24 +72,6 @@ interface LiveState {
 
 export const useLive = create<LiveState>(() => ({ live: new Set(), snapshots: {} }));
 
-/** Artboards the build show is drawing (services/build.ts): live, and not captured until it ends. */
-const held = new Set<string>();
-/** Tells the running scheduler that what is held changed (`released`: an artboard let go). */
-let heldChanged: ((released?: string) => void) | null = null;
-
-/** Keeps an artboard live and out of snapshots until the returned function lets it go. */
-export function holdLive(path: string): () => void {
-  held.add(path);
-  heldChanged?.();
-  let done = false;
-  return () => {
-    if (done) return;
-    done = true;
-    held.delete(path);
-    heldChanged?.(path);
-  };
-}
-
 /** Whether an artboard has a frame on the canvas. */
 export const isLive = (path: string, live: ReadonlySet<string>): boolean => liveAll || live.has(path);
 
@@ -154,7 +136,6 @@ export function startLive(motion?: MotionSource): () => void {
     if (view.playing && exists(view.playing)) out.add(view.playing);
     if (view.peek && exists(view.peek)) out.add(view.peek);
     for (const path of warming.keys()) if (exists(path)) out.add(path);
-    for (const path of held) if (exists(path)) out.add(path);
     const camera = view.camera;
     if (camera.zoom >= LIVE_MIN_ZOOM && viewportSize.width > 0) {
       const rect = visibleRect(camera);
@@ -190,7 +171,7 @@ export function startLive(motion?: MotionSource): () => void {
   const isPinned = (path: string): boolean => {
     const view = useView.getState();
     const s = view.selection;
-    return held.has(path) || (s.kind === 'objects' && s.boards.includes(path)) || (s.kind === 'elements' && s.board === path) || view.textEdit?.board === path || view.playing === path;
+    return (s.kind === 'objects' && s.boards.includes(path)) || (s.kind === 'elements' && s.board === path) || view.textEdit?.board === path || view.playing === path;
   };
 
   const schedule = (ms: number): void => {
@@ -213,7 +194,7 @@ export function startLive(motion?: MotionSource): () => void {
     let waitMs = Infinity;
     for (const path of live) {
       const key = snapshotKey(path);
-      if (!key || snapshots[path]?.key === key || failed.get(path) === key || held.has(path)) continue;
+      if (!key || snapshots[path]?.key === key || failed.get(path) === key) continue;
       if (!view.frames[path]?.booted) {
         const since = warming.get(path);
         if (since !== undefined && now - since > WARM_TIMEOUT_MS) {
@@ -327,11 +308,6 @@ export function startLive(motion?: MotionSource): () => void {
       schedule(SETTLE_MS);
     }
   });
-  heldChanged = (released) => {
-    if (released) changedAt.set(released, performance.now());
-    recompute();
-    schedule(SETTLE_MS);
-  };
   const onDown = () => (pointerDown = true);
   const onUp = () => {
     pointerDown = false;
@@ -360,7 +336,6 @@ export function startLive(motion?: MotionSource): () => void {
   });
   return () => {
     stopped = true;
-    heldChanged = null;
     clearTimeout(idleTimer);
     clearTimeout(pumpTimer);
     stopMotion?.();

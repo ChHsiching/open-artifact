@@ -14,6 +14,5 @@ export * from './chrome.tsx';
 export { menuFit } from './menu-fit.ts';
 export * from './FindBar.tsx';
 export * from './PanelEdge.tsx';
-export * from './BuildShowLayer.tsx';
 /** Key labels for the chrome's shortcut chips (also in the pure entry). */
 export { ALT, MOD, SHIFT } from './keys.ts';

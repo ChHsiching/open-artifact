@@ -18,7 +18,6 @@ import { installClipboard } from './services/clipboard.ts';
 import { addSlide, canChange } from './services/commands.ts';
 import { startComments, useComments } from './services/comments.ts';
 import { startCreation, useCreation } from './services/creation.ts';
-import { startBuildShow } from './services/build-show.ts';
 import { startCursors } from './services/cursors.ts';
 import { startDesignSystems } from './services/design-systems.ts';
 import { HistoryDialog } from './components/HistoryDialog.tsx';
@@ -61,7 +60,6 @@ async function boot(): Promise<void> {
   startLocationSync();
   startPresence();
   startCreation();
-  startBuildShow();
   const room = maybeSession()?.room;
   if (room) {
     startCursors(room, {

@@ -229,11 +229,6 @@
   top: 0;
 }
 
-/* The agent's build show (BuildLayer.tsx) covers the board. */
-.wb-collab-overlay > .wb-build {
-  inset: 0;
-}
-
 /* Cursors */
 
 .wb-cursor {

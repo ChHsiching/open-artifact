@@ -33,8 +33,6 @@ import { deepestAt, pickAt, startDraw, startMarquee, startMove, type StageContex
 import { Overlay } from './stage/Overlay.tsx';
 import { StageMenuItems } from './stage/StageMenu.tsx';
 import { useStageGesture } from './stage/store.ts';
-import { SlideBuildLayer } from './stage/BuildLayer.tsx';
-import { beginSlideBuild, useSlideBuild } from '../services/build-show.ts';
 
 /** Space kept left and right of the slide, px. */
 const SIDE = 24;
@@ -78,12 +76,6 @@ export function Stage(): ReactNode {
   useLayoutEffect(() => {
     setRoot(rootRef.current);
   });
-
-  // A slide arriving from the agent starts its build show before it first paints (services/build-show.ts).
-  const pendingBuild = useSlideBuild((s) => s.pending);
-  useLayoutEffect(() => {
-    if (pendingBuild && pendingBuild === current && rootRef.current) beginSlideBuild(rootRef.current, pendingBuild);
-  }, [pendingBuild, current, entry]);
 
   // A gesture never outlives the slide it started on.
   useEffect(() => () => useStageGesture.getState().set({ draft: null, move: null, guides: null, marquee: null, draw: null, hover: null }), [current]);
@@ -291,7 +283,6 @@ export function Stage(): ReactNode {
                 <CommentPins ctx={ctx} slide={slide} />
               </Overlay>
             ) : null}
-            <SlideBuildLayer scale={scale} current={current} />
             {slide.hidden ? (
               <div className="pointer-events-none absolute left-2 top-2 flex items-center gap-1 rounded-full bg-chrome/90 px-2 py-0.5 text-[11px] text-chrome-secondary shadow-chrome">
                 <EyeOff className="size-3" /> Skipped when presenting

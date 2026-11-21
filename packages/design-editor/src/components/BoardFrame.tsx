@@ -16,7 +16,6 @@ import { textEditEvent } from '../services/text-edit.ts';
 import { artifactPath, session } from '../services/session.ts';
 import { handleFrameKey } from '../keyboard.ts';
 import { liveAll } from '../services/live.ts';
-import { useBuild } from '../services/build.ts';
 
 export interface BoardFrameProps {
   path: string;
@@ -45,8 +44,6 @@ export function BoardFrame({ path, mode, width, height, interactive, onNavigate,
   const overrides = useView((s) => s.overrides[path]);
   const hasSource = source !== null;
   const booted = useView((s) => s.frames[path]?.booted ?? false);
-  // An artboard arriving from the agent stays invisible until its build show starts (services/build.ts).
-  const building = useBuild((s) => s.hidden.has(path));
 
   // Boot once the source is known; never reboot for later changes.
   useLayoutEffect(() => {
@@ -145,7 +142,7 @@ export function BoardFrame({ path, mode, width, height, interactive, onNavigate,
       data-board={path}
       sandbox="allow-scripts allow-same-origin allow-popups"
       className="block border-0 bg-white"
-      style={{ width, height, pointerEvents: interactive ? 'auto' : 'none', ...((hideUntilBooted && !booted) || building ? { opacity: 0 } : {}) }}
+      style={{ width, height, pointerEvents: interactive ? 'auto' : 'none', ...(hideUntilBooted && !booted ? { opacity: 0 } : {}) }}
     />
   );
 }

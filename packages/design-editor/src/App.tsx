@@ -13,7 +13,6 @@ import { session, startSession } from './services/session.ts';
 import { loadProject } from './services/sync.ts';
 import { askAgentToFixIndex, startPresence } from './services/agent.ts';
 import { startFollow } from './services/follow.ts';
-import { startBuildShow } from './services/build.ts';
 import { startShellBridge } from './services/shell.ts';
 import { installKeyboard } from './keyboard.ts';
 import { placeImages } from './services/images.ts';
@@ -66,7 +65,6 @@ async function boot(): Promise<void> {
   startRecovery();
   startPresence();
   startFollow();
-  startBuildShow();
   startCollab();
   startShellBridge();
   document.title = useDocument.getState().title || 'Design';

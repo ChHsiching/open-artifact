@@ -1,8 +1,8 @@
 /**
  * Words for what the agent is doing on the board: the label on a claimed
  * area ("Adding…"), the line a screen reader hears ("The agent is adding on
- * the board") and the whimsical word shown while nothing more specific is
- * known.
+ * the board"), the whimsical word shown while nothing more specific is
+ * known, and the stagger with which new elements from the agent appear.
  *
  * Pure: unit-tested without a DOM.
  */
@@ -159,4 +159,28 @@ export const WORKING_WORD_TURN_MS = 8000;
 export function nextWorkingWord(previous: string | undefined, random: () => number = Math.random): string {
   const choices = WORKING_WORDS.filter((word) => word !== previous);
   return choices[Math.min(choices.length - 1, Math.floor(random() * choices.length))] ?? WORKING_WORDS[0]!;
+}
+
+/** Longest delay between two elements appearing (ms). */
+export const APPEAR_MAX_STEP_MS = 280;
+
+/** Total time over which a batch of new elements appears (ms). */
+export const APPEAR_SPAN_MS = 700;
+
+/** How long one element takes to appear (ms). */
+export const APPEAR_DURATION_MS = 500;
+
+/** Most elements of one batch that animate (the rest appear at once). */
+export const APPEAR_MAX_ITEMS = 85;
+
+/**
+ * Start delays of a batch of `count` new elements, in the order they were
+ * written: evenly spread over {@link APPEAR_SPAN_MS}, never more than
+ * {@link APPEAR_MAX_STEP_MS} apart. Elements past {@link APPEAR_MAX_ITEMS}
+ * get `undefined` (no animation).
+ */
+export function appearDelays(count: number): Array<number | undefined> {
+  const animated = Math.min(count, APPEAR_MAX_ITEMS);
+  const step = animated <= 1 ? 0 : Math.min(APPEAR_MAX_STEP_MS, APPEAR_SPAN_MS / (animated - 1));
+  return Array.from({ length: Math.max(0, count) }, (_, index) => (index < animated ? Math.round(index * step) : undefined));
 }
