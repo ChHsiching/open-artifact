@@ -49,7 +49,7 @@ import {
 } from '@open-artifact/runtime/http-api';
 import { AGENT_AUTHOR, COMMENTS_FILE, CommentStore, agentView, type Author, type MessageReaction, type Thread } from '@open-artifact/server-sdk/comments';
 import { DB_DIR, DbStore, docPathsOf, docSha256, splitPath } from '@open-artifact/server-sdk/db';
-import { countEdits, resetEdits } from './agent.ts';
+import { clearAsking, countEdits, resetEdits } from './agent.ts';
 import { HttpError, readJson, sendJson } from './http.ts';
 
 /** Largest JSON body of a page's db write batch. */
@@ -660,6 +660,7 @@ export class DbHost {
     switch (name) {
       case 'open-artifact.db.read':
         resetEdits(this.root);
+        clearAsking(this.root);
         return guarded(() => this.db.readDb(typeof args.path === 'string' && args.path ? args.path : undefined, { query: args.query, limit: args.limit, cursor: args.cursor }));
       case 'open-artifact.db.write': {
         const writes = Array.isArray(args.writes) ? args.writes : [];

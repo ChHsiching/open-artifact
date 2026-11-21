@@ -3,7 +3,7 @@
  * plugins and @open-artifact/cli, and the DSH plugin):
  *
  *   vendor/type-server/                       the built server (scripts/build.mjs's dist/server/): cli.mjs, every
- *                                             editor, support.js, sheets.wasm, the PDF reader, the Shell
+ *                                             editor, support.js, sheets.wasm, motion-tools.html, the PDF reader, the Shell
  *   vendor/artifact-types/<type>/             each type's own files (manifest, SKILL.md, references), without scripts/
  *   vendor/artifact-types/<type>/scripts/cli.mjs
  *                                             a few lines that run the shared server's CLI

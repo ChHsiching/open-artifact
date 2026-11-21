@@ -124,7 +124,7 @@ test('Artifact quickstart and publish make a design artifact from the built-in r
   const types = quick.types as Array<{ id: string; scope: string; type_url: string }>;
   assert.deepEqual(
     types.map((t) => t.id),
-    ['design', 'design-system', 'slides', 'data', 'docs', 'sheets', 'whiteboard'],
+    ['design', 'design-system', 'slides', 'data', 'docs', 'motion', 'sheets', 'whiteboard'],
     'only allow-listed built-in types',
   );
   assert.equal(types[0]!.scope, 'builtin');

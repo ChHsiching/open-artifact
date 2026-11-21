@@ -8,7 +8,7 @@ English · [简体中文](README.zh-CN.md)
 > format: one local daemon, one page frame, one `/open-artifact` skill, and a plugin for each agent app.
 
 **Open Artifact lets any coding agent make things people can open, edit and comment on, not just files.** You ask
-your agent for a slide deck, a UI design, a design system, a whiteboard, a spreadsheet, a data dashboard or a doc. The agent writes a plain folder of files.
+your agent for a slide deck, a UI design, a design system, a whiteboard, a spreadsheet, a data dashboard, a doc or a short animated film. The agent writes a plain folder of files.
 A local page opens it in a real editor, where you can fix a title, move a sticky note, leave comments, and export. Then
 "Send to agent" sends your comments back to the agent's session.
 
@@ -36,6 +36,7 @@ Everything runs on your machine. No account, no upload, no specific model or ven
 | [Sheets](artifact-types/sheets/SKILL.md) | A shared spreadsheet: several sheets of cells, a full formula engine, number formats, borders, merged cells, tables with filters, dropdowns, checkboxes, conditional formats, frozen and grouped rows, charts from cells, CSV import, cell history | `sheet/sheet.json` | XLSX, CSV |
 | [Data](artifact-types/data/SKILL.md) | A live dashboard or report: datasets from CSV/JSON/text uploads, live MCP connector queries or calculations, drawn by a plain HTML/CSS/d3 page; Sources shows where each number comes from; filters, hand edits, remix drafts | `db/dash/meta.json` | PDF, HTML, JSON |
 | [Docs](artifact-types/docs/SKILL.md) | A living document in tabs: headings, lists, tables, pictures, dates, mentions and dropdowns; suggested edits to accept or reject, comments, a version history per tab; imports Markdown, Word and PDF | `doc/doc.json` | Markdown, Word, PDF, HTML |
+| [Motion](artifact-types/motion/SKILL.md) | A short animated film: scenes in HTML/CSS/JS drawn from time, a generated score, rough cut then final, captions and voiceover; retype, recolor, refont, recut and restyle by hand; comments pinned to a moment or a spot in the frame | `db/film/meta.json` | MP4, GIF, HTML, ZIP |
 
 Each type folder is a self-contained skill: `SKILL.md` tells the agent how to write it, `reference/` documents the
 file format, `artifact-type.json` describes it to hosts, and `scripts/` (built) holds the CLI and editors.
@@ -76,6 +77,7 @@ In a new session, try one of these prompts.
 /open-artifact sheets a monthly budget with categories and totals
 /open-artifact data a dashboard of signups by month from signups.csv
 /open-artifact docs a hiring plan for 2027 with roles, budget and timeline
+/open-artifact motion a 20-second launch animation for this app
 ```
 
 The plugin adds the `Artifact`, `ArtifactData` and `ArtifactComments` MCP tools, the skill, and hooks that bring
@@ -157,7 +159,7 @@ A package npm doesn't have yet is claimed once from a computer before its first 
 
 | Path | Contents |
 |---|---|
-| `artifact-types/` | The seven types as skills: `SKILL.md`, `reference/`, `artifact-type.json`. |
+| `artifact-types/` | The eight types as skills: `SKILL.md`, `reference/`, `artifact-type.json`. |
 | `skills/open-artifact/` | The one `/open-artifact <type>` skill; `vendor/` (built) carries the daemon. |
 | `plugins/` | The skill packaged per agent app, with hooks and MCP config ([README](plugins/README.md)). |
 | **Platform** | |
@@ -174,10 +176,11 @@ A package npm doesn't have yet is claimed once from a computer before its first 
 | `packages/sheets-core`, `sheets-editor` | Sheets model (workbook, cells, styles, tables, charts) and editor. |
 | `packages/data-core`, `data-editor` | Data model (datasets, queries, rules, the dashboard page) and editor. |
 | `packages/docs-core`, `docs-editor` | Docs model (blocks and characters with ids, ops, suggestions, markdown) and editor. |
+| `packages/motion-core`, `motion-stage`, `motion-audio`, `motion-export`, `motion-editor` | Motion model (film store, scenes, by-hand records), the sandboxed stage and its `kit`, score synthesis, MP4/GIF/HTML/ZIP export, and the player. |
 | **Shared** | |
-| `packages/live-store` | Live document sync shared by Whiteboard and Data. |
+| `packages/live-store` | Live document sync shared by Whiteboard, Data and Motion. |
 | `packages/ui`, `editor-kit`, `export-kit` | UI kit (Base UI + Tailwind), what editors share (comments, history, presence…), browser-side exports. |
-| `packages/canvas-engine`, `wasm-*`, `crates/` | WebGL2 canvas engine and the Rust/WebAssembly crates behind it, exports, whiteboard geometry, data rules and the sheets formula engine. |
+| `packages/canvas-engine`, `wasm-*`, `crates/` | WebGL2 canvas engine and the Rust/WebAssembly crates behind it, exports, whiteboard geometry, data rules, the sheets formula engine and motion (GIF/MOV encoding, flash analysis). |
 | `e2e/` | End-to-end tests. |
 | `scripts/` | `build.mjs`, `build-plugins.mjs`, `build-skill.mjs`, `build-wasm.mjs`. |
 

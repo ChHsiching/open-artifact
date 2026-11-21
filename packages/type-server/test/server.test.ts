@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, stat, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
@@ -315,8 +315,13 @@ describe('type server', () => {
     const list = (await (await call('/__open-artifact/actions')).json()) as { actions: { name: string }[] };
     assert.deepEqual(
       list.actions.map((a) => a.name),
-      ['check', 'upload', 'context', 'snapshot', 'read', 'update', 'batch', 'widget', 'info', 'export', 'duplicate', 'create', 'read', 'update', 'delete', 'batch', 'export', 'import'],
+      ['check', 'upload', 'context', 'asking', 'snapshot', 'read', 'update', 'batch', 'widget', 'info', 'export', 'duplicate', 'create', 'read', 'update', 'delete', 'batch', 'export', 'import'],
     );
+    const asking = (await (await call('/__open-artifact/actions/asking', { id: 'x', root, args: {} })).json()) as { asking: boolean };
+    assert.equal(asking.asking, true);
+    assert.ok(await stat(join(root, '_agent', 'asking')));
+    await call('/__open-artifact/actions/asking', { id: 'x', root, args: { done: true } });
+    await assert.rejects(stat(join(root, '_agent', 'asking')));
     // The page opened earlier may have written its context: start from none.
     await rm(join(root, '_agent', 'view-context.json'), { force: true });
     const none = (await (await call('/__open-artifact/actions/context', { id: 'x', root, args: {} })).json()) as { context: unknown; note: string };

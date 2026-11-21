@@ -18,6 +18,7 @@ import {
 } from '@open-artifact/slides-core';
 import { DOC_MARKER, checkDoc, scaffoldDocType, validateDocContext } from './docs/type.ts';
 import { DATA_MARKER, checkData, dataCommenterWrites, dataHistoryIgnoresPath, dataWritesProblem, scaffoldData, validateDataContext } from './data.ts';
+import { MOTION_MARKER, checkMotion, motionHistoryIgnores, motionTypeWritesProblem, scaffoldMotion, validateMotionContext } from './motion.ts';
 import { SHEET_MARKER, checkSheet, scaffoldSheet, validateSheetContext } from './sheets/type.ts';
 import { WHITEBOARD_MARKER, checkWhiteboard, scaffoldWhiteboard, validateWhiteboardContext, whiteboardHistoryIgnores } from './whiteboard.ts';
 
@@ -118,7 +119,7 @@ export interface TypeDefinition {
   commenterWrites?(path: string, guestId: string): boolean;
 }
 
-export type TypeName = 'design' | 'design-system' | 'slides' | 'whiteboard' | 'data' | 'sheets' | 'docs';
+export type TypeName = 'design' | 'design-system' | 'slides' | 'whiteboard' | 'data' | 'sheets' | 'docs' | 'motion';
 
 export const TYPES: Record<TypeName, TypeDefinition> = {
   design: {
@@ -222,6 +223,19 @@ export const TYPES: Record<TypeName, TypeDefinition> = {
     validateContext: (value) => validateDocContext(value),
     store: 'doc',
     comments: true,
+  },
+  motion: {
+    name: 'motion',
+    title: 'Motion',
+    contentDir: 'db',
+    marker: MOTION_MARKER,
+    scaffold: (title) => scaffoldMotion(title),
+    check: (files, context = {}) => checkMotion(files, context),
+    validateContext: (value) => validateMotionContext(value),
+    store: 'db',
+    comments: true,
+    historyIgnores: motionHistoryIgnores,
+    writesProblem: motionTypeWritesProblem,
   },
 };
 

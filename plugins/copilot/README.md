@@ -1,8 +1,8 @@
 # Open Artifact for GitHub Copilot
 
-For the Copilot CLI and VS Code agent mode (the Copilot harness). Slide decks, design canvases, whiteboards, spreadsheets, data dashboards, docs and design systems as
+For the Copilot CLI and VS Code agent mode (the Copilot harness). Slide decks, design canvases, whiteboards, spreadsheets, data dashboards, docs, animated films and design systems as
 folders of files that open in one local page where you view, edit and comment: `/open-artifact slides …`,
-`design …`, `whiteboard …`, `sheets …`, `data …` or `docs …`.
+`design …`, `whiteboard …`, `sheets …`, `data …`, `docs …` or `motion …`.
 
 ## Install
 

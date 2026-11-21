@@ -7,6 +7,7 @@ import { WAKE_SOURCE_KIND } from '@open-artifact/protocol';
 import { cardData, isShellMessage, isWakeEvent, threadUrl } from '../src/client/cards.ts';
 import { countByType, inRange, NO_FILTERS, visibleArtifacts } from '../src/client/filters.ts';
 import { en, translator, zh } from '../src/client/i18n.ts';
+import { captureRecipe } from '../src/client/types.ts';
 import type { PageArtifact } from '../src/shared/routes.ts';
 
 const NOW = Date.parse('2026-11-14T12:00:00.000Z');
@@ -116,5 +117,12 @@ describe('words', () => {
     assert.equal(t('panel'), '作品');
     assert.equal(t('search'), en.search);
     assert.equal(translator(undefined)('prompt.generic', { type: 'Design' }), en['prompt.generic'].replace('{type}', 'Design'));
+  });
+
+  it('includes the motion type labels and thumbnail recipe', () => {
+    assert.ok(en['type.motion'] && zh['type.motion']);
+    assert.ok(en['prompt.motion'] && zh['prompt.motion']);
+    assert.ok(en['about.motion'] && zh['about.motion']);
+    assert.match(captureRecipe('motion').find, /data-video-stage/);
   });
 });

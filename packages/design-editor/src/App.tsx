@@ -34,10 +34,10 @@ import { startDesignSystems } from './services/design-systems.ts';
 import { startAnnouncer } from './services/announce.ts';
 import { openPlaceInAddress, pageInAddress, startPageHistory } from './services/page-link.ts';
 import { startRecovery } from './services/recovery.ts';
+import { guardFileDrops } from '@open-artifact/editor-kit';
 import { Announcer } from '@open-artifact/editor-kit/react';
 import { FindBar } from './components/FindBar.tsx';
 import { RecoveryBanner } from './components/RecoveryBanner.tsx';
-import { guardFileDrops } from './lib/file-drop.ts';
 
 /** Connects, loads and applies the launch view. Runs once. */
 async function boot(): Promise<void> {

@@ -264,6 +264,11 @@ export interface AgentStatus {
   name: string;
   /** false: an idle agent is not woken; what is sent waits until the person next talks to it. Left out: it is woken. */
   wakesIdle?: boolean;
+  /**
+   * true: the agent asked the person something (a form, a question in the chat) and its work waits on the answer.
+   * It is still at work, so pages show that it waits on them rather than that it stopped. Left out: it does not.
+   */
+  waitingForPerson?: boolean;
 }
 
 /** The `agent` capability. */
@@ -327,7 +332,7 @@ export interface RoomCapability {
 
 /** The `downloads` capability. */
 export interface DownloadsCapability {
-  /** Saves a file. Hosts cap a single file at 16 MB. */
+  /** Saves a file. The local host takes a single file of up to 512 MB; other hosts may take less. */
   save(file: { name: string; data: Blob }): Promise<{ savedTo?: string }>;
 }
 

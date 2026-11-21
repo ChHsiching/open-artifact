@@ -250,6 +250,9 @@ function stageLibrary(dir) {
 function stageCli() {
   const skill = join(ROOT, 'skills', 'open-artifact');
   if (!existsSync(join(skill, 'vendor', 'open-artifact.mjs'))) fail('skills/open-artifact/vendor is missing; run node scripts/build-skill.mjs first');
+  // The motion type's `stills` command loads this page; it comes from node scripts/build.mjs, beside the shared cli.mjs.
+  if (!existsSync(join(skill, 'vendor', 'type-server', 'motion-tools.html')))
+    fail('the vendored type server has no motion-tools.html; run node scripts/build.mjs, then node scripts/build-skill.mjs');
   const out = join(OUT, 'cli');
   rmSync(out, { recursive: true, force: true });
   cpSync(skill, out, { recursive: true });
@@ -258,12 +261,12 @@ function stageCli() {
     name: '@open-artifact/cli',
     version: daemon.version,
     description:
-      'The open-artifact command: the local Open Artifact daemon with its Shell and the built-in types (slides, design, design system, whiteboard, sheets, data, docs), an MCP server for agent apps, and the hooks that bring page comments back to the agent.',
+      'The open-artifact command: the local Open Artifact daemon with its Shell and the built-in types (slides, design, design system, whiteboard, sheets, data, docs, motion), an MCP server for agent apps, and the hooks that bring page comments back to the agent.',
     type: 'module',
     bin: { 'open-artifact': 'scripts/open-artifact.mjs' },
     files: ['scripts', 'vendor', 'SKILL.md', 'LICENSE', 'NOTICE'],
     engines: rootPkg.engines,
-    keywords: ['artifacts', 'slides', 'design', 'design-system', 'whiteboard', 'sheets', 'spreadsheet', 'data', 'docs', 'dashboard', 'mcp', 'agent'],
+    keywords: ['artifacts', 'slides', 'design', 'design-system', 'whiteboard', 'sheets', 'spreadsheet', 'data', 'docs', 'motion', 'animation', 'dashboard', 'mcp', 'agent'],
     ...common(daemon, 'skills/open-artifact'),
   };
   writeJson(join(out, 'package.json'), published);

@@ -417,7 +417,7 @@ async function chatgpt(): Promise<void> {
       'To add it to ChatGPT on the web:',
       `1. Put it behind HTTPS, e.g. OpenAI's Secure MCP Tunnel or \`cloudflared tunnel --url http://127.0.0.1:${port}\`.`,
       `2. In ChatGPT (chatgpt.com/plugins), add a custom MCP server: the tunnel's https URL followed by /mcp/${secret}, with no authentication.`,
-      '3. In a chat, pick the app and ask for a deck, design or board.',
+      '3. In a chat, pick the app and ask for a deck, design, board, sheet, dashboard, doc or animation.',
       '',
       'The secret path is the only key: share it with no one; --rotate makes a new one. Stop with Ctrl-C.',
     ].join('\n'),

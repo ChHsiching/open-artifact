@@ -34,7 +34,7 @@ import { mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { Duplex } from 'node:stream';
 import { homedir } from 'node:os';
-import { basename, dirname, extname, isAbsolute, join, normalize, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, normalize, resolve, sep } from 'node:path';
 import { DB_LIMITS, ROOM_MESSAGE_MAX_BYTES, canEdit, type AgentStatus, type FileListing, type Peer, type Viewer } from '@open-artifact/runtime/capabilities';
 import {
   API,
@@ -52,12 +52,13 @@ import {
   type ServerEvents,
   type SessionResponse,
 } from '@open-artifact/runtime/http-api';
-import { agentPaths, agentStatus, normalizeRequest, readEdits, sendToAgent } from './agent.ts';
+import { agentPaths, agentStatus, clearAsking, markAsking, normalizeRequest, readEdits, sendToAgent } from './agent.ts';
 import { runCheck } from './project-check.ts';
 import type { ActionRequest, TypeServerHealth, OpenResult as OpenArtifactOpenResult } from '@open-artifact/protocol';
 import type { TypeApi } from '@open-artifact/server-sdk';
 import { acceptWebSocket } from '@open-artifact/server-sdk/ws';
 import { reportTouch } from './daemon.ts';
+import { downloadName, saveDownload } from './downloads.ts';
 import { HttpError, isLocalHost, mimeOf, readBody, readJson, send, sendBytes, sendError, sendJson } from './http.ts';
 import { ArtifactStore, MAX_BATCH_FILES, PROJECT_DIR, sha256, writeAtomic } from './store.ts';
 import { TYPES, contentDirOf, historyTracksOf, isTypeName, type TypeName } from './types.ts';
@@ -86,9 +87,6 @@ const BUSY_MS = 8_000;
 
 /** Largest upload, bytes. */
 const MAX_UPLOAD = 25 * 1024 * 1024;
-
-/** Largest download handed to the host, bytes. */
-const MAX_DOWNLOAD = 16 * 1024 * 1024;
 
 /** Largest `_api/mcp/call` body, bytes. */
 const MAX_MCP_ARGS = 8 * 1024 * 1024;
@@ -130,6 +128,13 @@ export const SERVER_ACTIONS = [
     schema: { type: 'object', properties: {} },
   },
   {
+    name: 'asking',
+    title:
+      'Say you are asking the person something (a form or a question) just before you ask: the page shows that your work waits on them until you next read, write or wait. args.done: true takes it back',
+    effect: 'read',
+    schema: { type: 'object', properties: { done: { type: 'boolean', description: 'true: you are no longer waiting on them.' } } },
+  },
+  {
     name: 'snapshot',
     title: 'A PNG of the page as it draws now, to look at your own work; returns its path as image',
     effect: 'read',
@@ -169,6 +174,8 @@ export interface TypeServerOptions {
   viewerName?: string;
   /** Folder downloads are saved to (default `~/Downloads`). */
   downloadsDir?: string;
+  /** Largest download saved, bytes (default 512 MB). For tests. */
+  maxDownloadBytes?: number;
   /** Diagnostic log. */
   log?: (message: string) => void;
   /** Addresses LAN sharing listens on (default: this computer's local network addresses). */
@@ -529,9 +536,15 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
 
   /** Recomputes the agent status and pushes it when it changed. */
   const refreshStatus = async (artifact: OpenArtifact): Promise<AgentStatus> => {
-    const status = await agentStatus(artifact.root, daemon, Date.now() - artifact.externalAt < BUSY_MS, artifact.id);
+    const status = await agentStatus(artifact.root, daemon, Date.now() - artifact.externalAt < BUSY_MS, artifact.id, artifact.externalAt);
     const was = artifact.agent;
-    if (status.available !== was.available || status.busy !== was.busy || status.name !== was.name || status.wakesIdle !== was.wakesIdle) {
+    if (
+      status.available !== was.available ||
+      status.busy !== was.busy ||
+      status.name !== was.name ||
+      status.wakesIdle !== was.wakesIdle ||
+      status.waitingForPerson !== was.waitingForPerson
+    ) {
       artifact.agent = status;
       emit(artifact, 'agent', status);
     }
@@ -987,23 +1000,9 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
 
       case API.downloads: {
         if (method !== 'POST') throw new HttpError(405, 'invalid', 'POST only.');
-        const bytes = await readBody(req, MAX_DOWNLOAD);
-        const name = basename(url.searchParams.get('name') ?? '').replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').slice(0, 120) || 'download';
         const dir = options.downloadsDir ?? join(homedir(), 'Downloads');
-        await mkdir(dir, { recursive: true });
-        const ext = extname(name);
-        const stem = name.slice(0, name.length - ext.length);
-        let target = join(dir, name);
-        for (let n = 2; ; n++) {
-          try {
-            await stat(target);
-            target = join(dir, `${stem} (${n})${ext}`);
-          } catch {
-            break;
-          }
-        }
-        await writeFile(target, bytes);
-        return sendJson(res, 200, { savedTo: target });
+        const savedTo = await saveDownload(req, dir, downloadName(url.searchParams.get('name')), options.maxDownloadBytes);
+        return sendJson(res, 200, { savedTo });
       }
 
       case API.mcpTools: {
@@ -1253,6 +1252,12 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
       } catch {
         return sendJson(res, 200, { at: null, context: null, note: NO_CONTEXT_NOTE });
       }
+    }
+    if (name === 'asking') {
+      if (args.done === true) clearAsking(root);
+      else await markAsking(root);
+      if (opened?.root === root) await refreshStatus(opened);
+      return sendJson(res, 200, { asking: args.done !== true });
     }
     if (name === 'snapshot') return sendJson(res, 200, await snapshot(root, type, opened, args));
     if (name === 'check') {

@@ -2,7 +2,7 @@
   "name": "open-artifact",
   "displayName": "Open Artifact",
   "version": "0.11.0",
-  "description": "Make slide decks, design canvases, whiteboards, spreadsheets, data dashboards, docs and design systems you view, edit, comment on and export in one local page; comments come back to the agent.",
+  "description": "Make slide decks, design canvases, whiteboards, spreadsheets, data dashboards, docs, animated films and design systems you view, edit, comment on and export in one local page; comments come back to the agent.",
   "logo": "assets/icon.png",
   "author": {
     "name": "Jim Liu 宝玉",
@@ -21,12 +21,16 @@
     "data",
     "dashboard",
     "docs",
-    "document"
+    "document",
+    "motion",
+    "animation",
+    "video"
   ],
   "suggestedPrompts": [
     "/open-artifact slides a 6-slide pitch for this project",
     "/open-artifact design three landing page options",
     "/open-artifact whiteboard map this repo's architecture",
-    "/open-artifact data a dashboard of this CSV"
+    "/open-artifact data a dashboard of this CSV",
+    "/open-artifact motion a 20-second launch animation for this project"
   ]
 }

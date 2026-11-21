@@ -8,7 +8,7 @@
 > skill，再为每个 Agent 应用各配一个插件。
 
 **Open Artifact 让任何编码 Agent 都能做出可以打开、编辑、评论的东西，而不只是一堆文件。** 你让 Agent 做一份幻灯片、
-一套 UI 设计、一个设计系统或一块白板，Agent 写出一个普通的文件夹；本地页面用真正的编辑器打开它，你可以直接改标题、
+一套 UI 设计、一个设计系统、一块白板、一张表格、一个数据看板、一份文档或一段短动画，Agent 写出一个普通的文件夹；本地页面用真正的编辑器打开它，你可以直接改标题、
 挪便利贴、留评论、导出。点"Send to agent"，你的评论就回到 Agent 的会话里。
 
 一切都在你自己的电脑上运行：不需要账号，不用上传，也不限定模型或厂商。
@@ -33,6 +33,7 @@
 | [Design System](artifact-types/design-system/SKILL.md) | 品牌手册：设计令牌（tokens）、带对比度检查的颜色、字体样张、实时组件预览、素材。Design 和 Slides 都可以安装它 | `project/design-system.json` | — |
 | [Whiteboard](artifact-types/whiteboard/SKILL.md) | 多人共享的无限白板：便利贴、形状、箭头、手绘、图片、表格、嵌入网页、实时光标、计时器 | `db/board/meta.json` | PNG |
 | [Docs](artifact-types/docs/SKILL.md) | 分标签页的在线文档：标题、列表、表格、图片、日期、提及和下拉选项；可接受或拒绝的修改建议、评论、每个标签页各自的版本历史；可导入 Markdown、Word 和 PDF | `doc/doc.json` | Markdown、Word、PDF、HTML |
+| [Motion](artifact-types/motion/SKILL.md) | 短动画影片：场景是按时间绘制的 HTML/CSS/JS，自动生成配乐，先粗剪再定稿，字幕和旁白；可以手改文字、配色、字体、场景长度和单个元素的样式；评论可以钉在某一时刻或画面上的某一点 | `db/film/meta.json` | MP4、GIF、HTML、ZIP |
 
 每个类型文件夹都是一个独立的 skill：`SKILL.md` 告诉 Agent 怎么写，`reference/` 说明文件格式，`artifact-type.json`
 向宿主描述这个类型，`scripts/`（构建产物）里是命令行工具和编辑器。
@@ -69,6 +70,7 @@ DeepSeek Harness 有新版时，可以在 Open Artifact 页面点击「更新」
 /open-artifact design three landing page options for a coffee shop
 /open-artifact whiteboard a retro board for last sprint
 /open-artifact docs 一份 2027 年的招聘计划，包括岗位、预算和时间线
+/open-artifact motion a 20-second launch animation for this app
 ```
 
 插件会添加 `Artifact`、`ArtifactData` 和 `ArtifactComments` 三个 MCP 工具、这个 skill，以及把页面评论带回会话的
@@ -145,7 +147,7 @@ node scripts/build-wasm.mjs   # 需要 cargo + wasm32-unknown-unknown、wasm-bin
 
 | 路径 | 内容 |
 |---|---|
-| `artifact-types/` | 七种类型，各自是一个 skill：`SKILL.md`、`reference/`、`artifact-type.json`。 |
+| `artifact-types/` | 八种类型，各自是一个 skill：`SKILL.md`、`reference/`、`artifact-type.json`。 |
 | `skills/open-artifact/` | 统一的 `/open-artifact <type>` skill；`vendor/`（构建产物）里是 daemon。 |
 | `plugins/` | 为各个 Agent 应用打包的 skill，带 hooks 和 MCP 配置（[README](plugins/README.md)）。 |
 | **平台** | |
@@ -159,6 +161,7 @@ node scripts/build-wasm.mjs   # 需要 cargo + wasm32-unknown-unknown、wasm-bin
 | `packages/design-core`、`design-editor`、`dc` | Design 的数据模型（`canvas.json`）、编辑器，以及 `.dc.html` 画板格式。 |
 | `packages/design-system-core`、`design-system-editor` | Design System 的数据模型（令牌语法、CSS 编译器）和编辑器。 |
 | `packages/whiteboard-core`、`whiteboard-editor` | Whiteboard 的数据模型（schema、实时同步、几何计算）和编辑器。 |
+| `packages/motion-core`、`motion-stage`、`motion-audio`、`motion-export`、`motion-editor` | Motion 的数据模型（影片文档、场景、手改记录）、沙箱舞台和它的 `kit`、配乐合成、MP4/GIF/HTML/ZIP 导出，以及播放器。 |
 | **共享** | |
 | `packages/ui`、`editor-kit`、`export-kit` | UI 组件库（Base UI + Tailwind）、各编辑器共用的部分（评论、历史、在线状态……）、浏览器端导出。 |
 | `packages/canvas-engine`、`wasm-*`、`crates/` | WebGL2 画布引擎，以及背后的 Rust/WebAssembly crate（画布、导出、白板几何）。 |

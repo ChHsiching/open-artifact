@@ -14,7 +14,10 @@ import { cn } from './cn.ts';
 import { isComposingKey, preventRepeatedActivation } from './keys.ts';
 import { POPUP_CLASS } from './menu.tsx';
 
-/** Shared look of single-line inputs. */
+/**
+ * Shared look of single-line inputs. Every field's box also carries `data-ui-field`, so a page can give the fields
+ * of one part of it another look (a compact inspector, say).
+ */
 export const INPUT_CLASS =
   'h-7 w-full min-w-0 rounded-control border border-line bg-surface-2 px-2 text-[13px] text-fg outline-none placeholder:text-fg-subtle focus:border-accent focus:bg-surface';
 
@@ -23,7 +26,7 @@ export const TextInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLIn
   { className, ...rest },
   ref,
 ) {
-  return <input ref={ref} className={cn(INPUT_CLASS, className)} {...rest} />;
+  return <input ref={ref} data-ui-field="" className={cn(INPUT_CLASS, className)} {...rest} />;
 });
 
 /** Props of {@link CommitInput}. */
@@ -57,6 +60,7 @@ export function CommitInput({ value, onCommit, onDraftChange, className, ...rest
   };
   return (
     <input
+      data-ui-field=""
       className={cn(INPUT_CLASS, className)}
       value={draft}
       onChange={(event) => {
@@ -112,6 +116,7 @@ export function NumberInput({ value, onChange, onCommit, label, unit, min, max, 
       step={step}
       onValueChange={(next) => onChange?.(next)}
       onValueCommitted={(next) => onCommit(next)}
+      data-ui-field=""
       className={cn('flex h-7 min-w-0 items-center rounded-control border border-line bg-surface-2 focus-within:border-accent', className)}
     >
       {label !== undefined ? (
@@ -123,6 +128,9 @@ export function NumberInput({ value, onChange, onCommit, label, unit, min, max, 
       <BaseNumberField.Input
         placeholder={placeholder}
         aria-label={aria['aria-label']}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') event.currentTarget.blur();
+        }}
         className={cn('h-full w-full min-w-0 bg-transparent text-[13px] text-fg outline-none', label === undefined && 'pl-2')}
       />
       {unit ? <span className="pr-2 text-[11px] text-fg-subtle">{unit}</span> : null}
@@ -154,6 +162,7 @@ export function SelectInput<T extends string>({ value, options, onChange, placeh
     <BaseSelect.Root value={value} onValueChange={(next) => next !== null && onChange(next as T)}>
       <BaseSelect.Trigger
         aria-label={aria['aria-label']}
+        data-ui-field=""
         className={cn(INPUT_CLASS, 'flex items-center justify-between gap-1 text-left', className)}
       >
         <BaseSelect.Value>
@@ -194,20 +203,28 @@ export interface SegmentedProps<T extends string> {
   value: T | null;
   options: Option<T>[];
   onChange: (value: T) => void;
+  /**
+   * Called with the picked option when it is pressed again (to let the pick go, say). Without it, that press does
+   * nothing and the pick stays.
+   */
+  onRepick?: (value: T) => void;
   className?: string;
   'aria-label'?: string;
 }
 
 /** A segmented control (one of a few options, all visible). */
-export function Segmented<T extends string>({ value, options, onChange, className, ...aria }: SegmentedProps<T>) {
+export function Segmented<T extends string>({ value, options, onChange, onRepick, className, ...aria }: SegmentedProps<T>) {
   return (
     <ToggleGroup
       value={value === null ? [] : [value]}
       onValueChange={(next) => {
         const picked = next[0];
+        // Pressing the pressed option again leaves the group empty.
         if (picked !== undefined) onChange(picked as T);
+        else if (value !== null) onRepick?.(value);
       }}
       aria-label={aria['aria-label']}
+      data-ui-field=""
       className={cn('flex h-7 items-center gap-0.5 rounded-control bg-surface-2 p-0.5', className)}
     >
       {options.map((option) => (
@@ -216,7 +233,7 @@ export function Segmented<T extends string>({ value, options, onChange, classNam
           value={option.value}
           aria-label={option.title}
           title={option.title}
-          className="flex h-full flex-1 items-center justify-center rounded-[4px] px-1.5 text-fg-muted outline-none hover:text-fg data-[pressed]:bg-surface data-[pressed]:text-fg data-[pressed]:shadow-sm focus-visible:outline-2 focus-visible:outline-accent"
+          className="flex h-full flex-1 items-center justify-center whitespace-nowrap rounded-[4px] px-1.5 text-fg-muted outline-none hover:text-fg data-[pressed]:bg-surface data-[pressed]:text-fg data-[pressed]:shadow-sm focus-visible:outline-2 focus-visible:outline-accent"
         >
           {option.label}
         </Toggle>

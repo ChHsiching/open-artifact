@@ -8,7 +8,10 @@
  * - `waiting`: touched every few seconds by `open-artifact wait` while an agent
  *   is waiting; its mtime tells the page an agent is listening;
  * - `view-context.json`: what the viewer has on screen, written on every
- *   presence update, read by `open-artifact context`.
+ *   presence update, read by `open-artifact context`;
+ * - `asking`: written by `open-artifact asking` when the agent asks the person
+ *   something; until the agent reads, writes or waits again, the page shows
+ *   that its work waits on them.
  *
  * When a daemon is present, requests are routed through `open-artifact.type.wake` first
  * and only fall back to the inbox when the daemon cannot deliver them.
@@ -52,13 +55,14 @@ export interface QueuedRequest {
 }
 
 /** Folder paths of an artifact's agent channel. */
-export function agentPaths(root: string): { dir: string; inbox: string; done: string; waiting: string; viewContext: string } {
+export function agentPaths(root: string): { dir: string; inbox: string; done: string; waiting: string; asking: string; viewContext: string } {
   const dir = join(root, '_agent');
   return {
     dir,
     inbox: join(dir, 'inbox'),
     done: join(dir, 'done'),
     waiting: join(dir, 'waiting'),
+    asking: join(dir, 'asking'),
     viewContext: join(dir, 'view-context.json'),
   };
 }
@@ -88,6 +92,37 @@ export async function touchWaiter(root: string): Promise<void> {
 /** Removes the waiter heartbeat. */
 export async function clearWaiter(root: string): Promise<void> {
   await rm(agentPaths(root).waiting, { force: true });
+}
+
+/** An agent that asked and never came back stops showing as waiting on the person after this long, ms. */
+export const ASKING_MAX_MS = 30 * 60_000;
+
+/** A change this soon after the agent said it asks was on its way before the question, ms. */
+const ASKING_SLACK_MS = 2_000;
+
+/** Notes that the agent asked the person something and waits for the answer. */
+export async function markAsking(root: string): Promise<void> {
+  const { dir, asking } = agentPaths(root);
+  await mkdir(dir, { recursive: true });
+  await writeFile(asking, `${new Date().toISOString()}\n`);
+}
+
+/** The agent went on (it read, waits for the page, or said so): it no longer waits on the person. */
+export function clearAsking(root: string): void {
+  rmSync(agentPaths(root).asking, { force: true });
+}
+
+/**
+ * Whether the agent waits on the person: it said so with `asking` within {@link ASKING_MAX_MS}, and has changed
+ * nothing since (`changedAt`, when it last changed the artifact, ms).
+ */
+export async function isAsking(root: string, changedAt: number, now = Date.now()): Promise<boolean> {
+  try {
+    const askedAt = (await stat(agentPaths(root).asking)).mtimeMs;
+    return now - askedAt < ASKING_MAX_MS && changedAt <= askedAt + ASKING_SLACK_MS;
+  } catch {
+    return false;
+  }
 }
 
 /** Normalizes what a page sent. Throws on a malformed request. */
@@ -210,14 +245,20 @@ function presenceOf(daemon: TypeApi, id: string, now = Date.now()): Promise<{ na
   return value;
 }
 
-/** The agent status the page shows; with the daemon and the artifact's id, the agent's own name and whether it is woken. */
-export async function agentStatus(root: string, daemon: TypeApi | null, busy: boolean, id?: string): Promise<AgentStatus> {
+/**
+ * The agent status the page shows; with the daemon and the artifact's id, the agent's own name and whether it is
+ * woken. `changedAt`: when the agent last changed the artifact (ms), which ends a wait on the person.
+ */
+export async function agentStatus(root: string, daemon: TypeApi | null, busy: boolean, id?: string, changedAt = 0): Promise<AgentStatus> {
   const said = daemon && id ? await presenceOf(daemon, id) : {};
+  // An agent that asked is in the middle of its work, so it counts as there even without a `wait` running.
+  const asking = await isAsking(root, changedAt);
   return {
-    available: Boolean(daemon) || (await isWaiterPresent(root)),
+    available: asking || Boolean(daemon) || (await isWaiterPresent(root)),
     busy,
     name: said.name || 'Agent',
     ...(said.wakesIdle === false ? { wakesIdle: false } : {}),
+    ...(asking ? { waitingForPerson: true } : {}),
   };
 }
 

@@ -3,7 +3,7 @@
 One skill, `open-artifact`, and a plugin for each agent app that carries it. Every plugin runs the same local
 Open Artifact daemon: one artifact server and one page frame (the Shell at `http://127.0.0.1:<port>/a/<id>`) for
 every type, with each type's own editor and comments inside. `/open-artifact slides …` makes a deck,
-`/open-artifact design …` a design canvas, `/open-artifact whiteboard …` a board, `/open-artifact sheets …` a spreadsheet, `/open-artifact data …` a dashboard, `/open-artifact docs …` a doc.
+`/open-artifact design …` a design canvas, `/open-artifact whiteboard …` a board, `/open-artifact sheets …` a spreadsheet, `/open-artifact data …` a dashboard, `/open-artifact docs …` a doc, `/open-artifact motion …` an animated film.
 
 | Folder | For | Gives the agent | Comments sent from the page reach the agent |
 |---|---|---|---|

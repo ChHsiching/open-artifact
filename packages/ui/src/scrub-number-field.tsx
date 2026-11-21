@@ -252,6 +252,7 @@ export function ScrubNumberField({
 
   return (
     <div
+      data-ui-field=""
       className={cn(
         'flex h-7 min-w-0 items-center rounded-control border border-line bg-surface-2 text-[13px] text-fg focus-within:border-accent focus-within:bg-surface',
         disabled && 'opacity-50',
