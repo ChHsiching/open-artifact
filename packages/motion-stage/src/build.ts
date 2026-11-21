@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url';
-import { resolve } from 'node:path';
+import { extname, resolve } from 'node:path';
 import { build } from 'esbuild';
 import { inScript } from './host.ts';
 import { OFFLINE_RUNTIME_ID } from './offline/data.ts';
@@ -11,11 +11,12 @@ export interface BuiltScript {
 }
 
 const here = fileURLToPath(new URL('.', import.meta.url));
+const entryExtension = extname(fileURLToPath(import.meta.url));
 
 /** Both scripts run as classic scripts: the stage in a srcdoc frame, the player in a page saved to disk. */
 async function bundle(entry: string): Promise<BuiltScript> {
   const result = await build({
-    entryPoints: [fileURLToPath(new URL(entry, import.meta.url))],
+    entryPoints: [resolve(here, entry.replace(/\.ts$/, entryExtension))],
     bundle: true,
     format: 'iife',
     platform: 'browser',

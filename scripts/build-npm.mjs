@@ -43,11 +43,16 @@ const LIBRARIES = [
   'data-core',
   'sheets-core',
   'docs-core',
+  'motion-core',
+  'motion-stage',
+  'motion-audio',
+  'motion-export',
   'wasm-canvas',
   'wasm-export',
   'wasm-wb-geom',
   'wasm-data-rules',
   'wasm-sheets',
+  'wasm-motion',
 ];
 /** Imported by a library but left to the app that uses it, which brings its own copy. */
 const PEERS = new Set(['react', 'react-dom']);
@@ -171,13 +176,15 @@ function stageLibrary(dir) {
   mkdirSync(out, { recursive: true });
 
   cpSync(join(compiled, 'src'), join(out, 'src'), { recursive: true });
-  // What the compiler does not carry: stylesheets, pages and other assets next to the sources.
-  for (const file of walk(join(source, 'src')).filter((f) => !/\.tsx?$/.test(f))) {
+  // What the compiler does not carry: authored declarations and assets next to the sources.
+  for (const file of walk(join(source, 'src')).filter((f) => f.endsWith('.d.ts') || !/\.tsx?$/.test(f))) {
     if (dir === 'server-sdk' && file.startsWith(join('frame', 'client'))) continue;
     mkdirSync(dirname(join(out, 'src', file)), { recursive: true });
     cpSync(join(source, 'src', file), join(out, 'src', file));
   }
-  if (existsSync(join(source, 'generated'))) cpSync(join(source, 'generated'), join(out, 'generated'), { recursive: true });
+  const assets = ['generated', ...(dir === 'motion-core' ? ['fonts'] : [])]
+    .filter((name) => existsSync(join(source, name)));
+  for (const name of assets) cpSync(join(source, name), join(out, name), { recursive: true });
   if (existsSync(join(compiled, 'bin'))) cpSync(join(compiled, 'bin'), join(out, 'bin'), { recursive: true });
   if (dir === 'server-sdk') {
     const client = join(ROOT, 'dist', 'daemon', 'frame-host', 'client');
@@ -225,7 +232,7 @@ function stageLibrary(dir) {
     type: 'module',
     ...(bin ? { bin } : {}),
     exports,
-    files: ['src', ...(existsSync(join(out, 'generated')) ? ['generated'] : []), ...(bin ? ['bin'] : []), 'LICENSE', 'NOTICE'],
+    files: ['src', ...assets, ...(bin ? ['bin'] : []), 'LICENSE', 'NOTICE'],
     ...(Object.keys(dependencies).length ? { dependencies } : {}),
     ...(Object.keys(peerDependencies).length ? { peerDependencies } : {}),
     ...(Object.keys(peerDependenciesMeta).length ? { peerDependenciesMeta } : {}),

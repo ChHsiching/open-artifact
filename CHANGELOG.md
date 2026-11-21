@@ -6,6 +6,48 @@ agent plugins. Since 0.9.0 they all share one version; before that `dsh-open-art
 Each entry is written from the commits since the previous tag (`node scripts/changelog.mjs` lists them); see
 [Releasing](README.md#releasing).
 
+## [0.12.0] - 2026-11-20
+
+Create and export animated films with Motion, build interactive sheets, and share read-only slides and dashboards.
+
+### Added
+
+- **Motion** is a built-in artifact type in the CLI and agent plugins. Make animated films in HTML, CSS and
+  JavaScript, synthesize a score, add captioned narration, and refine a rough cut in the timeline. Leave comments
+  at a moment or on a spot in the frame.
+- Motion exports MP4, GIF, MOV with alpha, standalone HTML and source ZIP. The CLI's `stills` command captures
+  frames for review. The Motion libraries are available on npm as `motion-core`, `motion-stage`, `motion-audio`,
+  `motion-export` and `wasm-motion` under `@open-artifact`.
+- Sheets adds interactive tabs with controls linked to cells, pivot tables, saved filter and sort views, and
+  links and agent walkthroughs that highlight cell ranges. Tables support column moves, and the format menu
+  adds plain text, more currencies, fractions and clipped text.
+- Slides and Data support read-only embeds at `#view-inline`. Embedded decks have a slide pager, and a
+  `.only` link opens directly to one slide with its builds shown. Framing pages can receive the current
+  location and navigate to a slide, document section or sheet through the Shell.
+- Dashboards can save rows in artifact storage, including per-reader records. Forms can submit in place,
+  and the source list can retry failed loads and flag stale data.
+- From an empty Data artifact, choose a dashboard, visual analysis, scrollyteller or visual short, then import
+  CSV, TSV, JSON or Excel files for the agent to build from.
+
+### Changed
+
+- Docs starts agent requests from the @ menu or an empty document. The request appears in the text as a
+  chip with an agent comment, and the agent's answer replaces it. Find also matches the displayed text of
+  dates, dropdowns, people and tab links.
+- Slides supports flow margins, custom list markers and numbering, regular-weight phrases inside bold text,
+  and link cards. PowerPoint exports carry list markers and numbering, with closer spacing and picture framing.
+
+### Fixed
+
+- Motion's standalone HTML and source ZIP still export from an open tab after an editor rebuild. If GIF,
+  MOV or MP4 export needs a component that is no longer available, the editor offers to reload.
+- Docs preserves concurrent edits when editing links, keeps rejected comment drafts available to copy or retry,
+  docks a wide table's scrollbar, and wraps long identifiers in table exports.
+- Slides keeps focus and Undo working after number-field drags, ignores table commands on content that changed
+  while the menu was open, and offers a reload after a render error.
+- Sheets restores the preceding personal sort on Undo. Dashboards report missing data at the end of print and
+  PDF exports and protect uploaded images that a page still uses.
+
 ## [0.11.0] - 2026-11-20
 
 Open live artifacts inside MCP conversations, with steadier whiteboards and more ways to style their content.
@@ -228,6 +270,7 @@ One version for every package, with Docs and Sheets in every plugin.
 - Plugins for Claude Code, Codex, Cursor, Copilot, ChatGPT and DeepSeek Harness.
 - English and Chinese READMEs, under Apache-2.0.
 
+[0.12.0]: https://github.com/JimLiu/open-artifact/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/JimLiu/open-artifact/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/JimLiu/open-artifact/compare/v0.9.2...v0.10.0
 [0.9.2]: https://github.com/JimLiu/open-artifact/compare/v0.9.1...v0.9.2

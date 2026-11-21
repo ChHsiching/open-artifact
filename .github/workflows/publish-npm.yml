@@ -66,6 +66,9 @@ jobs:
           zip -qr open-artifact-plugins.zip open-artifact-plugins
 
       - name: Publish
+        # npm attempts the OIDC exchange even in a dry run, but logs failures only at verbose level.
+        env:
+          npm_config_loglevel: ${{ inputs.dry-run && 'verbose' || 'notice' }}
         run: node scripts/publish-npm.mjs ${{ inputs.dry-run && '--dry-run' || '' }}
 
       - name: GitHub release

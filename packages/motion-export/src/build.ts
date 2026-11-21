@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url';
-import { resolve } from 'node:path';
+import { extname, resolve } from 'node:path';
 import { build } from 'esbuild';
 
 export interface BuiltScript {
@@ -9,11 +9,12 @@ export interface BuiltScript {
 }
 
 const here = fileURLToPath(new URL('.', import.meta.url));
+const entryExtension = extname(fileURLToPath(import.meta.url));
 
 /** Both scripts run as classic scripts: the raster frame from a srcdoc, the audio in a page saved to disk. */
 async function bundle(entry: string): Promise<BuiltScript> {
   const result = await build({
-    entryPoints: [fileURLToPath(new URL(entry, import.meta.url))],
+    entryPoints: [resolve(here, entry.replace(/\.ts$/, entryExtension))],
     bundle: true,
     format: 'iife',
     platform: 'browser',
