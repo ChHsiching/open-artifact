@@ -32,10 +32,10 @@ describe('playing a score', () => {
     );
   });
 
-  it('drops events before 0, at 900 s or later, or not finite', () => {
+  it('drops events before 0, at 108000 s or later, or not finite', () => {
     const played = playScore(
-      score([event(-0.1, 'note', 'pad'), event(900, 'note', 'pad'), event(Number.NaN, 'note', 'pad'), event(1, 'note', 'pad', { dur: Number.POSITIVE_INFINITY })]),
-      identityTimeline(film(1000)),
+      score([event(-0.1, 'note', 'pad'), event(108_000, 'note', 'pad'), event(Number.NaN, 'note', 'pad'), event(1, 'note', 'pad', { dur: Number.POSITIVE_INFINITY })]),
+      identityTimeline(film(109_000)),
     );
     assert.equal(played.sounds.length, 0);
   });

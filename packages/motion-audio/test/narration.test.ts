@@ -132,15 +132,15 @@ describe('decoding takes', () => {
     assert.equal(judgeTakeBytes(300 * 1024, null, 0, limits), 'big');
     assert.equal(judgeTakeBytes(300 * 1024, { seconds: 10, bare: () => new ArrayBuffer(0) }, 0, limits), null);
     assert.equal(judgeTakeBytes(1000, { seconds: 32, bare: () => new ArrayBuffer(0) }, 0, limits), 'long');
-    assert.equal(judgeTakeBytes(1000, { seconds: 10, bare: () => new ArrayBuffer(0) }, 295, limits), 'total');
-    assert.equal(judgeTakeBytes(1000, null, 300, limits), 'total');
+    assert.equal(judgeTakeBytes(1000, { seconds: 10, bare: () => new ArrayBuffer(0) }, 35_995, limits), 'total');
+    assert.equal(judgeTakeBytes(1000, null, 36_000, limits), 'total');
   });
 
   it('judges a decoded take by its length', () => {
     assert.equal(judgeTakeSeconds(null, 0, limits), 'undecodable');
     assert.equal(judgeTakeSeconds(0, 0, limits), 'undecodable');
     assert.equal(judgeTakeSeconds(31.5, 0, limits), 'long');
-    assert.equal(judgeTakeSeconds(10, 295, limits), 'total');
+    assert.equal(judgeTakeSeconds(10, 35_995, limits), 'total');
     assert.equal(judgeTakeSeconds(10, 0, limits), null);
   });
 

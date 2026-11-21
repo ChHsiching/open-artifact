@@ -120,7 +120,7 @@ A film of scenes never writes this: `kit.scenes()` builds it. A film with no `sc
 window.CUT = {
   width: 1920, height: 1080,    // integers ≤4096; vertical 1080×1920, 4:5 1080×1350, square 1080×1080
   fps: 60,                      // 24 | 30 | 60
-  duration: 32.4,               // seconds, ≤300
+  duration: 32.4,               // seconds, ≤36000 (10 hours)
   background: '#f4f2ee',
   chapters: [{ t: 0, label: 'Title' }, { t: 2.6, label: 'The app' }],
   async init(kit) { /* build the stage once */ },

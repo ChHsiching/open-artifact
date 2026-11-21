@@ -1,4 +1,4 @@
-/** How long a scene may play when set by hand: from half to three times its own length, within the 300 s cap. Pure. */
+/** How long a scene may play when set by hand: from half to three times its own length, within the 36000 s (10-hour) cap. Pure. */
 
 import {
   MAX_FILM_SECONDS,

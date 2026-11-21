@@ -76,11 +76,14 @@ const NO_TYPE_FITS =
 const SHOW_IT = "open view_url in your app's built-in browser (its browser panel or tab) if you have one; only when you have none, Artifact {action: \"open\", url} opens it in the computer's browser";
 const AFTER_CREATE_CHECK = `Ask first whatever the instructions say to ask before a first build, then write the files they describe into root, run Artifact {action: "call", url, name: "check"}, then show it: ${SHOW_IT}.`;
 const AFTER_CREATE = `Ask first whatever the instructions say to ask before a first build, then write the files they describe into root, then show it: ${SHOW_IT}.`;
+const AFTER_CREATE_EARLY_CHECK = `Ask first whatever the instructions say to ask before a first build, write the first playable batch into root, then show it right away so the person watches progress live (${SHOW_IT}) before finishing the rest and running Artifact {action: "call", url, name: "check"}.`;
+const AFTER_CREATE_EARLY = `Ask first whatever the instructions say to ask before a first build, write the first playable batch into root, then show it right away so the person watches progress live (${SHOW_IT}) before finishing the rest.`;
 const AFTER_CREATE_OPENING_CHECK = 'Ask first whatever the instructions say to ask before a first build, then write the files they describe into root, then run Artifact {action: "call", url, name: "check"}. The page opens for the person after your first write.';
 const AFTER_CREATE_OPENING = 'Ask first whatever the instructions say to ask before a first build, then write the files they describe into root. The page opens for the person after your first write.';
 const AFTER_CREATE_OPEN_CHECK = 'Ask first whatever the instructions say to ask before a first build, then write the files they describe into root, then run Artifact {action: "call", url, name: "check"}. The page is open: it shows your writes as they land.';
 const OPEN_NOT_AVAILABLE = 'The app you run in cannot show pages, so nothing opens by itself: once the content is written, give the person view_url.';
 const OPEN_YOURSELF = `Nothing opens by itself here: once the content is written (never while it is empty), ${SHOW_IT}.`;
+const OPEN_EARLY_YOURSELF = `Nothing opens by itself here: show the page right after the first playable batch (never while it is empty, before writing the rest or running check) so the person watches changes arrive live — ${SHOW_IT}.`;
 const AFTER_CREATE_OPEN = 'Ask first whatever the instructions say to ask before a first build, then write the files they describe into root. The page is open: it shows your writes as they land.';
 
 /** The reminder when people changed files the agent has not read since (the paths go in `changed_files`, never here). */
@@ -502,9 +505,11 @@ export class Tools {
         ? `- Write the content first${check ? ', then run check' : ''}. The page opens for the person after your first write.`
         : opening === 'now'
           ? `- The page is open for the person and shows your writes as they land${check ? '; run check once the content is written' : ''}.`
-          : check
-            ? `- Write the content first, then run check, then show it: ${SHOW_IT}.`
-            : `- Write the content first, then show it: ${SHOW_IT}.`,
+          : type.openArtifact?.openEarly === true
+            ? `- Show the page right after your first playable batch (never while empty), before finishing the rest so the person watches changes arrive live: ${SHOW_IT}${check ? '; run check once everything is written' : ''}.`
+            : check
+              ? `- Write the content first, then run check, then show it: ${SHOW_IT}.`
+              : `- Write the content first, then show it: ${SHOW_IT}.`,
     ].filter((line): line is string => line !== null);
     return lines.join('\n');
   }
@@ -550,13 +555,14 @@ export class Tools {
     } else if (wanted === 'after_first_write' && inApp && this.o.openAfterFirstWrite?.(record, caller)) {
       opening = 'after_first_write';
     }
+    const openEarly = type.openArtifact?.openEarly === true;
     return {
       url: artifactUrl(record.id),
       root,
       file_path: root,
       view_url: this.o.viewUrl(record.id),
       type_url: typeUrl(typeId),
-      ...(opening ? { open: opening } : args.open && args.open !== 'never' ? { note: this.o.harnesses().canShow(caller) ? OPEN_YOURSELF : OPEN_NOT_AVAILABLE } : {}),
+      ...(opening ? { open: opening } : args.open && args.open !== 'never' ? { note: this.o.harnesses().canShow(caller) ? (openEarly ? OPEN_EARLY_YOURSELF : OPEN_YOURSELF) : OPEN_NOT_AVAILABLE } : {}),
       ...(actions?.length ? { actions } : {}),
       instructions: this.instructionsFor(type, record, actions, opening),
       next:
@@ -568,9 +574,13 @@ export class Tools {
             ? check
               ? AFTER_CREATE_OPEN_CHECK
               : AFTER_CREATE_OPEN
-            : check
-              ? AFTER_CREATE_CHECK
-              : AFTER_CREATE,
+            : openEarly
+              ? check
+                ? AFTER_CREATE_EARLY_CHECK
+                : AFTER_CREATE_EARLY
+              : check
+                ? AFTER_CREATE_CHECK
+                : AFTER_CREATE,
     };
   }
 

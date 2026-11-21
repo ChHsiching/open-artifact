@@ -15,8 +15,8 @@ export const MAX_ASSETS = 96;
 export const MAX_TITLE_CHARS = 120;
 export const MAX_UPDATED_AT_CHARS = 40;
 export const MAX_SCENES = 24;
-/** The longest film, in seconds (film time and play time alike). */
-export const MAX_FILM_SECONDS = 300;
+/** The longest film, in seconds (film time and play time alike: 10 hours). */
+export const MAX_FILM_SECONDS = 36_000;
 export const MAX_BATCH_WRITES = 50;
 export const MAX_BATCH_BYTES = 1_048_576;
 export const MAX_UPLOAD_BYTES = 64 * 1024 * 1024;

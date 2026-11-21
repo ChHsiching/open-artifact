@@ -61,13 +61,13 @@ test('a length out of limits, or for a scene that has changed, is ignored', () =
   assert.equal(sceneClock(parts, '{not json').moved, false);
 });
 
-test('lengths that would take the film past 300 s are set aside', () => {
-  const long = filmParts(200, [{ t: film(0), label: 'A' }, { t: film(100), label: 'B' }], ['a', 'b']);
-  const record = JSON.stringify({ v: 1, scenes: [{ id: 'a', dur: { was: 100, v: 200 } }, { id: 'b', dur: { was: 100, v: 200 } }] });
+test('lengths that would take the film past 36000 s are set aside', () => {
+  const long = filmParts(24_000, [{ t: film(0), label: 'A' }, { t: film(12_000), label: 'B' }], ['a', 'b']);
+  const record = JSON.stringify({ v: 1, scenes: [{ id: 'a', dur: { was: 12_000, v: 24_000 } }, { id: 'b', dur: { was: 12_000, v: 24_000 } }] });
   const clock = sceneClock(long, record);
   assert.equal(clock.aside, true);
   assert.equal(clock.moved, false);
-  assert.equal(clock.duration, 200);
+  assert.equal(clock.duration, 24_000);
 });
 
 test('the score moves with the scenes, at the same pitch', () => {

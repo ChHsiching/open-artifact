@@ -24,7 +24,7 @@ export interface ScoreBuilder {
 export type ScoreParameters = VoiceParameters;
 
 const MOST_EVENTS = 20000;
-const LONGEST_S = 600;
+const LONGEST_S = 72000;
 const NOTE_STEPS: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
 const VOICE_KEYS = ['pan', 'gain', 'rev', 'detune', 'bright'] as const;
 const FX_KEYS = [...VOICE_KEYS, 'into', 'rate'] as const;

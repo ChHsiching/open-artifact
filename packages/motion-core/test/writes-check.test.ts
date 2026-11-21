@@ -73,7 +73,7 @@ describe('check', () => {
   it('reports what stops the film or what it drops', () => {
     const files = new Map([
       ['film/script', JSON.stringify({ code: 'window.CUT = kit.scenes(((' })],
-      ['modules/scenes.json', scenes([{ id: 'Yard', name: 'Yard', dur: 0 }, { id: 'gate', name: 'Gate', dur: 400 }], 'final')],
+      ['modules/scenes.json', scenes([{ id: 'Yard', name: 'Yard', dur: 0 }, { id: 'gate', name: 'Gate', dur: 40_000 }], 'final')],
       ['modules/layer-x.js', JSON.stringify({ kind: 'js', text: '' })],
       ['modules/data.json', JSON.stringify({ kind: 'json', text: '{' })],
       ['other/x', '{}'],
@@ -86,7 +86,7 @@ describe('check', () => {
     has(/^error db\/film\/script\.json: does not parse: Unexpected token/);
     has(/scenes\[0\] id "Yard"/);
     has(/scenes\[0\] dur: seconds, above 0/);
-    has(/add up to 400 s/);
+    has(/add up to 40000 s/);
     has(/stage is "final" but scene modules are missing: 1 \(Yard\), 2 \(gate\)/);
     has(/^warning db\/modules\/layer-x\.js\.json: names that begin layer-/);
     has(/^error db\/modules\/data\.json\.json: is not JSON/);

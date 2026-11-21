@@ -19,7 +19,7 @@ export interface SceneClock {
   back(T: FilmSeconds): PlaySeconds;
 }
 
-const MOST_FILM_S = 300;
+const MOST_FILM_S = 36000;
 const NEAR_S = 0.001;
 const EDGE_S = 1e-9;
 const MOST_RECORD_CHARS = 262144;

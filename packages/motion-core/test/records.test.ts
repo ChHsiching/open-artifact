@@ -69,18 +69,18 @@ describe('recut', () => {
     assert.equal(buildClock(inputs, record).retimed, false);
   });
 
-  it('plays at the film lengths when the lengths by hand pass 300 s, keeping names', () => {
-    const long: RecutPart[] = [{ key: 'a', own: 'A', filmDur: filmSeconds(100) }];
-    const record = parseRecutRecord({ v: 1, scenes: [{ id: 'a', dur: { was: 100, v: 301 }, name: { was: 'A', v: 'Long' } }] });
+  it('plays at the film lengths when the lengths by hand pass 36000 s, keeping names', () => {
+    const long: RecutPart[] = [{ key: 'a', own: 'A', filmDur: filmSeconds(12_000) }];
+    const record = parseRecutRecord({ v: 1, scenes: [{ id: 'a', dur: { was: 12_000, v: 36_001 }, name: { was: 'A', v: 'Long' } }] });
     assert.equal(record.scenes[0]?.dur, undefined);
     const over = parseRecutRecord({
       v: 1,
       scenes: [
-        { id: 'a', dur: { was: 100, v: 200 } },
-        { id: 'b', dur: { was: 100, v: 150 }, name: { was: 'B', v: 'Bee' } },
+        { id: 'a', dur: { was: 12_000, v: 24_000 } },
+        { id: 'b', dur: { was: 12_000, v: 18_000 }, name: { was: 'B', v: 'Bee' } },
       ],
     });
-    const two: RecutPart[] = [...long, { key: 'b', own: 'B', filmDur: filmSeconds(100) }];
+    const two: RecutPart[] = [...long, { key: 'b', own: 'B', filmDur: filmSeconds(12_000) }];
     assert.equal(recutExceedsFilmLimit(over, two), true);
     const clock = buildClock(
       two.map((part) => ({ key: part.key, name: part.own, dur: part.filmDur })),

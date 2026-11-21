@@ -142,7 +142,7 @@ describe('the score as MIDI', () => {
           event({ kind: 'note', patch: 'keys', t: filmSeconds(0), dur: 2 }),
           event({ kind: 'note', patch: 'keys', t: filmSeconds(1), dur: 0.5, vel: 300 }),
           event({ kind: 'note', patch: 'keys', t: filmSeconds(Number.NaN) }),
-          event({ kind: 'note', patch: 'keys', t: filmSeconds(5000) }),
+          event({ kind: 'note', patch: 'keys', t: filmSeconds(200_000) }),
         ]),
       ),
     );

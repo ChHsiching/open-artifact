@@ -19,5 +19,5 @@
     "actions": true
   },
   "engines": { "openArtifact": ">=1" },
-  "openArtifact": { "style": "db", "store": "db", "comments": true, "exports": ["mp4", "gif", "html", "zip"], "uses": ["design-system"] }
+  "openArtifact": { "style": "db", "store": "db", "comments": true, "openEarly": true, "exports": ["mp4", "gif", "html", "zip"], "uses": ["design-system"] }
 }

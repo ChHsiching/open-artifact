@@ -18,11 +18,11 @@ test('a short scene keeps at least a second, and never less than its own length'
   assert.equal(sceneLengthBounds([part(0.6)], 0)?.min, 0.6);
 });
 
-test('the other scenes leave room up to the 300 s cap', () => {
-  const bounds = sceneLengthBounds([part(10), part(200, 280)], 0);
+test('the other scenes leave room up to the 36000 s cap', () => {
+  const bounds = sceneLengthBounds([part(10), part(20_000, 35_980)], 0);
   assert.equal(bounds?.max, 20);
   // Its own length stays allowed even when the others already fill the film.
-  assert.equal(sceneLengthBounds([part(10), part(100, 295)], 0)?.max, 10);
+  assert.equal(sceneLengthBounds([part(10), part(20_000, 35_995)], 0)?.max, 10);
 });
 
 test('lengths snap to tenths, stay within bounds, and land on the scene’s own length nearby', () => {

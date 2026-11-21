@@ -20,7 +20,7 @@ export const DEFAULT_NARRATION_LIMITS: NarrationLimits = {
   loudness: -16,
   maxLines: 100,
   maxLineSeconds: 30,
-  maxSpeechSeconds: 300,
+  maxSpeechSeconds: 36_000,
   maxLineChars: 300,
   maxTakeKib: 256,
   maxWavKib: 1536,

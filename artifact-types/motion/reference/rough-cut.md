@@ -32,7 +32,7 @@ with the same writes (`path` in place of `collection` and `doc_id`):
 ```
 
 **Scenes.** Plan two or three for 10 seconds, three or four for 20 and five or six for 30; the player takes 24 at most, and the seconds add
-up to the Length answer, 300 at most. Judge how rich the film should be (motion.md), and say "rich" or "plain" in `look`. Each scene makes one clear point, not one symbol, that the viewer can take in at once: cut what doesn't serve it, and keep the detail that does. Many films go from an establishing
+up to the Length answer, 36000 (10 hours) at most. Judge how rich the film should be (motion.md), and say "rich" or "plain" in `look`. Each scene makes one clear point, not one symbol, that the viewer can take in at once: cut what doesn't serve it, and keep the detail that does. Many films go from an establishing
 open, through the subject arriving and the thing happening, to an end card held 3 s or more, but that's a habit, not a
 rule: a poem may want one long drifting shot. A film that explains plans its scenes by explainer.md: the viewer's
 question in the first, then one action on its subject a scene, each `desc` naming the action and the state it leaves.

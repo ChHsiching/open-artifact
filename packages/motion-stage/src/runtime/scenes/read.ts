@@ -14,7 +14,7 @@ export interface ScenesRecord {
 }
 
 const MOST_SCENES = 24;
-const LONGEST_FILM_S = 300;
+const LONGEST_FILM_S = 36000;
 const SCENE_ID = /^[a-z][a-z0-9-]{0,31}$/;
 
 /** One sentence and no stack, for the page to show as it is. */

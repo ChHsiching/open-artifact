@@ -3,7 +3,7 @@ import type { Chapter } from '../protocol.ts';
 import type { Cut } from './film.ts';
 import type { Kit } from './kit/index.ts';
 
-const MOST_FILM_S = 300;
+const MOST_FILM_S = 36000;
 const MOST_CHAPTERS = 32;
 const LONGEST_LABEL = 48;
 
@@ -22,7 +22,7 @@ export function readCut(given: unknown): Cut | string {
   const duration = field('duration');
   if (!isSide(width) || !isSide(height)) return 'CUT.width/height must be integers between 16 and 4096';
   if (!isFps(fps)) return 'CUT.fps must be 24, 30 or 60';
-  if (!(typeof duration === 'number' && isFinite(duration) && duration > 0 && duration <= MOST_FILM_S)) return 'CUT.duration must be a number of seconds in (0, 300]';
+  if (!(typeof duration === 'number' && isFinite(duration) && duration > 0 && duration <= MOST_FILM_S)) return 'CUT.duration must be a number of seconds in (0, 36000]';
   const init = field('init');
   const background = field('background');
   // The film's own object, so that a render reading `this` finds what it set.

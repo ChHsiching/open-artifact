@@ -6,8 +6,8 @@ import { MAX_SOUND_SECONDS, voiceOf } from './synth/voice.ts';
 import type { Sound } from './synth/voice.ts';
 import type { FilmTimeline } from './timeline.ts';
 
-/** Score events later than this are not played. */
-export const MAX_EVENT_SECONDS = 900;
+/** Score events later than this are not played (3x the 10-hour film limit). */
+export const MAX_EVENT_SECONDS = 108_000;
 
 /** A score sound placed in play time: its onset, and the span it is heard over (its ring included). */
 export interface PlayedSound {

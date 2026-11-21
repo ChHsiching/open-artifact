@@ -31,7 +31,7 @@ test('scenes.json is read with its defaults, or refused in one sentence', () => 
   assert.throws(() => readScenes('{}'), /^Error: scenes\.json: must be JSON/);
   assert.throws(() => readScenes(JSON.stringify({ v: 1, stage: 'final', scenes: [{ id: 'Intro', dur: 1 }] })), /needs an "id"/);
   assert.throws(() => readScenes(JSON.stringify({ v: 1, stage: 'final', scenes: [{ id: 'a', dur: 1 }, { id: 'a', dur: 1 }] })), /two scenes are called a/);
-  assert.throws(() => readScenes(JSON.stringify({ v: 1, stage: 'final', scenes: [{ id: 'a', dur: 200 }, { id: 'b', dur: 200 }] })), /add up to 400 s/);
+  assert.throws(() => readScenes(JSON.stringify({ v: 1, stage: 'final', scenes: [{ id: 'a', dur: 20_000 }, { id: 'b', dur: 20_000 }] })), /add up to 40000 s/);
 });
 
 test('a card takes the ink that stands out more on its ground', () => {

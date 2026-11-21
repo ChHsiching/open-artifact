@@ -83,6 +83,11 @@ export interface ManifestHostHints {
    * quickstart lists the person's artifacts of those types as `related`.
    */
   uses?: string[];
+  /**
+   * The page is worth opening right after the first playable batch (e.g. a rough cut) so the person watches
+   * progress live as later writes land, rather than waiting until everything is written and checked.
+   */
+  openEarly?: boolean;
   [key: string]: unknown;
 }
 

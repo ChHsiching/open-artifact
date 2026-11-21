@@ -126,7 +126,7 @@ stays as free as ever.
 ## Length
 
 Three lengths that suit this film, none over 30 seconds ("10 s", "20 s", "30 s"), and Other. They type or ask for
-more: that many, 300 seconds at most.
+more: that many, 36000 seconds (10 hours) at most.
 
 ## What an answer means
 
