@@ -15,3 +15,4 @@ plugins/dsh/CHANGELOG.md
 # The open-artifact skill's vendored daemon (scripts/build-skill.mjs)
 skills/open-artifact/vendor/
 designs/
+films/
