@@ -40,8 +40,12 @@ export const SHELL_PARAMS = {
   panel: 'panel',
 } as const;
 
-/** Slide links use stable ids. Earlier versions used a one-based page number. */
-export const SLIDE_FRAGMENT = /^#slide-(?:~[A-Za-z0-9_-]{1,64}|[0-9]{1,4})$/;
+/**
+ * Slide links use stable ids. Earlier versions used a one-based page number.
+ * `.only` after an id opens that slide on its own, every build shown; the page
+ * reports where it is as `.only.<position>.<count>`.
+ */
+export const SLIDE_FRAGMENT = /^#slide-(?:~[A-Za-z0-9_-]{1,64}(?:\.only(?:\.[0-9]{1,4}\.[0-9]{1,4})?)?|[0-9]{1,4})$/;
 
 /**
  * Another page frames a deck at this fragment to show it read only, one
@@ -344,7 +348,10 @@ export interface HostCaps {
 }
 
 /** Host → Shell. */
-export type HostToShell = { openArtifact: 'host_hello'; caps: HostCaps; agentName?: string };
+export type HostToShell =
+  | { openArtifact: 'host_hello'; caps: HostCaps; agentName?: string }
+  /** Show this place of the artifact (a fragment from `place`, or a link's own); the Shell answers with `place`. */
+  | { openArtifact: 'goto'; hash: string };
 
 /** Shell → host. */
 export type ShellToHost =
@@ -358,6 +365,12 @@ export type ShellToHost =
   | { openArtifact: 'open_session'; session: string | null; harness: string }
   /** Close the Shell's pane. */
   | { openArtifact: 'close' }
+  /**
+   * Where the artifact is now: a slide, a Docs tab or block, a sheet. The
+   * host can keep the fragment and send it back with `goto`. Sent after
+   * `shell_ready`, whenever the place changes, and in answer to `goto`.
+   */
+  | { openArtifact: 'place'; artifact: string; hash: string }
   /** A comment was sent to the agent; the host may show the session. */
   | { openArtifact: 'comment_summon'; text: string };
 

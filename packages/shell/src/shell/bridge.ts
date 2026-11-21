@@ -15,7 +15,8 @@
  *   backend and answered with `cap_grant`/`cap_r`/`cap_ack`/`cap_ev`;
  * - **host**, with the app that embeds the Shell: `shell_hello` to `*` on
  *   load, `host_hello` back, then `shell_ready`, `new_session`,
- *   `open_session`, `close` and `comment_summon` to the host's origin.
+ *   `open_session`, `close`, `comment_summon` and `place` to the host's
+ *   origin; the host may send `goto` with a place.
  */
 
 import { copyShellLink } from './actions.ts';
@@ -27,6 +28,7 @@ import { t } from '../lib/i18n.ts';
 import { call as brokerCall, want as brokerWant, type PagePost } from './broker.ts';
 import { browserClipboard, createClipboardRelay } from './clipboard.ts';
 import { actionOf, exportRequestId, showsComments, normalizeReport, type ExportEntry, sheetPageFragment, inlineView } from './model.ts';
+import { gotoCommand, placeOf } from './place.ts';
 import { useShell } from './store.ts';
 
 /** The page's frame, while mounted. */
@@ -40,6 +42,8 @@ const exportsWaiting = new Map<string, (items: ChromeExportItem[]) => void>();
 let exportSeq = 0;
 /** `export_format` requests in flight, by request id: what the toast names. */
 const formatsWaiting = new Map<string, string>();
+/** The page's last reported place, for a host that says hello later or asks for an unknown one. */
+let place: string | null = null;
 /** Pending reload after `files_changed`, cleared by `files_changed_ok`. */
 let filesTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -166,8 +170,18 @@ export function toHost(message: ShellToHost): void {
   window.parent.postMessage({ artifact: boot.url, ...message }, host.origin);
 }
 
+function tellPlace(): void {
+  const boot = useShell.getState().boot;
+  if (boot && place) toHost({ openArtifact: 'place', artifact: boot.url, hash: place });
+}
+
 function onPageMessage(message: PageToShell, event: MessageEvent): void {
   const store = useShell.getState();
+  const reported = store.boot ? placeOf(store.boot.type, message) : null;
+  if (reported) {
+    place = reported;
+    tellPlace();
+  }
   switch (message.openArtifact) {
     case 'request_comment_mode':
       if (store.boot?.typeServer?.role !== 'viewer' && showsComments(store.report) && typeof message.on === 'boolean') {
@@ -260,12 +274,22 @@ function onMessage(event: MessageEvent): void {
     if (event.origin === pageOrigin) onPageMessage(message as PageToShell, event);
     return;
   }
-  if (message.openArtifact !== 'host_hello' || event.source !== window.parent || !embedded) return;
+  if (event.source !== window.parent || !embedded) return;
+  if (message.openArtifact === 'goto') {
+    const { host, boot } = useShell.getState();
+    if (!host || !boot || event.origin !== host.origin) return;
+    const cmd = gotoCommand(boot.type, message.hash);
+    if (cmd) command(cmd);
+    else tellPlace();
+    return;
+  }
+  if (message.openArtifact !== 'host_hello') return;
   const caps = message.caps && typeof message.caps === 'object' ? message.caps : {};
   const agentName = typeof message.agentName === 'string' && message.agentName.trim() ? message.agentName.trim() : null;
   useShell.getState().setHost({ origin: event.origin, caps, agentName });
   const boot = useShell.getState().boot;
   if (boot) window.parent.postMessage({ openArtifact: 'shell_ready', artifact: boot.url } satisfies ShellToHost, event.origin);
+  tellPlace();
 }
 
 /**

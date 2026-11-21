@@ -17,11 +17,11 @@ const browserSkip = browserOff || !findChrome();
 const inlineSlide = id => `document.querySelector('[data-open-artifact-inline-view] [data-open-artifact-slide="${id}"]')`;
 const inlinePager = `document.querySelector('nav[aria-label="Slides"]')`;
 
-/** A page on an origin of its own that frames `src` (as a chat or a doc embeds a deck). */
-async function framing(src) {
+/** A page on an origin of its own that frames `src` (as a chat or a doc embeds a deck), running `script` beside it. */
+async function framing(src, script = '') {
   const server = createServer((_req, res) => {
     res.setHeader('content-type', 'text/html');
-    res.end(`<!doctype html><iframe id="framed" src="${src}" style="width:800px;height:520px;border:0"></iframe>`);
+    res.end(`<!doctype html><script>${script}</script><iframe id="framed" src="${src}" style="width:800px;height:520px;border:0"></iframe>`);
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   return {
@@ -117,6 +117,37 @@ describe('slides', { skip: skipFor('slides') }, () => {
     try { assert.deepEqual(reopened.problems, []); } finally { await reopened.close(); }
     await page.evaluate("location.hash = '#slide-1'");
     assert.ok(await page.waitFor(`document.querySelector('[data-open-artifact-mode="edit"][data-open-artifact-slide="cover"]')`));
+  });
+
+  it('opens one slide on its own from a .only link, pages whole slides, and returns to the editor', { skip: browserSkip }, async () => {
+    const only = `document.querySelector('[data-presenter-only]')`;
+    const alone = id => `${only}?.querySelector('[data-open-artifact-slide="${id}"]')`;
+    const editing = id => `!${only} && document.querySelector('[data-open-artifact-mode="edit"][data-open-artifact-slide="${id}"]')`;
+    const viewer = await browser.load(url + '#slide-~cover.only', { ready: alone('cover') });
+    try {
+      assert.ok(await viewer.waitFor(`location.hash === '#slide-~cover.only.1.3' && /^Slide 1 of 3/.test(${only}.getAttribute('aria-label')) && ${only}.getAttribute('role') === 'group'`));
+      assert.equal(await viewer.evaluate(`Boolean(document.querySelector('[data-presenter-controls]'))`), false);
+      // Every build is shown at once.
+      assert.ok(await viewer.waitFor(`[...${alone('cover')}.querySelectorAll('p')].some(p => p.textContent === 'Details after a click' && getComputedStyle(p).opacity === '1' && getComputedStyle(p).visibility === 'visible')`));
+      await viewer.press('ArrowRight');
+      assert.ok(await viewer.waitFor(`${alone('plan')} && location.hash === '#slide-~plan.only.2.3'`));
+      await viewer.type('f');
+      assert.ok(await viewer.waitFor(`!document.fullscreenElement && ${alone('plan')}`));
+      await viewer.evaluate(`location.hash = '#slide-~end.only'`);
+      assert.ok(await viewer.waitFor(`${alone('end')} && location.hash === '#slide-~end.only.3.3'`));
+      await viewer.evaluate(`location.hash = '#slide-~plan'`);
+      assert.ok(await viewer.waitFor(editing('plan')));
+      // Back returns to the slide on its own.
+      await viewer.evaluate('history.back()');
+      assert.ok(await viewer.waitFor(`${alone('end')} && location.hash === '#slide-~end.only.3.3'`));
+      await viewer.evaluate(`location.hash = '#slide-~gone.only'`);
+      assert.ok(await viewer.waitFor(`${alone('end')} && location.hash === '#slide-~end.only.3.3'`));
+      await viewer.press('Escape');
+      assert.ok(await viewer.waitFor(`${editing('end')} && location.hash === '#slide-~end'`));
+      assert.deepEqual(viewer.problems, []);
+    } finally {
+      await viewer.close();
+    }
   });
 
   async function chooseExport(item) {
@@ -516,6 +547,34 @@ describe('slides', { skip: skipFor('slides') }, () => {
         }
       } finally {
         await host.close();
+      }
+      // A host that said hello hears where the deck is, and can send it to a place.
+      const placing = await framing(`${state.url}/a/${id}#slide-~plan`, `window.places = [];
+        addEventListener('message', event => {
+          const message = event.data;
+          if (message?.openArtifact === 'shell_hello') event.source.postMessage({ openArtifact: 'host_hello', caps: {} }, event.origin);
+          if (message?.openArtifact === 'place') places.push(message.hash);
+        });
+        window.goto = hash => document.getElementById('framed').contentWindow.postMessage({ openArtifact: 'goto', hash }, '*');`);
+      try {
+        const hosted = await browser.load(placing.url, { ready: `window.places?.at(-1) === '#slide-~plan'` });
+        try {
+          await hosted.evaluate(`goto('#slide-~end.only')`);
+          assert.ok(await hosted.waitFor(`places.at(-1) === '#slide-~end.only.3.3'`));
+          const heard = await hosted.evaluate('places.length');
+          await hosted.evaluate(`goto('#slide-~gone')`);
+          assert.ok(await hosted.waitFor(`places.length > ${heard} && places.at(-1) === '#slide-~end.only.3.3'`));
+          const again = await hosted.evaluate('places.length');
+          await hosted.evaluate(`goto('#view-inline')`);
+          assert.ok(await hosted.waitFor(`places.length > ${again} && places.at(-1) === '#slide-~end.only.3.3'`));
+          await hosted.evaluate(`goto('#slide-~cover')`);
+          assert.ok(await hosted.waitFor(`places.at(-1) === '#slide-~cover'`));
+          assert.deepEqual(hosted.problems, []);
+        } finally {
+          await hosted.close();
+        }
+      } finally {
+        await placing.close();
       }
     } finally {
       await shell?.close();
