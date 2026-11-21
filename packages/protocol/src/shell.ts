@@ -43,6 +43,12 @@ export const SHELL_PARAMS = {
 /** Slide links use stable ids. Earlier versions used a one-based page number. */
 export const SLIDE_FRAGMENT = /^#slide-(?:~[A-Za-z0-9_-]{1,64}|[0-9]{1,4})$/;
 
+/**
+ * Another page frames a deck at this fragment to show it read only, one
+ * slide at a time with a pager, and without the Shell's bar.
+ */
+export const INLINE_VIEW_FRAGMENT = '#view-inline';
+
 /** A Docs tab, optionally followed by a block id or heading slug in that tab. */
 export const DOC_FRAGMENT = /^#[0-9a-f]{8}-[0-9a-f]{4}(?:\.[^\s#]{1,500})?$/;
 

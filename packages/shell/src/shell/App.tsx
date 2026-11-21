@@ -6,11 +6,11 @@ import { useEffect } from 'react';
 import { EmptyState } from '@open-artifact/ui';
 import { t } from '../lib/i18n.ts';
 import { loadLibrary, refreshArtifact, restoreSent, startEvents } from './actions.ts';
-import { startBridge } from './bridge.ts';
+import { embedded, startBridge } from './bridge.ts';
 import { AskPane } from './components/AskPane.tsx';
 import { Stage } from './components/Stage.tsx';
 import { TopBar } from './components/TopBar.tsx';
-import { addressWithout, panelOf } from './model.ts';
+import { addressWithout, inlineView, panelOf } from './model.ts';
 import { useShell } from './store.ts';
 
 /** The Shell once its boot is known: starts the protocols, the event stream and the first loads. */
@@ -20,7 +20,7 @@ function Shell() {
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const store = useShell.getState();
-    if (params.get('toolbar') === '0') store.setBarHidden(true);
+    if (params.get('toolbar') === '0' || (store.boot && inlineView(store.boot, location.href, embedded))) store.setBarHidden(true);
     if (params.get('chat') === '1' || params.get('ask') === '1') store.setAskOpen(true);
     // `?panel=share|export` (an agent's open with panel): open it once, and drop it so a reload does not.
     const panel = panelOf(location.href);

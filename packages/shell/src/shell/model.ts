@@ -3,7 +3,7 @@
  * store, so it runs under `node --test`.
  */
 
-import { SLIDE_FRAGMENT } from '@open-artifact/protocol';
+import { INLINE_VIEW_FRAGMENT, SLIDE_FRAGMENT } from '@open-artifact/protocol';
 import {
   CHROME_PEER_KEY,
   MAX_CHROME_PEERS,
@@ -114,12 +114,17 @@ export function sheetPageFragment(fragment: string): string {
   return designPageFragment(fragment);
 }
 
+/** A deck framed by another page at {@link INLINE_VIEW_FRAGMENT}: no bar, and the page shows the read-only view. */
+export function inlineView(boot: Pick<ShellBoot, 'type'>, shellHref: string, embedded: boolean): boolean {
+  return embedded && boot.type === 'slides' && new URL(shellHref).hash === INLINE_VIEW_FRAGMENT;
+}
+
 /**
  * The page's address in the frame: the boot's page with `open_artifact_shell`, `open_artifact_id`
  * and the `comment` thread taken from the Shell's own address. `null` when
  * there is no page.
  */
-export function pageAddress(boot: Pick<ShellBoot, 'page' | 'id'> & Partial<Pick<ShellBoot, 'type' | 'typeServer'>>, shellHref: string): string | null {
+export function pageAddress(boot: Pick<ShellBoot, 'page' | 'id'> & Partial<Pick<ShellBoot, 'type' | 'typeServer'>>, shellHref: string, embedded = false): string | null {
   if (!boot.page) return null;
   const shell = new URL(shellHref);
   const thread = shell.searchParams.get(SHELL_PARAMS.comment);
@@ -127,7 +132,7 @@ export function pageAddress(boot: Pick<ShellBoot, 'page' | 'id'> & Partial<Pick<
     const at = new URL(boot.page, shell.href);
     at.searchParams.set(SHELL_PARAMS.shell, shell.origin);
     at.searchParams.set(SHELL_PARAMS.id, boot.id);
-    if (boot.type === 'slides' && SLIDE_FRAGMENT.test(shell.hash)) at.hash = shell.hash;
+    if (boot.type === 'slides' && (SLIDE_FRAGMENT.test(shell.hash) || (embedded && shell.hash === INLINE_VIEW_FRAGMENT))) at.hash = shell.hash;
     if (boot.type === 'docs') {
       at.searchParams.set('doc_link_base', boot.typeServer?.invite || shell.origin + shell.pathname);
       const tab = shell.searchParams.get('tab');

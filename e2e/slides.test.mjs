@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
+import { createServer } from 'node:http';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { after, before, describe, it } from 'node:test';
@@ -13,6 +14,21 @@ import { until } from './lib/http.mjs';
 const rail = '[data-open-artifact-thumbs] [data-slide-index]';
 const fileNames = ['cover', 'plan', 'end'];
 const browserSkip = browserOff || !findChrome();
+const inlineSlide = id => `document.querySelector('[data-open-artifact-inline-view] [data-open-artifact-slide="${id}"]')`;
+const inlinePager = `document.querySelector('nav[aria-label="Slides"]')`;
+
+/** A page on an origin of its own that frames `src` (as a chat or a doc embeds a deck). */
+async function framing(src) {
+  const server = createServer((_req, res) => {
+    res.setHeader('content-type', 'text/html');
+    res.end(`<!doctype html><iframe id="framed" src="${src}" style="width:800px;height:520px;border:0"></iframe>`);
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  return {
+    url: `http://127.0.0.1:${server.address().port}/`,
+    close: () => new Promise(resolve => { server.closeAllConnections(); server.close(resolve); }),
+  };
+}
 
 describe('slides', { skip: skipFor('slides') }, () => {
   let run, root, downloads, url, publicUrl, browser, page, wrapped;
@@ -443,7 +459,7 @@ describe('slides', { skip: skipFor('slides') }, () => {
     } finally { await guest?.close(); await owner?.close(); await server.stop(); }
   });
 
-  it('opens a linked deck in the real Shell and keeps the frame and address bar in sync', { skip: browserSkip }, async () => {
+  it('opens a linked deck in the real Shell, keeps the frame and address bar in sync, and frames it inline', { skip: browserSkip }, async () => {
     const overrides = {
       OPEN_ARTIFACT_HOME: tmpDir('slides-daemon'),
       OPEN_ARTIFACT_TYPE_SERVER_HOME: tmpDir('slides-shell-state'),
@@ -482,6 +498,21 @@ describe('slides', { skip: skipFor('slides') }, () => {
       await shell.evaluate(`document.querySelector('header button[aria-label="Share"]').click()`);
       assert.ok(await shell.waitFor(`[...document.querySelectorAll('[role="dialog"] button')].some(b => b.textContent.trim() === 'Export')`));
       assert.deepEqual(shell.problems, []);
+      // Framed by another page at #view-inline: no bar, the read-only view, and slide links the framing page follows.
+      const host = await framing(`${state.url}/a/${id}#view-inline`);
+      try {
+        const framed = await browser.load(host.url, { ready: inlineSlide('cover') });
+        try {
+          assert.deepEqual((await framed.evaluateAll(`Boolean(document.querySelector('header button[aria-label="Share"]'))`)).filter(Boolean), []);
+          await framed.evaluate(`document.getElementById('framed').src = ${JSON.stringify(`${state.url}/a/${id}#slide-~end`)}`);
+          assert.ok(await framed.waitFor(`${inlineSlide('end')} && ${inlinePager}?.textContent.includes('3 / 3')`));
+          assert.deepEqual(framed.problems, []);
+        } finally {
+          await framed.close();
+        }
+      } finally {
+        await host.close();
+      }
     } finally {
       await shell?.close();
       await daemon?.close();
@@ -489,6 +520,37 @@ describe('slides', { skip: skipFor('slides') }, () => {
         if (value === undefined) delete process.env[key];
         else process.env[key] = value;
       }
+    }
+  });
+
+  it('shows a framed deck read only at #view-inline: one slide with every build, a pager, and changes on disk in place', { skip: browserSkip }, async () => {
+    const project = path.join(root, 'project');
+    const names = ['deck.json', ...fileNames.map(id => `slides/${id}.html`)];
+    const files = () => Object.fromEntries(names.map(name => [name, fs.readFileSync(path.join(project, name), 'utf8')]));
+    const original = files();
+    const host = await framing(url + '#view-inline');
+    const viewer = await browser.load(host.url, { ready: inlineSlide('cover') });
+    try {
+      assert.deepEqual((await viewer.evaluateAll(`document.querySelectorAll('${rail}').length`)).filter(n => n > 0), []);
+      // The in-flow build is shown, not waiting for a click.
+      assert.ok(await viewer.waitFor(`[...(${inlineSlide('cover')}?.querySelectorAll('p') ?? [])].some(p => p.textContent === 'Details after a click' && getComputedStyle(p).opacity === '1' && getComputedStyle(p).visibility === 'visible')`));
+      assert.ok(await viewer.waitFor(`${inlinePager}?.textContent.includes('1 / 3') && ${inlinePager}.querySelector('[aria-label="Previous slide"]').disabled`));
+      await viewer.evaluateAll(`document.querySelector('[aria-label="Next slide"]')?.click()`);
+      assert.ok(await viewer.waitFor(inlineSlide('plan')));
+      await viewer.evaluateAll(`document.querySelector('[aria-label="Next slide"]')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))`);
+      assert.ok(await viewer.waitFor(`${inlineSlide('end')} && ${inlinePager}.querySelector('[aria-label="Next slide"]').disabled && /^Slide 3 of 3/.test(${inlinePager}.querySelector('[role="status"]').textContent)`));
+      assert.deepEqual(files(), original);
+      // An agent's change shows on the same slide, without reloading the page; a skipped slide leaves the pager.
+      await viewer.evaluateAll(`if (document.querySelector('[data-open-artifact-inline-view]')) window.inlineMarker = true`);
+      fs.writeFileSync(path.join(project, 'slides/end.html'), '<section id="end"><h1>Thanks</h1></section>');
+      assert.ok(await viewer.waitFor(`window.inlineMarker && ${inlineSlide('end')}?.textContent.includes('Thanks')`));
+      fs.writeFileSync(path.join(project, 'slides/plan.html'), original['slides/plan.html'].replace('<section id="plan"', '<section id="plan" hidden'));
+      assert.ok(await viewer.waitFor(`window.inlineMarker && ${inlineSlide('end')} && ${inlinePager}?.textContent.includes('2 / 2')`));
+      assert.deepEqual(viewer.problems, []);
+    } finally {
+      for (const [name, text] of Object.entries(original)) fs.writeFileSync(path.join(project, name), text);
+      await viewer.close();
+      await host.close();
     }
   });
 

@@ -7,7 +7,7 @@
  */
 
 import { useEffect, useRef, type ReactNode } from 'react';
-import { Loader2, Plus, Presentation, RotateCw, TriangleAlert } from 'lucide-react';
+import { Loader2, Plus, Presentation, TriangleAlert } from 'lucide-react';
 import { Button, CrashBoundary, EmptyState } from '@open-artifact/ui';
 import { useDeck } from './state/deck.ts';
 import { useOrder } from './state/outline.ts';
@@ -29,6 +29,7 @@ import { startShellBridge } from './services/shell.ts';
 import { loadDeck } from './services/sync.ts';
 import { syncDeckFonts } from './render/fonts.ts';
 import { Banners, useRecoveryOffer } from './components/Banners.tsx';
+import { CrashCard } from './components/CrashCard.tsx';
 import { CreationAnnouncer, CreationStatus, CreationView } from './components/Creation.tsx';
 import { Dialogs } from './components/Dialogs.tsx';
 import { FindBar } from './components/FindBar.tsx';
@@ -78,20 +79,6 @@ async function boot(): Promise<void> {
 }
 
 let booted = false;
-
-/** Shown when the editor failed to draw: changes are saved as they are made, so a reload loses nothing. */
-function CrashCard(): ReactNode {
-  return (
-    <div data-testid="slides-crashed" className="h-full bg-canvas">
-      <EmptyState icon={<TriangleAlert className="size-6" />} title="Something went wrong showing this presentation">
-        <p role="alert">Your changes are saved as you make them. Reload to try again.</p>
-        <Button className="mt-2" variant="secondary" icon={<RotateCw className="size-4" />} onClick={() => window.location.reload()}>
-          Reload
-        </Button>
-      </EmptyState>
-    </div>
-  );
-}
 
 /** The deck has no slides yet. */
 function EmptyDeck(): ReactNode {

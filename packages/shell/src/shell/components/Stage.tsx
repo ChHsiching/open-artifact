@@ -9,7 +9,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@open-artifact/ui';
 import { copyText } from '../../lib/format.ts';
 import { t } from '../../lib/i18n.ts';
-import { attachFrame, frameLoaded } from '../bridge.ts';
+import { attachFrame, embedded, frameLoaded } from '../bridge.ts';
 import { ask, newSession } from '../actions.ts';
 import { useAgentName } from '../hooks.ts';
 import { addressWithoutThread, pageAddress, pageOriginOf } from '../model.ts';
@@ -19,7 +19,7 @@ import { useBoot, useShell } from '../store.ts';
 export function PageFrame() {
   const boot = useBoot();
   // Computed once: the `comment` thread moves from the Shell's address to the page's.
-  const src = useMemo(() => pageAddress(boot, location.href), [boot]);
+  const src = useMemo(() => pageAddress(boot, location.href, embedded), [boot]);
   useEffect(() => {
     const rest = addressWithoutThread(location.href);
     if (rest) history.replaceState(history.state, '', rest);

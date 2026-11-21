@@ -26,7 +26,7 @@ import { toast } from '@open-artifact/ui';
 import { t } from '../lib/i18n.ts';
 import { call as brokerCall, want as brokerWant, type PagePost } from './broker.ts';
 import { browserClipboard, createClipboardRelay } from './clipboard.ts';
-import { actionOf, exportRequestId, showsComments, normalizeReport, type ExportEntry, sheetPageFragment } from './model.ts';
+import { actionOf, exportRequestId, showsComments, normalizeReport, type ExportEntry, sheetPageFragment, inlineView } from './model.ts';
 import { useShell } from './store.ts';
 
 /** The page's frame, while mounted. */
@@ -208,7 +208,8 @@ function onPageMessage(message: PageToShell, event: MessageEvent): void {
       }
       break;
     case 'current_slide':
-      if (store.boot?.type === 'slides' && typeof message.hash === 'string' && SLIDE_FRAGMENT.test(message.hash) && location.hash !== message.hash) {
+      // The inline fragment stays on the address, so a reload shows the inline view again.
+      if (store.boot?.type === 'slides' && typeof message.hash === 'string' && SLIDE_FRAGMENT.test(message.hash) && location.hash !== message.hash && !inlineView(store.boot, location.href, embedded)) {
         history.replaceState(history.state, '', message.hash);
       }
       break;
