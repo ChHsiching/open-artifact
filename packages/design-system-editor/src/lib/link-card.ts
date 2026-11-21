@@ -1,6 +1,6 @@
 /**
  * The address rules of the link card in rich Markdown editing: what a typed
- * address becomes in the Markdown source, how it is shown, and what may open.
+ * address becomes in the Markdown source, and which addresses leave the project.
  */
 
 /** Longest address the card writes into a link. */
@@ -56,31 +56,4 @@ export function normalizeTypedLink(raw: string): string | null {
 /** Whether an address leaves the project (a web page or mail). */
 export function isWebLink(target: string): boolean {
   return /^(?:https?:|mailto:)/i.test(target);
-}
-
-/** The address split for display: the site in front, the rest after it. */
-export function shownLink(target: string): { site: string; rest: string } {
-  const web = /^https?:\/\/([^/?#]+)(.*)$/i.exec(target);
-  if (web) return { site: web[1]!.replace(/^www\./i, ''), rest: web[2] === '/' ? '' : web[2]! };
-  const mail = /^mailto:(.*)$/i.exec(target);
-  if (mail) return { site: decodeURIComponent(mail[1]!), rest: '' };
-  return { site: target, rest: '' };
-}
-
-/** Whether a resolved address may be opened from the card. */
-export function canOpenLink(resolved: string): boolean {
-  try {
-    return ['http:', 'https:', 'mailto:'].includes(new URL(resolved).protocol);
-  } catch {
-    return false;
-  }
-}
-
-/** Where the card goes: below the link, or above it when below would leave the window. */
-export function placeLinkCard(link: { top: number; bottom: number; left: number }, card: { width: number; height: number }, window: { width: number; height: number }, gap = 6): { top: number; left: number } {
-  const below = link.bottom + gap;
-  const above = link.top - gap - card.height;
-  const top = below + card.height <= window.height - gap || above < gap ? below : above;
-  const left = Math.max(gap, Math.min(link.left, window.width - card.width - gap));
-  return { top, left };
 }

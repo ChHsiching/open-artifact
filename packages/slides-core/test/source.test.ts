@@ -117,11 +117,12 @@ describe('reading a source slide', () => {
     assert.equal((plan.slide.children[2] as TextNode).runs[0]!.text, '2');
   });
 
-  it('reads nested lists and reports styles on list lines', () => {
+  it('reads nested lists and moves a colour all their lines share onto the list', () => {
     const steps = slide('steps', 2);
     const list = steps.slide.children[1] as ListNode;
     assert.deepEqual(list.items.map((item) => [item.runs[0]!.text, item.level ?? 0]), [['One', 0], ['One a', 1], ['One b', 1], ['Two', 0]]);
-    assert.ok(steps.diagnostics.some((d) => d.level === 'unsupported' && /<li> color/.test(d.message) && d.line === 4));
+    assert.equal(list.style.color, 'red');
+    assert.ok(!steps.diagnostics.some((d) => /<li>/.test(d.message)));
   });
 
   it('follows the cascade: inline over sheet, !important over inline, var() fallbacks', () => {
@@ -254,9 +255,10 @@ describe('nested lists in the inline format', () => {
     assert.deepEqual((compileSlide(out, { id: 'a', lints: false }).slide.children[0] as ListNode).items, list.items);
   });
 
-  it('keeps margins out of inline decks', () => {
-    const result = compileSlide('<section id="a"><p style="margin:16px">t</p></section>', { id: 'a', lints: false });
-    assert.equal(result.slide.children[0]!.style.margin, undefined);
+  it('keeps margins on flow children of inline decks, not on pinned ones', () => {
+    const result = compileSlide('<section id="a"><p style="margin:16px">t</p><p style="position:absolute;left:0;top:0;margin:16px">u</p></section>', { id: 'a', lints: false });
+    assert.equal(result.slide.children[0]!.style.margin, '16px');
+    assert.equal(result.slide.children[1]!.style.margin, undefined);
     assert.ok(result.diagnostics.some((d) => /margin/.test(d.message)));
   });
 });

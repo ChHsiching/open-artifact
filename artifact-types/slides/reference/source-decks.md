@@ -44,7 +44,10 @@ like. Write normal CSS. How it is read:
   `article`, `nav` and similar are boxes; `h4`–`h6`, `figcaption`, `dt`, `dd`, `pre`, `label` are lines;
   `strong` / `em` are bold / italic; `code`, `mark`, `small`, `sup`, `sub` and other phrases keep their
   text, not their look. A list with `list-style:none` becomes plain lines (a screen reader hears no
-  list). Nested lists nest (`format.md`, Text).
+  list). Nested lists nest (`format.md`, Text), and each list, nested ones too, keeps its
+  `list-style-type` and `list-style-position`. Rules on `<li>` are not read, except type styles (face,
+  size, weight, line height, …) and colour that every item of the list shares, nested items included:
+  those move onto the list.
 - **Skipping.** `hidden` or `data-deck-skip` on the `<section>` skips the slide when presenting and
   downloading; `data-deck-skip="false"` does not.
 
@@ -92,13 +95,15 @@ it):
   `writing-mode` → a pinned `<p>` turned with `transform:rotate(…)`. `font-variant`,
   `font-feature-settings` → `font-variant-numeric:tabular-nums`. `white-space` other than `normal` or
   `nowrap` → `<br>`. `text-indent`.
-- Inside a line: a phrase keeps only colour, bold, italic and underline. A size, face, padding or pill
-  → a block of its own.
-- Tables: cell borders, `border-collapse`, `border-spacing`: every cell is ruled already. Fills →
-  `background` on a `<tr>`, not on cells or `<thead>`.
-- Caps: the ranges in `format.md`'s table (a `font-size` of 8–400px, `gap` 512, `padding` 256, 24 grid
-  tracks, 2–8 gradient stops, 8 shadow layers, …) hold here too: `open-artifact check` names a value
-  past one and what became of it.
+- Inside a line: a phrase keeps only colour, bold, italic and underline, and a weight of 400 inside
+  bolder text (a regular phrase). A size, face, padding or pill → a block of its own.
+- Tables: cell borders, `border-collapse`, `border-spacing`: every cell is ruled already. Fills → a
+  flat `background` on a `<tr>`, or on a `<thead>`/`<tbody>` for the rows that set none of their own; a
+  fill on cells stands only when every cell of the row has the same one, and then becomes the row's
+  (cells filled differently leave the row unfilled, a warning).
+- Caps: the ranges in `format.md`'s table (a `font-size` of 8–400px, `gap` 512, `padding` 1920, `margin`
+  ±1920, 24 grid tracks, 2–8 gradient stops, 8 shadow layers, …) hold here too: `open-artifact check`
+  names a value past one and what became of it.
 
 ## Motion
 

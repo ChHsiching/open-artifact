@@ -133,6 +133,7 @@ export async function runExport(request: ExportRequest, progress?: (done: number
       onFallback: () => notes.add('rasterFallback', current),
       onMissingEmbed: () => notes.add('embedPdf', current),
       onMissingPicture: () => notes.add('picture', current),
+      onLateFonts: (families) => families.forEach((family) => notes.family('fontLate', family)),
     };
     if (request.format !== 'html') {
       // Slide pictures cannot load fonts from the network: inline them.

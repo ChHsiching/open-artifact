@@ -54,6 +54,8 @@ export type FitMode = (typeof FIT_MODES)[number];
 export interface Marks {
   /** `<b>` */
   b?: true;
+  /** `<span style="font-weight:400">`: regular weight inside bold text. Never with `b`. */
+  regular?: true;
   /** `<i>` */
   i?: true;
   /** `<u>` */
@@ -121,6 +123,12 @@ export interface ListNode extends NodeBase {
   kind: 'list';
   tag: 'ul' | 'ol';
   items: ListItem[];
+  /** `<ol start>`: the number of the first item. */
+  start?: number;
+  /** `<ol reversed>`: the items count down. */
+  reversed?: true;
+  /** The markers of the lists nested at a level (1–8): `list-style-type` and `list-style-position` only. */
+  levels?: Record<number, StyleMap>;
 }
 
 /** A block inside a text box: an unstyled paragraph, heading or list. */

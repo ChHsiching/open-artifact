@@ -157,6 +157,19 @@ export function parseBoxShadow(value: string | undefined | null): CssShadow | nu
   return null;
 }
 
+/**
+ * A shadow for an office shape of `size` (in the shadow's px). Office
+ * shadows do not grow, so a positive spread is left out; a negative one
+ * shrinks the shadow about the shape's centre, and past the middle of the
+ * shape there is no shadow at all (null).
+ */
+export function officeShadow(shadow: CssShadow, size: { w: number; h: number }): { x: number; y: number; blur: number; scale?: { x: number; y: number } } | null {
+  const own = { x: shadow.x, y: shadow.y, blur: shadow.blur };
+  if (shadow.spread >= 0 || !(size.w > 0) || !(size.h > 0)) return own;
+  const scale = { x: 1 + (2 * shadow.spread) / size.w, y: 1 + (2 * shadow.spread) / size.h };
+  return scale.x > 0 && scale.y > 0 ? { ...own, scale } : null;
+}
+
 /* -------------------------------------------------------------------------- */
 /* Gradients                                                                   */
 /* -------------------------------------------------------------------------- */

@@ -5,10 +5,10 @@
 // the page or in any of its frames, sandboxed and out-of-process ones too. `page.problems` is what went wrong on the
 // way, in the page and its frames: uncaught exceptions, console errors, failed requests and HTTP errors; `page.urls`
 // every URL it requested. Both keep filling while the page stays open.
-// An editor whose React root went empty after it had drawn something (what React leaves after an uncaught render
-// error: the editors have no error boundary, see findCrash) is a problem too, `crashed: …`, reported the moment it
-// happens; `page.crashed()` looks at every frame now, and `crashes()` hands over the crashes on every page of every
-// browser in this process not yet handed over (editor.mjs's failOnCrash fails the case with them).
+// An editor that shows its crash card, or whose React root went empty after it had drawn something (what React
+// leaves after an uncaught render error with no error boundary; see findCrash), is a problem too, `crashed: …`,
+// reported the moment it happens; `page.crashed()` looks at every frame now, and `crashes()` hands over the crashes on
+// every page of every browser in this process not yet handed over (editor.mjs's failOnCrash fails the case with them).
 // A tab whose renderer crashed, or that Chrome let go of while the page was still in use, is a problem too (`tab gone:
 // …`); a call on a tab that is gone fails with what became of it (closed by the test, crashed, let go of, Chrome gone).
 // Input goes through the DevTools protocol as real events: `page.click`, `page.clickTimes` (2 = a word, 3 = a
@@ -40,12 +40,15 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 /**
  * Whether the editor in this frame crashed, or null. Run in the frame (it is passed in as source, so it closes over
- * nothing). Both editors render into `#root` with no error boundary, so an uncaught render error unmounts the whole
+ * nothing). An editor with an error boundary (design, slides) shows a card marked `data-testid="<type>-crashed"`
+ * instead of what failed to render. One without renders into `#root`, where an uncaught render error unmounts the whole
  * tree and leaves `#root` empty: the whole page is blank and cannot be used. A root that never drew anything yet (still
  * loading) is not a crash; one that drew and then went empty is. Artboard frames have no `#root` and are passed over.
  */
 function findCrash() {
   if (typeof document === 'undefined') return null;
+  const card = document.querySelector('[data-testid$="-crashed"]');
+  if (card) return `the editor showed its crash card, ${card.getAttribute('data-testid')} (in ${location.href.slice(0, 160)})`;
   const root = document.getElementById('root');
   if (!root) return null;
   const drawn = Symbol.for('open-artifact e2e root drawn');

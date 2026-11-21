@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { after, before, describe, it } from 'node:test';
-import { findChrome, launch } from './lib/browser.mjs';
+import { crashes, findChrome, launch } from './lib/browser.mjs';
 import { cli } from './lib/cli.mjs';
 import { browserOff, install, removeTmp, skipFor, tmpDir, typePath } from './lib/target.mjs';
 import { until } from './lib/http.mjs';
@@ -255,6 +255,69 @@ describe('slides', { skip: skipFor('slides') }, () => {
     assert.ok(await until(() => fs.readFileSync(file, 'utf8') === original), fs.readFileSync(file, 'utf8'));
   });
 
+  it('sets a source paragraph’s margin from the properties panel, saves it on the tag and undoes it', { skip: browserSkip }, async () => {
+    const file = path.join(root, 'project/slides/plan.html');
+    const original = fs.readFileSync(file, 'utf8');
+    await page.evaluate("location.hash = '#slide-2'");
+    const line = `[...document.querySelectorAll('[data-open-artifact-mode="edit"][data-open-artifact-slide="plan"] p')].find((p) => p.textContent === 'Read through the shared sheet.')`;
+    assert.ok(await page.waitFor(line));
+    const point = await page.evaluate(`(() => {
+      const box = (${line}).getBoundingClientRect();
+      return [box.x + box.width / 2, box.y + box.height / 2];
+    })()`);
+    await page.click(...point);
+    const margin = `document.querySelector('input[aria-label="Margin"]')`;
+    assert.ok(await page.waitFor(margin), 'a flow child shows the margin field');
+    const field = await page.evaluate(`(() => { const box = ${margin}.getBoundingClientRect(); return [box.x + box.width / 2, box.y + box.height / 2]; })()`);
+    await page.click(...field);
+    await page.evaluate(`${margin}.select()`);
+    await page.type('24');
+    await page.press('Enter');
+    const spaced = original.replace('<p>Read through', '<p style="margin:24px">Read through');
+    assert.notEqual(spaced, original);
+    assert.ok(await until(() => fs.readFileSync(file, 'utf8') === spaced), fs.readFileSync(file, 'utf8'));
+    await page.evaluate('document.activeElement?.blur()');
+    const mac = await page.evaluate("navigator.platform.includes('Mac')");
+    await page.press('z', { meta: mac, ctrl: !mac });
+    assert.ok(await until(() => fs.readFileSync(file, 'utf8') === original), fs.readFileSync(file, 'utf8'));
+    await page.press('Escape');
+  });
+
+  it('reaches the card of a link in edited text by keyboard and changes its address', { skip: browserSkip }, async () => {
+    const file = path.join(root, 'project/slides/end.html');
+    const original = fs.readFileSync(file, 'utf8');
+    fs.writeFileSync(file, '<section id="end"><h1>Close</h1><p>Read <a href="https://example.com/docs">the guide</a> first.</p></section>');
+    try {
+      await page.evaluate("location.hash = '#slide-~end'");
+      const link = '[data-open-artifact-mode="edit"][data-open-artifact-slide="end"] a';
+      assert.ok(await page.waitFor(`document.querySelector('${link}')`));
+      const point = await page.evaluate(`(() => {
+        const box = document.querySelector('${link}').getBoundingClientRect();
+        return [box.x + box.width / 2, box.y + box.height / 2];
+      })()`);
+      await page.clickTimes(...point, 2);
+      const card = '[data-open-artifact-link-card]';
+      assert.ok(await page.waitFor(`document.querySelector('${card} [aria-label="Edit link"]')`), 'no card for the link');
+      await page.press('Tab');
+      assert.ok(await page.waitFor(`document.activeElement?.closest('${card}')`), 'Tab did not reach the card');
+      await page.press('Escape');
+      if (!(await page.waitFor('document.activeElement?.isContentEditable', 500))) await page.press('Escape');
+      assert.ok(await page.waitFor('document.activeElement?.isContentEditable'), 'Escape did not give the text the focus back');
+      await page.press('Tab');
+      assert.ok(await page.waitFor(`document.activeElement?.closest('${card}')`));
+      await page.evaluate(`document.querySelector('${card} [aria-label="Edit link"]').click()`);
+      assert.ok(await page.waitFor(`document.activeElement?.getAttribute('aria-label') === 'Link address'`));
+      await page.evaluate('document.activeElement.select()');
+      await page.type('example.org/start');
+      await page.press('Enter');
+      assert.ok(await page.waitFor('document.activeElement?.isContentEditable'));
+      await page.press('Escape');
+      assert.ok(await until(() => fs.readFileSync(file, 'utf8').includes('<a href="https://example.org/start">the guide</a>')), fs.readFileSync(file, 'utf8'));
+    } finally {
+      fs.writeFileSync(file, original);
+    }
+  });
+
   it('uses the frame to comment on selected text and a dragged slide area', { skip: browserSkip }, async () => {
     const shell = await browser.load(publicUrl + '#slide-~plan', { ready: "document.querySelector('[data-comments-button]')" });
     try {
@@ -426,6 +489,32 @@ describe('slides', { skip: skipFor('slides') }, () => {
         if (value === undefined) delete process.env[key];
         else process.env[key] = value;
       }
+    }
+  });
+
+  it('shows a reload card, not a blank page, when the editor fails to draw', { skip: browserSkip }, async () => {
+    const broken = await browser.load(url, { ready: `document.querySelectorAll('${rail}').length === 3` });
+    try {
+      // A state update whose updater throws fails the render of a component inside the editor.
+      await broken.evaluate(`(() => {
+        const root = document.getElementById('root');
+        let fiber = root[Object.keys(root).find((k) => k.startsWith('__reactContainer$'))].child;
+        while (fiber && !(fiber.tag === 1 && fiber.memoizedState && 'crashed' in fiber.memoizedState)) fiber = fiber.child;
+        const stack = [fiber.child];
+        while (stack.length) {
+          const node = stack.pop();
+          if (!node) continue;
+          for (let hook = typeof node.type === 'function' ? node.memoizedState : null; hook && typeof hook === 'object' && 'next' in hook; hook = hook.next) {
+            if (hook.queue?.dispatch) return hook.queue.dispatch(() => { throw new Error('render failed on purpose'); });
+          }
+          stack.push(node.sibling, node.child);
+        }
+      })()`);
+      assert.ok(await broken.waitFor(`document.querySelector('[data-testid="slides-crashed"] button')?.textContent.trim() === 'Reload'`));
+      assert.match(await broken.crashed(), /slides-crashed/);
+      assert.ok((await crashes()).some((what) => what.includes('slides-crashed')));
+    } finally {
+      await broken.close();
     }
   });
 

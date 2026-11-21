@@ -97,8 +97,8 @@ export interface CompileOptions {
   lints?: boolean;
   /**
    * The file is a source slide as `readSourceSlide` worked it out: keep each
-   * element's `data-open-artifact-src` place on its node (`NodeBase.origin`), take
-   * `margin`, and say nothing of the attributes the reader leaves behind.
+   * element's `data-open-artifact-src` place on its node (`NodeBase.origin`), keep
+   * `margin` on pinned elements, and say nothing of the attributes the reader leaves behind.
    */
   source?: boolean;
 }
@@ -257,6 +257,7 @@ class SlideCompiler {
     }
     const roots = parseHtml(this.source);
     this.checkClosed(roots);
+    for (const { node, message } of misreadComments(roots)) this.warn(message, node);
     const sections: HtmlElement[] = [];
     for (const node of roots) {
       if (node.type === 'comment') continue;
@@ -439,7 +440,7 @@ class SlideCompiler {
       ...base,
       pinned: base.pinned || position === 'absolute',
       faces: this.faces,
-      margins: this.options.source === true,
+      pinnedMargins: this.options.source === true,
       display: display === 'grid' ? 'grid' : display === 'none' ? 'none' : 'flex',
       // As in CSS, an explicit `display:flex` runs in a row; a box with no `display` stacks.
       direction: (raw.get('flex-direction') ?? (display === 'flex' ? 'row' : 'column')).trim().toLowerCase(),
@@ -683,13 +684,26 @@ class SlideCompiler {
     const pinned = this.rawPinned(attrs);
     const node: ListNode = { kind: 'list', tag: el.tag as 'ul' | 'ol', style: {}, items: [] };
     if (inBox) {
-      if (attrs.get('style')) this.unsupported(`${describe(el)} inside <div data-text> is unstyled — style the div; dropped`, el);
-      for (const name of attrs.keys()) if (name !== 'style') this.attribute(name, el, describe(el));
+      node.style = this.markerStyle(el, attrs.get('style') ?? '', `${describe(el)} inside <div data-text> takes only its markers — style the div`);
+      for (const name of attrs.keys()) {
+        if (name === 'start' || name === 'reversed') this.warn(`${describe(el)} ${name} inside <div data-text> is ignored; it counts from 1`, el);
+        else if (name !== 'style') this.attribute(name, el, describe(el));
+      }
     } else {
       node.style = this.style(el, attrs.get('style') ?? '', { element: 'list', pinned, ...this.placeContext(place, pinned) });
-      this.common(node, el, attrs, place, [], pinned);
+      this.numbering(node, el, attrs);
+      this.common(node, el, attrs, place, ['start', 'reversed'], pinned);
     }
-    this.listItems(el, 0, node);
+    const looks = new Map<number, Set<string>>();
+    this.listItems(el, 0, node, looks);
+    for (const [level, seen] of looks) {
+      if (seen.size > 1) {
+        this.warn(`${describe(el)}: the lists at level ${level + 1} have different markers; they all take the default`, el);
+        continue;
+      }
+      const look = JSON.parse([...seen][0]!) as StyleMap;
+      if (Object.keys(look).length) node.levels = { ...node.levels, [level]: look };
+    }
     const allRuns = node.items.flatMap((item) => item.runs);
     this.textLimits(allRuns, el);
     return node;
@@ -701,7 +715,7 @@ class SlideCompiler {
    * (at most {@link LIST_LEVELS} levels), and `data-indent="N"` puts an item
    * N levels further in than where it sits.
    */
-  private listItems(el: HtmlElement, level: number, node: ListNode): void {
+  private listItems(el: HtmlElement, level: number, node: ListNode, looks: Map<number, Set<string>>): void {
     for (const child of el.children) {
       if (child.type === 'comment') continue;
       if (child.type === 'text') {
@@ -730,10 +744,48 @@ class SlideCompiler {
       const runs = trimRuns(normalizeRuns(this.inline(child.children.filter((n) => !isSublist(n)), {}, child)));
       node.items.push(itemLevel > 0 ? { runs, level: itemLevel } : { runs });
       for (const sub of child.children.filter(isSublist)) {
-        if (sub.attrs.some((a) => a.name.toLowerCase() === 'style')) this.unsupported(`a nested <${sub.tag}> is plain — style the outer list; dropped`, sub);
+        const subLevel = Math.min(LIST_LEVELS - 1, itemLevel + 1);
+        const subAttrs = attrMap(sub);
+        const look = this.markerStyle(sub, subAttrs.get('style') ?? '', `a nested <${sub.tag}> takes only its markers — style the outer list`);
+        for (const name of subAttrs.keys()) {
+          if (name === 'start' || name === 'reversed') this.warn(`a nested <${sub.tag} ${name}> is ignored; it counts from 1`, sub);
+          else if (name !== 'style') this.attribute(name, sub, `<${sub.tag}>`);
+        }
+        if (!looks.has(subLevel)) looks.set(subLevel, new Set());
+        looks.get(subLevel)!.add(JSON.stringify(look, Object.keys(look).sort()));
         if (sub.tag !== el.tag && level === 0 && itemLevel === 0) this.note(`a nested <${sub.tag}> in <${el.tag}> takes the outer list's markers`, sub);
-        this.listItems(sub, Math.min(LIST_LEVELS - 1, itemLevel + 1), node);
+        this.listItems(sub, subLevel, node, looks);
       }
+    }
+  }
+
+  /** The marker declarations of a list that takes nothing else; the rest is reported with `elsewhere`. */
+  private markerStyle(el: HtmlElement, text: string, elsewhere: string): StyleMap {
+    const markers: string[] = [];
+    const others: string[] = [];
+    for (const [name, value] of splitDeclarations(text)) {
+      if (/^list-style(?:-type|-position)?$/i.test(name)) markers.push(`${name}:${value}`);
+      else others.push(name.toLowerCase());
+    }
+    if (others.length) this.unsupported(`${elsewhere}; ${others.join(', ')} dropped`, el);
+    return markers.length ? this.style(el, markers.join(';'), { element: 'list', pinned: false, flowChild: false, gridChild: false }) : {};
+  }
+
+  /** `<ol start>` and `<ol reversed>`. */
+  private numbering(node: ListNode, el: HtmlElement, attrs: Map<string, string | null>): void {
+    for (const name of ['start', 'reversed'] as const) {
+      if (!attrs.has(name)) continue;
+      if (node.tag !== 'ol') {
+        this.warn(`<ul ${name}> — only an <ol> is numbered; ignored`, el);
+        continue;
+      }
+      if (name === 'reversed') {
+        node.reversed = true;
+        continue;
+      }
+      const value = (attrs.get('start') ?? '').trim();
+      if (/^-?\d{1,5}$/.test(value)) node.start = Number(value);
+      else this.warn(`<ol start="${value.slice(0, 20)}"> — a whole number; ignored, it counts from 1`, el);
     }
   }
 
@@ -793,6 +845,7 @@ class SlideCompiler {
         case 'b':
         case 'strong':
           next.b = true;
+          delete next.regular;
           if (tag === 'strong') this.note('<strong> → <b>', node);
           break;
         case 'i':
@@ -835,13 +888,15 @@ class SlideCompiler {
     return runs;
   }
 
-  /** A `<span style>`: color, bold, italic, underline. */
+  /** A `<span style>`: color, bold or regular weight, italic, underline. */
   private spanMarks(el: HtmlElement, text: string, marks: Marks): void {
     const ctx: StyleContext = { element: 'span', pinned: false, flowChild: false, gridChild: false, faces: this.faces };
     for (const [name, value] of splitDeclarations(text)) {
       const result = parseDeclaration(name, value, ctx);
       if (!result.ok) {
-        if (!result.noop) this.unsupported(`<span> ${result.reason} — no sizes or fonts on spans (use two blocks); dropped`, el);
+        if (result.noop) continue;
+        if (name === 'font-weight') this.unsupported(`<span> ${result.reason}; dropped`, el);
+        else this.unsupported(`<span> ${result.reason} — no sizes or fonts on spans (use two blocks); dropped`, el);
         continue;
       }
       for (const [property, v] of result.set) {
@@ -849,7 +904,11 @@ class SlideCompiler {
         else if (property === 'font-weight') {
           if (v === '700') {
             marks.b = true;
+            delete marks.regular;
             this.note('<span style="font-weight"> → <b>', el);
+          } else {
+            marks.regular = true;
+            delete marks.b;
           }
         } else if (property === 'font-style') {
           if (v === 'italic') {
@@ -1381,6 +1440,28 @@ function parseCoord(value: string): Coord | null {
   const len = /^(-?[\d.]+)(px)?$/.exec(v);
   if (len) return { value: Number(len[1]), unit: 'px' };
   return null;
+}
+
+/**
+ * Comments a browser ends somewhere else than this reader: `<!-->`, `<!--->`
+ * and `--!>` close at once there, and inside an `<iframe>` a comment is
+ * plain text. An embedded page is its own document and is left alone.
+ */
+export function misreadComments(nodes: readonly HtmlNode[]): Array<{ node: HtmlNode; message: string }> {
+  const out: Array<{ node: HtmlNode; message: string }> = [];
+  const walk = (list: readonly HtmlNode[], inFrame: boolean): void => {
+    for (const node of list) {
+      if (node.type === 'comment') {
+        if (!node.raw.startsWith('<!--')) continue;
+        if (inFrame) out.push({ node, message: 'a comment inside <iframe> is text to a browser, and a "</iframe>" in it closes the frame — delete the comment' });
+        else if (node.raw.startsWith('<!-->') || node.raw.startsWith('<!--->') || node.raw.slice(4).includes('--!>')) {
+          out.push({ node, message: 'a browser closes this comment at once, so what follows it shows on the slide — write comments as <!-- text -->' });
+        }
+      } else if (node.type === 'element' && node.tag !== 'x-embed') walk(node.children, inFrame || node.tag === 'iframe');
+    }
+  };
+  walk(nodes, false);
+  return out;
 }
 
 /** Compiles one slide file. */

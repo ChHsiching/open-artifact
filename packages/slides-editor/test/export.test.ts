@@ -5,6 +5,7 @@ import { emptySlide, type Slide } from '@open-artifact/slides-core';
 import {
   cornerRadius,
   objectContentRect,
+  officeShadow,
   parseAngle,
   parseBoxShadow,
   parseColor,
@@ -15,7 +16,7 @@ import {
 import { exportFileName, fileBase, formatBytes, slideFileName } from '../src/services/export/files.ts';
 import { deckText } from '../src/services/export/fonts.ts';
 import { ExportNotes, paginate, slideList, wrapLines } from '../src/services/export/notes.ts';
-import { fillXml, geometryXml, lineXml, pptxEntries, writePptx, xml, type PptxDeck } from '../src/services/export/ooxml.ts';
+import { collapseGaps, fillXml, geometryXml, lineXml, pptxEntries, shadowXml, writePptx, xml, type Paragraph, type PptxDeck } from '../src/services/export/ooxml.ts';
 
 const text = (data: Uint8Array | string): string => (typeof data === 'string' ? data : new TextDecoder().decode(data));
 
@@ -57,6 +58,16 @@ describe('css readers', () => {
     assert.equal(parseLinearGradient('linear-gradient(red, blue), url(x.png)'), null);
   });
 
+  it('shrinks a shadow with a negative spread instead of dropping the spread', () => {
+    const shadow = (spread: number) => ({ x: 0, y: 4, blur: 10, spread, color: { hex: '000000', alpha: 0.2 } });
+    assert.deepEqual(officeShadow(shadow(0), { w: 200, h: 100 }), { x: 0, y: 4, blur: 10 });
+    assert.deepEqual(officeShadow(shadow(-10), { w: 200, h: 100 }), { x: 0, y: 4, blur: 10, scale: { x: 0.9, y: 0.8 } });
+    // A shadow pulled in past the middle of the box shows nothing.
+    assert.equal(officeShadow(shadow(-50), { w: 200, h: 100 }), null);
+    // A growing shadow keeps the shape's size (the export notes say so).
+    assert.deepEqual(officeShadow(shadow(6), { w: 200, h: 100 }), { x: 0, y: 4, blur: 10 });
+  });
+
   it('places pictures and radii', () => {
     assert.equal(cornerRadius('50%', 200, 100), 50);
     assert.equal(cornerRadius('12px 8px', 200, 100), 12);
@@ -87,6 +98,8 @@ describe('ooxml', () => {
     assert.match(geometryXml({ preset: 'roundRect', radius: 25 }, { x: 0, y: 0, w: 200, h: 100 }), /fmla="val 25000"/);
     assert.match(geometryXml({ preset: 'roundRect', radius: 500 }, { x: 0, y: 0, w: 200, h: 100 }), /fmla="val 50000"/);
     assert.match(geometryXml({ path: [[0, 0], [10, 10]], closed: false }, { x: 0, y: 0, w: 10, h: 10 }), /fill="none"/);
+    assert.match(shadowXml({ x: 0, y: 4, blur: 10, color: { hex: '000000', alpha: 1 }, scale: { x: 0.9, y: 0.8 } }), /<a:outerShdw [^>]*sx="90000" sy="80000"/);
+    assert.doesNotMatch(shadowXml({ x: 0, y: 4, blur: 10, color: { hex: '000000', alpha: 1 } }), /sx=/);
   });
 
   const deck: PptxDeck = {
@@ -111,6 +124,7 @@ describe('ooxml', () => {
             },
           },
           { type: 'picture', name: 'Picture 1', box: { x: 0, y: 0, w: 100, h: 100 }, media: 'image1', crop: { l: 0.1, t: 0, r: 0.1, b: 0 } },
+          { type: 'picture', name: 'Picture 2', box: { x: 200, y: 0, w: 200, h: 100 }, media: 'image1', oval: true },
           {
             type: 'table',
             name: 'Table 1',
@@ -154,6 +168,7 @@ describe('ooxml', () => {
     assert.match(slide1, /<a:t>Hello<\/a:t>/);
     assert.match(slide1, /<a:hlinkClick r:id="rId\d+"\/>/);
     assert.match(slide1, /<a:srcRect l="10000" t="0" r="10000" b="0"\/>/);
+    assert.match(slide1, /name="Picture 2"[^]*?<a:prstGeom prst="ellipse">/);
     assert.match(slide1, /<a:tbl>/);
     const rels1 = byName.get('ppt/slides/_rels/slide1.xml.rels')!;
     assert.match(rels1, /Target="https:\/\/example\.com" TargetMode="External"/);
@@ -171,6 +186,54 @@ describe('ooxml', () => {
         assert.ok(names.includes(resolved), `${name} → ${target}`);
       }
     }
+  });
+
+  it('collapses the margins between list paragraphs the way CSS does', () => {
+    const gaps = (list: Array<[number?, number?]>) => collapseGaps(list.map(([spaceBefore, spaceAfter]) => ({ spaceBefore, spaceAfter }))).map((p) => [p.spaceBefore, p.spaceAfter]);
+    // `li { margin: 8px 0 }`: 8px between items, not 16px.
+    assert.deepEqual(gaps([[8, 8], [8, 8], [8, 8]]), [[8, 8], [undefined, 8], [undefined, 8]]);
+    // The larger margin wins; only the part beyond the one before is added.
+    assert.deepEqual(gaps([[undefined, 4], [12, undefined], [undefined, 10], [6, undefined]]), [[undefined, 4], [8, undefined], [undefined, 10], [undefined, undefined]]);
+  });
+
+  it('writes list markers: kind, first number, text and colour', () => {
+    const paragraph = (bullet: NonNullable<Paragraph['bullet']>): Paragraph => ({ runs: [{ text: 'a', size: 32 }], bullet, marginLeft: 40, endSize: 32 });
+    const listDeck: PptxDeck = {
+      title: 'Lists',
+      created: new Date(Date.UTC(2026, 0, 1)),
+      media: [],
+      slides: [
+        {
+          elements: [
+            {
+              type: 'shape',
+              name: 'List 1',
+              box: { x: 0, y: 0, w: 800, h: 400 },
+              geometry: { preset: 'rect' },
+              fill: { type: 'none' },
+              textBox: true,
+              text: {
+                inset: { l: 0, t: 0, r: 0, b: 0 },
+                paragraphs: [
+                  paragraph({ type: 'number', start: 4, scheme: 'romanUcPeriod', color: { hex: 'CC0000', alpha: 1 } }),
+                  paragraph({ type: 'number', start: 1 }),
+                  paragraph({ type: 'char', char: '→', ownFont: true }),
+                  paragraph({ type: 'char', char: '•' }),
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    };
+    const slide = text(pptxEntries(listDeck).find((entry) => entry.name === 'ppt/slides/slide1.xml')!.data);
+    const props = [...slide.matchAll(/<a:pPr[^>]*>(.*?)<\/a:pPr>/g)].map((m) => m[1]);
+    assert.deepEqual(props, [
+      '<a:buClr><a:srgbClr val="CC0000"/></a:buClr><a:buFont typeface="+mj-lt"/><a:buAutoNum type="romanUcPeriod" startAt="4"/>',
+      '<a:buFont typeface="+mj-lt"/><a:buAutoNum type="arabicPeriod"/>',
+      '<a:buFontTx/><a:buChar char="→"/>',
+      '<a:buFont typeface="Arial"/><a:buChar char="•"/>',
+    ]);
   });
 
   it('writes a deflated zip with [Content_Types].xml first', async () => {

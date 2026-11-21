@@ -7,8 +7,8 @@
  */
 
 import { useEffect, useRef, type ReactNode } from 'react';
-import { Loader2, Plus, Presentation, TriangleAlert } from 'lucide-react';
-import { Button, EmptyState } from '@open-artifact/ui';
+import { Loader2, Plus, Presentation, RotateCw, TriangleAlert } from 'lucide-react';
+import { Button, CrashBoundary, EmptyState } from '@open-artifact/ui';
 import { useDeck } from './state/deck.ts';
 import { useOrder } from './state/outline.ts';
 import { useView } from './state/view.ts';
@@ -78,6 +78,20 @@ async function boot(): Promise<void> {
 }
 
 let booted = false;
+
+/** Shown when the editor failed to draw: changes are saved as they are made, so a reload loses nothing. */
+function CrashCard(): ReactNode {
+  return (
+    <div data-testid="slides-crashed" className="h-full bg-canvas">
+      <EmptyState icon={<TriangleAlert className="size-6" />} title="Something went wrong showing this presentation">
+        <p role="alert">Your changes are saved as you make them. Reload to try again.</p>
+        <Button className="mt-2" variant="secondary" icon={<RotateCw className="size-4" />} onClick={() => window.location.reload()}>
+          Reload
+        </Button>
+      </EmptyState>
+    </div>
+  );
+}
 
 /** The deck has no slides yet. */
 function EmptyDeck(): ReactNode {
@@ -168,25 +182,27 @@ export function App(): ReactNode {
   const railShown = mode === 'edit' && showRail && !empty;
 
   return (
-    <TipGroup>
-      <div className="flex h-full bg-stage text-fg">
-        {railShown ? <Rail /> : null}
-        <div className="flex min-w-0 flex-1 flex-col">
-          <Banners />
-          <main className="relative flex min-h-0 min-w-0 flex-1">
-            {mode === 'edit' ? empty ? <EmptyDeck /> : <Stage /> : mode === 'grid' ? <GridView /> : <CanvasView />}
-            <StageChrome onStage={onStage && !empty} startCard={!railShown} />
-            <FindBar />
-            <CreationStatus />
-            <CreationAnnouncer />
-          </main>
+    <CrashBoundary fallback={<CrashCard />}>
+      <TipGroup>
+        <div className="flex h-full bg-stage text-fg">
+          {railShown ? <Rail /> : null}
+          <div className="flex min-w-0 flex-1 flex-col">
+            <Banners />
+            <main className="relative flex min-h-0 min-w-0 flex-1">
+              {mode === 'edit' ? empty ? <EmptyDeck /> : <Stage /> : mode === 'grid' ? <GridView /> : <CanvasView />}
+              <StageChrome onStage={onStage && !empty} startCard={!railShown} />
+              <FindBar />
+              <CreationStatus />
+              <CreationAnnouncer />
+            </main>
+          </div>
+          {onStage && showProperties && !empty ? <PropertiesPanel /> : null}
+          <CommentList />
+          <Dialogs />
+          <HistoryDialog />
+          <Presenter />
         </div>
-        {onStage && showProperties && !empty ? <PropertiesPanel /> : null}
-        <CommentList />
-        <Dialogs />
-        <HistoryDialog />
-        <Presenter />
-      </div>
-    </TipGroup>
+      </TipGroup>
+    </CrashBoundary>
   );
 }

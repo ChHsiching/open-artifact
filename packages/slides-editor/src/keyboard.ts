@@ -66,6 +66,8 @@ import { useComments } from './services/comments.ts';
 import { useFind } from './services/find.ts';
 import { playableSlides } from './services/present.ts';
 import { nudgeCrop } from './components/stage/gestures.ts';
+import { undoesScrub } from './lib/number-scrub.ts';
+import { isComposingKey } from '@open-artifact/ui';
 
 /**
  * True when the key event comes from a field that takes typing, or from a
@@ -147,7 +149,7 @@ export function installKeyboard(): () => void {
       if (!useDeck.getState().readOnly && (view.mode === 'edit' || view.canvasEdit)) view.toggle('showProperties');
       return;
     }
-    if (typing(event) || pressesControl(event)) return;
+    if ((typing(event) && (isComposingKey(event) || !undoesScrub(event))) || pressesControl(event)) return;
     const editing = canChange();
     // The one-slide stage is up (edit mode, or a slide edited on the canvas).
     const onStage = view.mode === 'edit' || view.canvasEdit;

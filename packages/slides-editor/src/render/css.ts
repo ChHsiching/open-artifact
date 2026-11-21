@@ -112,12 +112,12 @@ const SLIDE_STYLESHEET_BASE = `
 .${SLIDE_CLASS} h2{font-size:calc(64px * var(--open-artifact-fit, 1));font-weight:600;line-height:1.2}
 .${SLIDE_CLASS} h3{font-size:calc(44px * var(--open-artifact-fit, 1));font-weight:600;line-height:1.2}
 .${SLIDE_CLASS} ul,.${SLIDE_CLASS} ol{padding-left:1.25em}
-.${SLIDE_CLASS} ul{list-style:disc}
-.${SLIDE_CLASS} ol{list-style:decimal}
-.${SLIDE_CLASS} ul ul{list-style:circle}
-.${SLIDE_CLASS} ul ul ul{list-style:square}
-.${SLIDE_CLASS} ol ol{list-style:lower-alpha}
-.${SLIDE_CLASS} ol ol ol{list-style:lower-roman}
+.${SLIDE_CLASS} ul{list-style-type:disc}
+.${SLIDE_CLASS} ol{list-style-type:decimal}
+.${SLIDE_CLASS} ul ul{list-style-type:circle}
+.${SLIDE_CLASS} ul ul ul{list-style-type:square}
+.${SLIDE_CLASS} ol ol{list-style-type:lower-alpha}
+.${SLIDE_CLASS} ol ol ol{list-style-type:lower-roman}
 .${SLIDE_CLASS} li[data-level]{margin-left:calc(var(--open-artifact-level) * 1.25em)}
 .${SLIDE_CLASS} li::marker{color:currentColor}
 .${SLIDE_CLASS} a{color:inherit;text-decoration:underline}

@@ -23,6 +23,7 @@ import {
   cornerRadius,
   intersect,
   objectContentRect,
+  officeShadow,
   parseAngle,
   parseBoxShadow,
   parseColor,
@@ -38,6 +39,7 @@ import {
 import { setEastAsianFonts, collectFontUses, embedDeckFonts, fontNoticeText, networkFetchers, noteFontEmbedding, type EmbeddedFont } from './font-embedding.ts';
 import { breathe, hasBuilds, type ExportJob, type ExportSlide } from './job.ts';
 import {
+  collapseGaps,
   writePptx,
   type Arrowhead,
   type Box,
@@ -455,8 +457,7 @@ class SlideReader {
     const borders = this.borders(style, alpha);
     const sides = [borders.t, borders.r, borders.b, borders.l];
     const uniform = sides.every((line) => line && sides[0] && line.width === sides[0].width && line.color.hex === sides[0].color.hex && line.color.alpha === sides[0].color.alpha && line.dash === sides[0].dash);
-    const css = options.shadow === false ? null : parseBoxShadow(style.boxShadow);
-    const shadow: Shadow | undefined = css ? { x: css.x, y: css.y, blur: css.blur, color: withOpacity(css.color, alpha) } : undefined;
+    const shadow = options.shadow === false ? undefined : this.shadow(style.boxShadow, frame, alpha);
     const line = uniform ? borders.t : undefined;
     if (fill.type !== 'none' || line || shadow) {
       // CSS borders lie inside the box; office outlines straddle the edge.
@@ -485,14 +486,21 @@ class SlideReader {
     }
   }
 
-  /** Notes what an element's own painting loses as an office shape: inner, layered or spread shadows, double borders, blend modes, filters. */
+  /** The first outer `box-shadow` of an element as an office shadow. */
+  private shadow(value: string | undefined, frame: Frame, alpha: number): Shadow | undefined {
+    const css = parseBoxShadow(value);
+    const own = css ? officeShadow(css, { w: frame.w, h: frame.h }) : null;
+    return css && own ? { ...own, color: withOpacity(css.color, alpha) } : undefined;
+  }
+
+  /** Notes what an element's own painting loses as an office shape: inner, layered or growing shadows, double borders, blend modes, filters. */
   private noteEffects(style: CSSStyleDeclaration, shadow: boolean): void {
     const n = this.entry.number;
     if (shadow && style.boxShadow && style.boxShadow !== 'none') {
       const layers = splitTop(style.boxShadow);
       if (layers.some((layer) => /\binset\b/.test(layer))) this.job.notes.add('shadowInset', n);
       if (layers.filter((layer) => !/\binset\b/.test(layer)).length > 1) this.job.notes.add('shadowLayers', n);
-      if ((parseBoxShadow(style.boxShadow)?.spread ?? 0) !== 0) this.job.notes.add('shadowSpread', n);
+      if ((parseBoxShadow(style.boxShadow)?.spread ?? 0) > 0) this.job.notes.add('shadowSpread', n);
     }
     if ([style.borderTopStyle, style.borderRightStyle, style.borderBottomStyle, style.borderLeftStyle].includes('double')) this.job.notes.add('borderDouble', n);
     if (style.mixBlendMode && style.mixBlendMode !== 'normal') this.job.notes.add('blend', n);
@@ -584,26 +592,27 @@ class SlideReader {
    */
   private listParagraphs(list: HTMLElement, alpha: number, level = 0, outer = 0): { paragraphs: Paragraph[]; elements: HTMLElement[] } {
     const style = this.style(list);
-    const type = style.listStyleType;
-    const chars: Record<string, string> = { disc: '•', circle: '◦', square: '▪' };
-    const bullet: Paragraph['bullet'] =
-      type === 'none'
-        ? undefined
-        : chars[type]
-          ? { type: 'char', char: chars[type]! }
-          : { type: 'number', start: list instanceof HTMLOListElement ? list.start || 1 : 1, scheme: NUMBER_SCHEMES[type] };
+    const bullet = this.listMarker(list, style);
     const items = Array.from(list.children).filter((child): child is HTMLLIElement => child instanceof HTMLLIElement);
     const padding = px(style.paddingLeft);
     const marginLeft = outer + padding || undefined;
     const paragraphs: Paragraph[] = [];
     const elements: HTMLElement[] = [];
-    items.forEach((item, i) => {
+    // An item's margins sit around all it holds, nested lists included; touching margins collapse to the larger one.
+    const widen = (p: Paragraph | undefined, side: 'spaceBefore' | 'spaceAfter', margin: number): void => {
+      if (p && margin > (p[side] ?? 0)) p[side] = margin;
+    };
+    items.forEach((item) => {
       const nested = Array.from(item.children).filter((c): c is HTMLElement => c instanceof HTMLUListElement || c instanceof HTMLOListElement);
       const own = this.runs(item, alpha).some((run) => run.text.trim() || run.lineBreak);
+      const first = paragraphs.length;
       if (own || nested.length === 0) {
-        const p = this.paragraph(item, alpha, { bullet: this.style(item).listStyleType === 'none' ? undefined : bullet, marginLeft, ...(level ? { hanging: padding, level } : {}) });
-        if (i === 0) p.spaceBefore = (p.spaceBefore ?? 0) + px(style.marginTop) || undefined;
-        if (i === items.length - 1 && nested.length === 0) p.spaceAfter = (p.spaceAfter ?? 0) + px(style.marginBottom) || undefined;
+        const p = this.paragraph(item, alpha, { bullet: this.style(item).listStyleType === 'none' ? undefined : bullet, marginLeft, spaceBefore: undefined, spaceAfter: undefined, ...(level ? { hanging: padding, level } : {}) });
+        if (p.bullet) {
+          const color = resolveColor(getComputedStyle(item, '::marker').color);
+          const text = p.runs.find((run) => run.text.trim())?.color;
+          if (color && (!text || color.hex !== text.hex || color.alpha !== text.alpha)) p.bullet = { ...p.bullet, color: withOpacity(color, alpha) };
+        }
         paragraphs.push(p);
         elements.push(item);
       }
@@ -612,8 +621,38 @@ class SlideReader {
         paragraphs.push(...inner.paragraphs);
         elements.push(...inner.elements);
       }
+      const itemStyle = this.style(item);
+      widen(paragraphs[first], 'spaceBefore', px(itemStyle.marginTop));
+      widen(paragraphs[paragraphs.length - 1], 'spaceAfter', px(itemStyle.marginBottom));
     });
+    if (level === 0) {
+      // The list itself is a flex item, so its own margins stay apart from its items'.
+      collapseGaps(paragraphs);
+      const head = paragraphs[0];
+      const tail = paragraphs[paragraphs.length - 1];
+      if (head) head.spaceBefore = (head.spaceBefore ?? 0) + px(style.marginTop) || undefined;
+      if (tail) tail.spaceAfter = (tail.spaceAfter ?? 0) + px(style.marginBottom) || undefined;
+    } else {
+      widen(paragraphs[0], 'spaceBefore', px(style.marginTop));
+      widen(paragraphs[paragraphs.length - 1], 'spaceAfter', px(style.marginBottom));
+    }
     return { paragraphs, elements };
+  }
+
+  /** The marker a list draws, with notes for what PowerPoint numbering cannot follow. */
+  private listMarker(list: HTMLElement, style: CSSStyleDeclaration): Paragraph['bullet'] {
+    const type = style.listStyleType;
+    if (type === 'none') return undefined;
+    if (style.listStylePosition === 'inside') this.job.notes.add('listInside', this.entry.number);
+    const chars: Record<string, string> = { disc: '•', circle: '◦', square: '▪' };
+    if (chars[type]) return { type: 'char', char: chars[type]! };
+    const text = /^"(.*)"$/s.exec(type);
+    if (text) return text[1] ? { type: 'char', char: text[1], ownFont: true } : undefined;
+    const ordered = list instanceof HTMLOListElement ? list : undefined;
+    if (ordered?.reversed) this.job.notes.add('listReversed', this.entry.number);
+    const start = ordered?.hasAttribute('start') ? ordered.start : 1;
+    if (start < 1) this.job.notes.add('listStart', this.entry.number);
+    return { type: 'number', start, scheme: NUMBER_SCHEMES[type] };
   }
 
   /** Text, lists and text boxes as a text box over their panel. */
@@ -730,16 +769,18 @@ class SlideReader {
         const [cx, cy] = frame.toSlide(visible.x + visible.w / 2, visible.y + visible.h / 2);
         const w = visible.w * frame.sx;
         const h = visible.h * frame.sy;
-        const css = whole && plain ? parseBoxShadow(style.boxShadow) : null;
-        const radius = whole ? cornerRadius(style.borderTopLeftRadius, frame.w, frame.h) * frame.sx : 0;
+        const radiusValue = style.borderTopLeftRadius;
+        const radius = whole ? cornerRadius(radiusValue, frame.w, frame.h) * frame.sx : 0;
+        const oval = whole && /%$/.test(radiusValue.trim()) && parseFloat(radiusValue) >= 50;
         this.elements.push({
           type: 'picture',
           name: this.name(node?.video ? 'Video' : 'Picture'),
           box: { x: cx - w / 2, y: cy - h / 2, w, h, rot: frame.box.rot },
           media: key,
           crop: cropped ? crop : undefined,
-          radius: radius > 0.5 ? radius : undefined,
-          shadow: css ? { x: css.x, y: css.y, blur: css.blur, color: withOpacity(css.color, alpha) } : undefined,
+          radius: !oval && radius > 0.5 ? radius : undefined,
+          oval: oval || undefined,
+          shadow: whole && plain ? this.shadow(style.boxShadow, frame, alpha) : undefined,
           alpha: alpha < 1 ? alpha : undefined,
           description: node?.alt || undefined,
         });
@@ -807,7 +848,6 @@ class SlideReader {
         const [x = 0, y = 0] = pair.split(',').map(Number);
         return [(x / 100) * w, (y / 100) * h];
       });
-    const css = parseBoxShadow(node.style['box-shadow']);
     this.elements.push({
       type: 'shape',
       name: this.name('Shape'),
@@ -815,7 +855,7 @@ class SlideReader {
       geometry: { path: points, closed: true },
       fill: fillColor && fillColor.alpha > 0 ? { type: 'solid', color: withOpacity(fillColor, alpha) } : { type: 'none' },
       line: stroke && strokeColor ? { width: stroke.width, color: withOpacity(strokeColor, alpha), dash: dashOf(stroke.line) } : undefined,
-      shadow: css ? { x: css.x, y: css.y, blur: css.blur, color: withOpacity(css.color, alpha) } : undefined,
+      shadow: this.shadow(node.style['box-shadow'], frame, alpha),
     });
   }
 

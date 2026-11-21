@@ -56,11 +56,14 @@ function wrapMarks(html: string, marks: Marks | undefined, gradientText: boolean
   if (marks.u) out = `<u>${out}</u>`;
   if (marks.i) out = `<i>${out}</i>`;
   if (marks.b) out = `<b>${out}</b>`;
+  const span: string[] = [];
   if (marks.color) {
+    span.push(`color:${escapeAttribute(marks.color)}`);
     // Inside gradient-clipped text a colored run must repaint its own fill.
-    const fill = gradientText ? ';-webkit-text-fill-color:currentcolor' : '';
-    out = `<span style="color:${escapeAttribute(marks.color)}${fill}">${out}</span>`;
+    if (gradientText) span.push('-webkit-text-fill-color:currentcolor');
   }
+  if (marks.regular && !marks.b) span.push('font-weight:400');
+  if (span.length) out = `<span style="${span.join(';')}">${out}</span>`;
   if (marks.href) out = `<a href="${escapeAttribute(marks.href)}">${out}</a>`;
   return out;
 }
@@ -170,7 +173,7 @@ class Writer {
         this.line(depth, `<${node.tag}${this.common(node)}${styleAttr(node.style)}>${serializeRuns(node.runs, isGradientText(node.style))}</${node.tag}>`);
         return;
       case 'list':
-        this.list(node, depth, `${this.common(node)}${styleAttr(node.style)}`);
+        this.list(node, depth, `${this.common(node)}${attr('start', node.start)}${attr('reversed', node.reversed)}${styleAttr(node.style)}`);
         return;
       case 'textbox':
         this.line(depth, `<div${this.common(node)} data-text${node.indent !== undefined ? `="${node.indent}"` : ''}${styleAttr(node.style)}>`);
@@ -222,7 +225,7 @@ class Writer {
   /** An unstyled block inside a text box. */
   block(block: TextBlock, depth: number, gradientText: boolean): void {
     if (block.kind === 'text') this.line(depth, `<${block.tag}>${serializeRuns(block.runs, gradientText)}</${block.tag}>`);
-    else this.list(block, depth, '', gradientText);
+    else this.list(block, depth, styleAttr(block.style), gradientText);
   }
 
   list(node: ListNode, depth: number, attrs: string, gradientText = isGradientText(node.style)): void {
@@ -246,7 +249,7 @@ class Writer {
       const open = `<li${own > level ? attr('data-indent', own - level) : ''}>${serializeRuns(item.runs, gradientText)}`;
       if (i + 1 < node.items.length && levelOf(i + 1) > own) {
         this.line(depth, open);
-        this.line(depth + 1, `<${node.tag}>`);
+        this.line(depth + 1, `<${node.tag}${styleAttr(node.levels?.[own + 1] ?? {})}>`);
         i = this.items(node, i + 1, own + 1, depth + 2, gradientText);
         this.line(depth + 1, `</${node.tag}>`);
         this.line(depth, '</li>');
