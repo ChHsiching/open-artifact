@@ -6,6 +6,34 @@ agent plugins. Since 0.9.0 they all share one version; before that `dsh-open-art
 Each entry is written from the commits since the previous tag (`node scripts/changelog.mjs` lists them); see
 [Releasing](README.md#releasing).
 
+## [0.12.2] - 2026-11-21
+
+New artifacts open after the first write, with fixes for Antigravity sessions, whiteboard undo and editor controls.
+
+### Added
+
+- After printing a dashboard that has no print layout, you can ask the agent to add one from the print reminder.
+
+### Changed
+
+- A newly published artifact opens in the agent app as soon as its content is first written. Set
+  `open: "never"` to keep it closed.
+- Slides supports arrow-key navigation in the bottom toolbar and prevents accidental file drops from leaving the editor.
+
+### Fixed
+
+- Antigravity binds artifacts to the right conversation more reliably. The MCP bridge refreshes its token after a
+  daemon restart.
+- One Undo reverses an entire whiteboard drag, including pauses, and preserves remote edits made during the drag.
+- Docs hides the floating table scrollbar in print, uses the text direction of pending agent placeholders, and
+  enforces the link length limit after URL encoding.
+- Dashboard calculations reflect the oldest relevant input when showing when their data was updated.
+- On macOS, Control–Option–Command–L no longer triggers Copy link to slide.
+
+### Removed
+
+- Whiteboard elements created by the agent no longer show an “Agent” badge on hover or selection.
+
 ## [0.12.1] - 2026-11-21
 
 Record narrated Motion films, review scenes as they arrive, and hear the film from the first play.
@@ -289,6 +317,7 @@ One version for every package, with Docs and Sheets in every plugin.
 - Plugins for Claude Code, Codex, Cursor, Copilot, ChatGPT and DeepSeek Harness.
 - English and Chinese READMEs, under Apache-2.0.
 
+[0.12.2]: https://github.com/JimLiu/open-artifact/compare/v0.12.1...v0.12.2
 [0.12.1]: https://github.com/JimLiu/open-artifact/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/JimLiu/open-artifact/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/JimLiu/open-artifact/compare/v0.10.0...v0.11.0
