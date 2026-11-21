@@ -37,7 +37,7 @@
   border: 0;
 }
 
-/* The "Agent" (or placer's name) chip above an element; keeps its screen size at any zoom. */
+/* A face sticker's placer name above it; keeps its screen size at any zoom. */
 .wb-by-chip {
   position: absolute;
   left: 0;

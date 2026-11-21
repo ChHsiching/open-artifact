@@ -57,7 +57,7 @@ import { maybeSession } from '../services/session.ts';
 import { updateElements } from '../state/board.ts';
 import { useColorScheme } from '../state/theme.ts';
 import { useMeasureNode } from './hooks.ts';
-import { AgentChip, useItemProps } from './item.tsx';
+import { useItemProps } from './item.tsx';
 import { boardLinkTarget } from './links.ts';
 import { RichText } from './markup.tsx';
 import { PassiveLink } from './PassiveLink.tsx';
@@ -215,7 +215,6 @@ export const TableView = memo(function TableView({ element }: { element: TableEl
           {TABLE_EDITOR_HINT}
         </span>
       ) : null}
-      <AgentChip element={element} />
     </div>
   );
 });

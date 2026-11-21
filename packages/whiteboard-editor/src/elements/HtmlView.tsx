@@ -50,7 +50,7 @@ import {
   type EmbedStopReason,
 } from './embed.ts';
 import { embedStopFor, focusBoardHome, registerEmbedFrame, runEmbedAgain, stopEmbed, useEmbedStops } from './embed-control.ts';
-import { AgentChip, useItemProps } from './item.tsx';
+import { useItemProps } from './item.tsx';
 import { rotationStyle, type ViewStyle } from './style.ts';
 import { TextEditor, useEditing, writeElementText } from './TextEditor.tsx';
 
@@ -103,7 +103,6 @@ export const HtmlView = memo(function HtmlView({ element }: { element: HtmlEleme
           <EmbedFrame element={element} title={title} />
         )}
       </div>
-      <AgentChip element={element} />
     </div>
   );
 });

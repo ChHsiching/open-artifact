@@ -28,7 +28,7 @@ import { useCoarsePointer } from '../ui/hooks.ts';
 import { StickerGlyph } from '../ui/StickerGlyph.tsx';
 import { useIsFeatured } from './hooks.ts';
 import { useStickerPlay } from '../lib/sticker-party.ts';
-import { AgentChip, useItemProps } from './item.tsx';
+import { useItemProps } from './item.tsx';
 import { boardLinkTarget, linkDisplayUrl, resolveAssetUrl } from './links.ts';
 import { PassiveLink } from './PassiveLink.tsx';
 import { rotationStyle, type ViewStyle } from './style.ts';
@@ -126,7 +126,6 @@ export const ImageView = memo(function ImageView({ element }: { element: ImageEl
           </span>
         </PassiveLink>
       ) : null}
-      <AgentChip element={element} />
     </div>
   );
 });

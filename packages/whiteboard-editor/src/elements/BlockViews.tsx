@@ -45,7 +45,7 @@ import { useSectionHover } from '../tools/hover.ts';
 import { editTextActionLabel, placeholderHintId, placeholderNeedsDescription } from './describe.ts';
 import { useIsFeatured, useMeasureNode } from './hooks.ts';
 import { useSelection } from '../state/selection.ts';
-import { AgentChip, useItemProps } from './item.tsx';
+import { useItemProps } from './item.tsx';
 import { RichText } from './markup.tsx';
 import { alignStyle, fontStyle, paperFont, rotationStyle, type ViewStyle } from './style.ts';
 import { TextEditor, useEditing, writeElementText } from './TextEditor.tsx';
@@ -102,7 +102,6 @@ export const NoteView = memo(function NoteView({ element }: { element: NoteEleme
           </div>
         ) : null}
       </div>
-      <AgentChip element={element} />
     </div>
   );
 });
@@ -147,7 +146,6 @@ export const ShapeView = memo(function ShapeView({ element }: { element: ShapeEl
           )}
         </div>
       </div>
-      <AgentChip element={element} />
     </div>
   );
 });
@@ -203,7 +201,6 @@ export const TextView = memo(function TextView({ element }: { element: TextEleme
           {element.placeholder}
         </span>
       ) : null}
-      <AgentChip element={element} />
     </div>
   );
 });
@@ -243,7 +240,6 @@ export const SectionView = memo(function SectionView({ element }: { element: Con
         <path d={shapePathData('frame', w, h)} />
       </svg>
       <SectionTitle element={element} />
-      <AgentChip element={element} />
     </div>
   );
 });
