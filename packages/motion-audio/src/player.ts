@@ -15,7 +15,7 @@ import type { ScorePass, SchedulerTimers } from './scheduler.ts';
 import { identityTimeline } from './timeline.ts';
 
 export interface SoundPlayerState {
-  /** An audio context exists and is not closed: sound can be heard once unmuted. */
+  /** An audio context exists and is not closed: sound can be heard. */
   readonly available: boolean;
   readonly playing: boolean;
   readonly muted: boolean;
@@ -54,7 +54,8 @@ function pageAudioContext(): AudioContext | null {
 
 /**
  * The film's sound in the editor: the score synthesized live and the narration over it, in step with the picture.
- * Starts muted. The page reads `now()` every frame while playing, so the picture follows the sound.
+ * Starts with the sound on; it is heard from the first click or key press that plays the film, which is when a
+ * browser lets audio start. The page reads `now()` every frame while playing, so the picture follows the sound.
  */
 export class FilmSoundPlayer {
   readonly #createContext: () => AudioContext | null;
@@ -69,7 +70,7 @@ export class FilmSoundPlayer {
   #source: PlaybackTimeSource | null = null;
   #position: PlaySeconds = playSeconds(0);
   #pendingGains = new WeakSet<PlayedScore>();
-  #state: SoundPlayerState = { available: false, playing: false, muted: true, volume: 1, rate: 1, interrupted: false };
+  #state: SoundPlayerState = { available: false, playing: false, muted: false, volume: 1, rate: 1, interrupted: false };
 
   constructor(options: FilmSoundPlayerOptions = {}) {
     this.#createContext = options.createContext ?? pageAudioContext;

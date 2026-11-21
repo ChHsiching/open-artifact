@@ -126,9 +126,9 @@ tracking, greys that are flat instead of the product's alpha-on-ink,
 missing hairlines, radii off by 2 px, icon size and stroke, truncation
 and ellipsis behavior, scrollbars that should not be there, a selection
 ring hugging the row instead of the text, a drag ghost under instead of
-over. At a 2× camera a 1 px error is 2 px. Fix these as content bugs. A
-still beside a real screenshot comes only when the person asks for one
-(SKILL.md).
+over. At a 2× camera a 1 px error is 2 px. Fix these as content bugs.
+Where you have a real screenshot, hold a still of the scene beside it
+(finalize.md, "Look as you go").
 
 ## 5. When the input is a design, not shipped code
 
@@ -141,6 +141,14 @@ design shows.
 
 ## When the film shows a product being used
 
+- **Decide what the film proves, and show only that.** One real task from
+  the ask to the result; many different results in a row; the same task
+  the old way and then the new; or a reveal held back to the end. Two or
+  three steps that carry the product's worth beat a tour of every menu.
+- **Keep the trigger and the result, shorten the wait.** The click or
+  the typed ask is seen, the loading is cut to a beat, and the result is
+  held longest: it is what the viewer came for. A result never shows
+  before the action that causes it, in the background either.
 - **The person touches the real thing, not its caption** — retype the
   placeholder inline, scrub the number field, recolor through the real
   popover; never edit a heading that merely labels the design. Best

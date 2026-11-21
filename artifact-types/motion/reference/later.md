@@ -8,6 +8,8 @@ Asked to bring in their logo, icons, product or colors, or a film for their orga
 
 A film that speaks (it holds `modules/narration.js`, or its `film/script` sets `narration`): read `reference/voice.md` too, and follow its "Later" for any change to the lines, times or scenes.
 
+A film that explains something (its `shared.js` holds `W.facts`): read `reference/explainer.md` too, before you change what it shows or says. A number changes in `W.facts`, once, and in each line that states it.
+
 ## Which kind of film?
 
 Go by what `scenes.json` and the scene modules say. Whatever the kind, what you refused, whole or a part (a scene or line left out for harm), stays refused, "as I first asked" too: the same no.
@@ -23,9 +25,9 @@ Go by what `scenes.json` and the scene modules say. Whatever the kind, what you 
 
 Never republish: the store is the truth. `list` `modules` (and `assets`) first, with each document whole and its sha256. With no list of scenes, `get` `film/script` too, and read film-api.md first. Before revising a finished film, also read motion.md and film-api.md. finalize.md says how a scene is drawn and how much a frame can carry.
 
-Change only what was asked: a scene's module, `scenes.json` for order, names, seconds and `desc`, or `base.css` and `shared.js` for something across the film. Then `set` just those, and keep names stable. A scene added, dropped or retimed goes by "A change", so that the score still fits. A thing on `W` that is to change everywhere changes where it's drawn, once: in `shared.js`, or at the head of the scene that first shows it. A small change stays small: the richness of a finished scene is no reason to redraw it.
+Change only what was asked: a scene's module, `scenes.json` for order, names, seconds and `desc`, or `base.css` and `shared.js` for something across the film. Then `set` just those, and keep names stable. A scene added, dropped or retimed goes by "A change", so that the score still fits. A thing on `W` that is to change everywhere changes where it's drawn, once: in `shared.js`, or at the head of the scene that first shows it. A small change stays small: the richness of a finished scene is no reason to redraw it. After a change to what a scene shows, look at a still or two of it (finalize.md, "Look as you go").
 
-A reviewer's comment carries its pin ("How reviewers review", below). Map the time to its beat and the point to the element there before answering. Confirm anything ambiguous, then apply the round in one pass. Tell the user what changed, in their words. Music they asked for goes as "The music: [mood], [two instruments]." After a first score, add "It starts muted: the speaker button turns the sound on."
+A reviewer's comment carries its pin ("How reviewers review", below). Map the time to its beat and the point to the element there before answering. Confirm anything ambiguous, then apply the round in one pass. Tell the user what changed, in their words. Music they asked for goes as "The music: [mood], [two instruments]."
 
 ## How reviewers review
 

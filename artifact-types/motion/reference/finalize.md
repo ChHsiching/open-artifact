@@ -12,13 +12,15 @@ The order of work is the world, then the scenes, then the score. A scene thought
 
 **Budget.** On a rich film the drawings on `W` run 3,000 to 6,000 characters and a scene's own code 2,500 to 5,000; a plain one takes less. Take what the picture needs, and stop. Their product's UI, or a scene over 8 s, takes more.
 
-**Render nothing unless they ask**, even with a browser at hand: what other pages say of stills and scripts doesn't hold here. Ask no questions while you make the film, whatever motion.md or recreate-ui.md says of asking, apart from one that decides a refusal: ask it and end the turn, and take the film up by later.md's "Cut short".
+**Look as you go.** After each scene, or two short ones, draw two or three stills of it (its first moment, its busiest moment, its last second) and look at every one. A still takes about a second and shows what reading code can't: a line that wraps, boxes that overlap, a wash lying over the picture, a scene that doesn't open as the last one closed, words crossed by a drawing, a first second with nothing in it. Mend what you see with a write of that scene before you go on to the next, and look again at the moment you mended. Frame 0 gets a look as soon as the first scene is in: it is the thumbnail. A still shows where things are, never how they move: judge speed and rhythm from the seconds in `render`, and never say you watched it play. Keep to stills: make no video or audio file, and never hold the film back for a full pass at the end, because someone is watching it arrive. If stills can't be drawn where you run (no Chrome or Chromium, no `snapshot`), go on without them and read each scene as a storyboard instead.
 
-**When they ask for a still and no host gives you `snapshot`**, draw it with `open-artifact stills <root> --at 1.5,4,9.2` (played seconds; `--scale 0.5` for half size, `--rough` to draw rough scenes as sketches, `--out <dir>`, else a new temporary folder). It loads the film from `<root>/db` and `<root>/_blobs` into a page that shows nothing and draws each time as Export does, then prints each PNG's path, the score's counts (an `unknown` patch plays silent) and the film's own warnings and errors. It needs Node 22 or later and a Chrome or Chromium (`CHROME_PATH`, else Playwright's browser cache or the system's), and installs nothing. Look at every PNG before you say anything about it. Fonts chosen on the page or fetched from Google are not applied there, so say so with any still of a film that has them (later.md's "What to say about fonts", F).
+Ask no questions while you make the film, whatever motion.md or recreate-ui.md says of asking, apart from one that decides a refusal: ask it and end the turn, and take the film up by later.md's "Cut short".
+
+**Drawing a still.** Under a host, `Artifact {action: "call", url, name: "snapshot"}`. Standalone, `open-artifact stills <root> --at 1.5,4,9.2` (played seconds; `--scale 0.5` for half size, `--rough` to draw rough scenes as sketches, `--out <dir>`, else a new temporary folder). It loads the film from `<root>/db` and `<root>/_blobs` into a page that shows nothing and draws each time as Export does, then prints each PNG's path, the score's counts (an `unknown` patch plays silent) and the film's own warnings and errors. It needs Node 22 or later and a Chrome or Chromium (`CHROME_PATH`, else Playwright's browser cache or the system's), and installs nothing. Look at every PNG before you say anything about it. Fonts chosen on the page or fetched from Google are not applied there, so say so with any still of a film that has them (later.md's "What to say about fonts", F).
 
 ## 1. Have motion.md and film-api.md
 
-If this conversation lacks their text, whole, read them in one message, before any world or scene: the rules of a film's look are there. Add recreate-ui.md if the film shows their product, and design-systems.md if a system is in play.
+If this conversation lacks their text, whole, read them in one message, before any world or scene: the rules of a film's look are there. Add recreate-ui.md if the film shows their product, design-systems.md if a system is in play, and explainer.md if the film explains something (history.md with it for history or a real person's story).
 
 ## 2. Settle the world
 
@@ -33,7 +35,7 @@ Answer these for this film, from the look, the palette and the scene list, in a 
 
 Then hold it to the brief. Everything they asked you to show or say, except what you refused, appears on screen in their words and figures. The look they asked for is the look, within what motion.md's Looks allow. The world serves the brief and never replaces it.
 
-When the brief is plain work (a product promo, an explainer, a results update, a board paper), the words, numbers and product are the subject and the world stays quiet. Pick a visual system that suits the subject and draw its parts well: a chart can be a drawn object with depth, and a process can be a machine. Keep every number theirs or clearly made up. If the film shows their product, screenshots or logo, the world frames them and never restyles them (recreate-ui.md).
+When the brief is plain work (a product promo, an explainer, a results update, a board paper), the words, numbers and product are the subject and the world stays quiet. Pick a visual system that suits the subject and draw its parts well: a chart can be a drawn object with depth, and a process can be a machine. Keep every number theirs or clearly made up. If the film shows their product, screenshots or logo, the world frames them and never restyles them (recreate-ui.md). An explainer's world is its subject and where it stands: one familiar thing that works the way the idea does, with its facts in `W.facts` and every amount drawn from them (explainer.md).
 
 ## 3. Draw the backdrop, in one batch
 
@@ -119,7 +121,7 @@ kit.scene('ring', {
 });
 ```
 
-Copy how it's built, never its scenes, words, colors, shapes or times, nor how its line comes in: motion.md has other ways. Choose the hour, the light and the palette anew for your own.
+Copy how it's built, never its scenes, words, colors, shapes or times, nor how its line comes in: motion.md has other ways. Choose the hour, the light and the palette anew for your own. Two things in it catch people out. Its `.pool` lies over the art, as light: over a thing that must stay crisp, put the pool beneath it or keep it faint. And the stage sets no `box-sizing`, so a box's `width` leaves its padding out: a row of cards needs width plus both paddings inside its step, or `box-sizing:border-box` on the card.
 
 ## 5. The score and the stage
 
@@ -127,4 +129,4 @@ Last, ONE `batch`, so that the film loads once. If they asked for silence: no sc
 
 ## 6. Stop
 
-Then run `open-artifact check <root>` (under a host, `Artifact {action: "call", url, name: "check"}`) and fix each error it names. That ends the work. Close as SKILL.md says, with the film's url and its one sentence more if there is one, and end the turn. Say nothing of artifact types or how it was made, and don't name the music.
+Then run `open-artifact check <root>` (under a host, `Artifact {action: "call", url, name: "check"}`) and fix each error it names. `check` reads the documents, not the picture, so take one last look at stills of frame 0, of each scene's first second and of the film's last second. That ends the work. Close as SKILL.md says, with the film's url where the page did not open for them and its one sentence more if there is one, and end the turn. Say nothing of artifact types or how it was made, and don't name the music.

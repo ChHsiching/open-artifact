@@ -51,7 +51,9 @@ asking the person multiple-choice questions (it is named like `AskUserQuestion`,
 options with the one you would pick first, and a free-text Other where the tool allows. Where the film is about them (a
 toast, their team, their launch) and you know too little to make it theirs, a last question asks for the facts only
 they know: names, dates and places that belong on a film others may open, never a child's school, health, money,
-addresses or anything private. The answers, or a skip, come back as the tool's result or as the person's next message;
+addresses or anything private. Where the film explains something of theirs (their process, how their product works,
+their results) and the ask lacks the figures it turns on, that question asks for those: how many, how fast, since
+when. The answers, or a skip, come back as the tool's result or as the person's next message;
 until then make no other tool call.
 
 **Without such a tool,** ask none of the three, in plain words or otherwise: people would sooner watch a film arrive
@@ -113,7 +115,8 @@ gives no colors, say so in the line before the form. A film in a system's colors
 sentence says "The colors are from your design system."
 
 Not asking, or the form skipped: a system is the film's only if the list marks it default, or the film is for or about
-their organization or its product, and its colors are used. Any other film takes a palette of your own.
+their organization or its product, and its colors are used. Standalone, the list marks no default. A system that is
+plainly another product's, or a test fixture, is not this film's. Any other film takes a palette of your own.
 
 **A system is in play** when the answer picks it, when they named it, when it was taken without asking, or when the
 film is for or about their organization or its product and a system of theirs is listed. Then read

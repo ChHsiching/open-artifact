@@ -21,7 +21,7 @@ export interface PlaybackState {
   buffering: boolean;
   /** Stopped at the end (not looping); the ended offers show. */
   ended: boolean;
-  /** Sound can be heard here once unmuted. */
+  /** Sound can be heard here. */
   soundAvailable: boolean;
 }
 
@@ -32,7 +32,7 @@ export const usePlayback = create<PlaybackState>()(() => ({
   time: playSeconds(0),
   rate: 1,
   loop: preferences.loop,
-  muted: true,
+  muted: false,
   volume: preferences.volume,
   buffering: false,
   ended: false,

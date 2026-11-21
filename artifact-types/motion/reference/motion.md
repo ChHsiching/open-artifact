@@ -43,7 +43,7 @@ an exhibit in a real history film.
 
 **Vary it.** A film where everything fades in from the right is a slideshow. Use camera moves and parallax, things that grow, unfold, pour, swing, fall and settle, a line that becomes the next shape, a cut on an action. Match movement to material: paper flutters, metal swings and rings, water lags behind.
 
-**Choreograph the eye.** The thing that moves most is the thing to read, and only one thing does that at a time. Stagger related entrances by 200–400 ms. After a cut or a big move, give the viewer 0.6–1 s to see where they are. Put the next subject where the eye already is, or lead it there.
+**Choreograph the eye.** The thing that moves most is the thing to read, and only one thing does that at a time. Stagger related entrances by 200–400 ms. After a cut or a big move, give the viewer 0.6–1 s to see where they are. Put the next subject where the eye already is, or lead it there. With a voice or words on screen in play, the picture, the voice and the words take turns: at any moment one of them brings what is new, and the others support it. Where two would bring different news at once, give each its own beat or lengthen the hold.
 
 **Inside a scene, transform rather than cut:** a card becomes the window, a drawn bird becomes the end mark. Scene to scene is always a hard cut, so land it on an action. No wipes and no stock transitions.
 
@@ -53,7 +53,7 @@ an exhibit in a real history film.
 
 ## 3. Type
 
-**Words must read.** Bad text is what people complain of most, and a rich picture makes it easier to get wrong. Text has 4.5 to 1 contrast against what's behind it at every moment, so put it on calm ground or a soft scrim, and keep anything busy or moving fast out from under it. No word overlaps another word, a drawing's part or the frame's edge. You never see the real font, so a box round words takes its size from them: padding, a `max-width` if it must wrap, and no `height`, `nowrap` or `overflow:hidden` (`.words` itself can be the card); their product's lifted UI keeps its own CSS. A second line then makes the card taller. What can't grow, like a drawn sign, gets room to spare: reckon a letter at 0.6 of the font size and a capital at 0.75, so 200 px type fits about 14 letters across a 1920 stage. Give the viewer time: a line stays up for a second plus 0.3 s a word, counting everything on screen to read, labels too. So keep labels in a drawing few and large, 28 px or more on a 1920 stage. If a scene has too much to read in its seconds, cut words or lengthen the scene; never speed up.
+**Words must read.** Bad text is what people complain of most, and a rich picture makes it easier to get wrong. Text has 4.5 to 1 contrast against what's behind it at every moment, so put it on calm ground or a soft scrim, and keep anything busy or moving fast out from under it. No word overlaps another word, a drawing's part or the frame's edge. You never see the real font, so a box round words takes its size from them: padding, a `max-width` if it must wrap, and no `height`, `nowrap` or `overflow:hidden` (`.words` itself can be the card); their product's lifted UI keeps its own CSS. A second line then makes the card taller. What can't grow, like a drawn sign, gets room to spare: reckon a letter at 0.6 of the font size and a capital at 0.75, so 200 px type fits about 14 letters across a 1920 stage. A Chinese, Japanese or Korean character is a full em wide: 100 px type fits about 17 across a 1920 stage and 150 px about 11, so a headline in those scripts is sized by its count of characters (often 90–150 px, whatever the display sizes below say), and it reads at 0.3 s for every two characters. Give the viewer time: a line stays up for a second plus 0.3 s a word, counting everything on screen to read, labels too. So keep labels in a drawing few and large, 28 px or more on a 1920 stage. If a scene has too much to read in its seconds, cut words or lengthen the scene; never speed up.
 
 Words enter from one direction, word by word (about 110 ms stagger, 24–34 px drift over 0.5 s), never a different direction per line. Make it mean something: a number counts, a phrase splits to let the next line through, a word hands off to the thing it names. Type can be part of the scene: it may sit in the world and be passed by the camera, or scale with depth. Display type is 150–300 px (90–170 px on a 1080-wide stage) unless the picture is the subject, sentence case and short. Emphasis is motion or a hand-drawn underline, not bold, color or exclamation marks. Start a counter near half its final value, so that a paused frame never shows "0 signups".
 
@@ -68,5 +68,24 @@ Words enter from one direction, word by word (about 110 ms stagger, 24–34 px d
 **The title** can travel and become the first subject, so that it hands off instead of cutting. **The end card** has the name or logo large, one short line and their accent once. It lands on the score's downbeat, holds 3 s or more, and lets the world show behind it. A logo animates in simply, with no flashes. Annotate rarely.
 
 Text must not jitter: transform the moving element itself, and never add `will-change` to a camera layer.
+
+## 5. Overlays
+
+Some films are not a picture of their own but graphics to lay over someone's footage in a video editor: a name strap, a keyword, a figure, a logo sting. Settle which it is before the scene list, because everything else follows from it.
+
+**How it's made.** `scenes.json`'s `background` is `"transparent"`, `.ground` paints nothing, and no scene covers the frame: whatever you leave clear is their footage. Export's MOV keeps the transparency; MP4 and GIF turn it black, so the close's one sentence more says "Export it as MOV to keep the background clear." A soft scrim across the whole frame tints their video, so keep any plate behind words to the words.
+
+**Leave their picture alone.** The middle belongs to the person on camera and the bottom strip to their subtitles. A name strap sits low on the left or right, above where subtitles go; a keyword at the center or on a third; a figure at the center or to the right. One thing at a time.
+
+**It opens clear and ends clear.** The rule that frame 0 is never blank is for a film that fills the frame: an overlay's first and last frames are empty, its entrance starts at 0 and its exit runs to the end, complete. As starting points, to be lengthened by the reading time above:
+
+| Graphic | Seconds | Holds | Rhythm |
+|---|---|---|---|
+| Name strap | 3–4 | a name and a role or a chapter, two lines at most | 0.5 in, 2.5 held, 0.5 out |
+| Keyword | 1.5–3 | one phrase | 0.3 in with a little spring, 1.5 held, 0.2 out |
+| Figure or chart | 3–5 | one number counting up, or bars rising | 1 to arrive, 2.5 held on the result, 0.5 out |
+| Logo sting | 2–3 | the mark alone | 0.8 to assemble or draw on, 1.5 held |
+
+**Sound.** Their video has its own, so an overlay carries no music: at most one light effect on the entrance and one where a number lands (sound.md), and none if they ask for silence.
 
 How reviewers review is now in later.md; the rule on other companies' designs is at the end of recreate-ui.md.

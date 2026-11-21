@@ -1,4 +1,4 @@
-/** What this device keeps of the player between visits: loop and volume. Sound always starts muted. */
+/** What this device keeps of the player between visits: loop and volume. Sound always starts on; muting lasts for the visit. */
 
 export interface PlayerPreferences {
   loop: boolean;

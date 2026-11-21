@@ -47,7 +47,7 @@ under a host.
 | `open-artifact wait <root> [--timeout 600]` | Waits for a request or comment sent from the page and prints it; exit 2 on timeout. |
 | `open-artifact asking <root> [--done]` | Run just before you ask the person something: the page shows "Waiting for you" until your next read, write or `wait` (`--done`: now). |
 | `open-artifact context <root>` | What the viewer has on screen right now: the time, the scene, what is selected. |
-| `open-artifact stills <root> --at <t1,t2,…> [--scale n] [--out dir] [--rough]` | PNG stills at played seconds, drawn as Export draws them, by a headless Chrome or Chromium; only when they ask for a still (`reference/finalize.md`). |
+| `open-artifact stills <root> --at <t1,t2,…> [--scale n] [--out dir] [--rough]` | PNG stills at played seconds, drawn as Export draws them, by a headless Chrome or Chromium: how you look at what you drew, scene by scene (`reference/finalize.md`). |
 | `open-artifact share <root> [--off] [--json]` | Shares it on the local network when the person asks (Sharing below); prints a link per role. |
 
 A refused call prints `{"error": "<CODE>", "message": …}`, exits 1 and writes nothing: fix what the message names
@@ -65,14 +65,6 @@ if your commands need approval. `read-db`, `write-db`, `check` and the comment c
 - **On screen.** Nothing blinks, flashes or cuts more than three times a second, because that can harm people. No
   scene is under a second. Names and data on screen are fictional or the person's own. Never use another artifact's
   `_blob/` ids or any external URL.
-- **Original work.** Write no existing song, theme or jingle as the score, and draw no known character, another
-  company's logo or a scene from a film, show or game: make an original one and say so. The person's own, or the
-  public domain, is fine. Recreate another company's distinctive UI or branding only if the person works there
-  (`reference/recreate-ui.md`, the end).
-- **Fit to show at work.** No look of propaganda or of a political or religious movement beyond what the subject
-  needs, nothing offensive (`reference/motion.md`, Looks). A party or candidate's ad, a promo for gambling or for a
-  crypto coin, token or exchange, and fight or combat scenes are not made here: read `reference/kinds.md` first for
-  anything near one.
 - **True as it stands.** Judge a film by what its viewers will see, not by what you tell the person. Don't present as
   fact what you have reason to think is false or hasn't happened yet (an approval, a result, a quote, an emergency):
   offer a version that is true or clearly labelled inside the film, or decline. No risky dare or stunt shown as fun,
@@ -102,6 +94,11 @@ use theirs. If the film would fit anyone who typed the same words, it isn't done
 reach the screen as they gave them; what you invent is how it's told. A film runs 10 to 30 seconds unless they ask
 for more, 300 at most.
 
+A film that explains (how a thing works, why something happens, what a finding or a piece of news means) answers one
+question a viewer really has, with one familiar thing whose working is the explanation, and one set of facts behind
+every number, drawn or written: `reference/explainer.md`. One that tells history or a real person's story also goes
+by `reference/history.md`.
+
 ## The store
 
 | Document | Holds |
@@ -126,7 +123,9 @@ parts, `<name>~1` … `<name>~99`, which the player joins in order (the page's s
 reads 500 modules and 16 MiB of them, 96 assets, and 2 MiB each of `film` and `assets`. A film has 1 to 24 scenes
 and at most 300 seconds; a scene's `init` gets 5 seconds, all of them together 15. A batch holds at most 50 writes and
 1 MB, and one refused write refuses all of it. `if_match` goes on a `set` or `delete` of a document that exists: the
-sha256 your last read or write of it gave; a new document takes none. A refused write to a document that exists, which
+sha256 your last read or write of it gave; a new document takes none. Standalone it is a field of the write
+(`"if_match": "<sha256>"`): `write-db` refuses a stale one (`CONFLICT`) and checks nothing where there is none, so give
+it for every document a person may have changed. A refused write to a document that exists, which
 names no fault of its own, means the person can't edit this film: tell them it wasn't saved.
 
 Write every document through `write-db` or ArtifactData: they check names and sizes and are all or nothing.
@@ -146,28 +145,37 @@ a host, the `publish` above, with the film's own name as `title` (never "Motion"
    `reference/voice.md` before `questions.md`.
 2. **Read** `reference/rough-cut.md`, `reference/finalize.md`, `reference/motion.md` and `reference/film-api.md` in one
    go (and `reference/recreate-ui.md` if the film shows their product, `reference/design-systems.md` if a system is in
-   play). Someone is watching the film arrive: from the answer to the last write is one turn, with no question.
+   play, `reference/explainer.md` if the film explains something: how a thing works, a finding, a piece of news, and
+   `reference/history.md` with it if it tells history or a real person's story). Someone is watching the film arrive: from the answer to the last write is one turn, with no question.
 3. **The first batch, at once** (`rough-cut.md`): `film/meta`, `modules/scenes.json` with `"stage": "rough"`, a few
    lines of `modules/base.css` and, last, `film/script`. The film then plays, with a plain card for each scene to come.
+   With a voiceover (`voice.md`): record the lines first, create the film, upload the clips, and this batch also holds
+   their `assets` documents and `modules/narration.js`, ahead of `film/script`.
+   **Show the page now,** so the person watches the scenes arrive. Under a host it opens by itself on this write.
+   Standalone, open the `url` that `open-artifact open` printed in your app's built-in browser or preview pane, if
+   you have one; if you have none, give the person the `url` in one line and go on in the same turn. Never show it
+   before this batch (the page would be empty), and never open or reload it again: it updates by itself at every
+   write. That pane is the person's view, so look at the film through stills, not by driving their page.
 4. **The world** (`finalize.md`): uploads first, each with its `assets` document; then one batch with the whole
    `base.css` and `shared.js`, which starts `window.W`.
 5. **The scenes**, in film order, one write per scene (`modules/scene-<id>.js`), finished the first time. A scene
-   adds to `W` the things it is the first to show.
+   adds to `W` the things it is the first to show. Look at two or three stills of each scene once it is written, and
+   mend what they show before the next.
 6. **Last, one batch:** `modules/score.js` (read `reference/sound.md` first; no score if they asked for silence, or the
    film will play silent) and `modules/scenes.json`, whole, with `"stage": "final"`.
 7. **Check and show.** `open-artifact check <root>` and fix what it names until it reports no errors. A scene that
-   throws shows only its name card in the player and nobody tells you, so read your code for that. Then show the page:
-   with the Artifact tool, as the create result says; otherwise give the person the `url` that `open-artifact open`
-   printed, once (if you have a built-in browser or preview pane, open it there too). Render no still and make no
-   video or audio file unless they ask: a still under a host is `Artifact {action: "call", url, name: "snapshot"}`;
-   otherwise `open-artifact stills <root> --at <seconds>` draws one (`reference/finalize.md` says how), or ask them
-   to pause the film where they want to look.
+   throws shows only its name card in the player and nobody tells you, so read your code for that. The page has been
+   on show since the first batch (step 3); if it never opened for them, the close gives its `url`. Stills are for
+   looking as you
+   make it (`reference/finalize.md`, "Look as you go": a still under a host is `Artifact {action: "call", url, name:
+   "snapshot"}`, otherwise `open-artifact stills <root> --at <seconds>`). Make no video or audio file of the film
+   yourself: Export on the page is theirs.
 8. **Close** with only this, unless `reference/voice.md` gives another:
 
-   > Here's your animation. It starts muted: the speaker button turns the sound on. Tell me if the music doesn't fit,
-   > or what else to change.
+   > Here's your animation. Tell me if the music doesn't fit, or what else to change.
 
-   With no score: "Here's your animation. Tell me what to change." At most one short sentence more, holding what you
+   With no score: "Here's your animation. Tell me what to change." Where the page did not open in a built-in browser,
+   the film's `url` follows the first sentence, once. At most one short sentence more, holding what you
    couldn't do as asked (a font, a length, a refusal) and what you made up that something of theirs would replace (a
    logo, screenshots); `reference/later.md` has the font sentences. It may say, where it bears on the ask, that the
    film works best with their images, logo, colors, font files or UI code, that clips play as muted picture, and that
@@ -177,7 +185,9 @@ a host, the `publish` above, with the film's own name as `title` (never "Motion"
 
 On any turn after the one that made the film, in this conversation or a new one: first `list` the `modules`
 collection (`open-artifact read-db <root> modules`), then read `reference/later.md` in full and go by the kind of film
-it finds (empty, rough, cut short, final). A film cut short is taken up, never started over. The film's store is the
+it finds (empty, rough, cut short, final). A film cut short is taken up, never started over. Standalone, if the
+page is not on show (a new conversation, a server that stopped), `open-artifact open <root> --json` starts it again
+and prints its `url`, which may have changed: show it once, as in step 3 of "Making a film". The film's store is the
 truth: read before you change, change only what was asked, keep scene ids, and keep `base.css` and `shared.js`
 additive. A scene added, dropped or retimed goes through `scenes.json`, and the score is fitted to the new times, with
 no `T.<id>` of a dropped scene left (it would sound at 0:00).

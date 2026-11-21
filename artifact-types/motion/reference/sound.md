@@ -15,6 +15,14 @@ music file stays.
 - **Groove on the grid, effects on exact frames.** Music takes beats. An effect takes the exact `t` of the event it belongs to.
 - **Sound the world.** What the viewer sees should be heard: a `whoosh` as wind crosses, `thud` on a landing, `pop` as things
   appear, ticks for a clock.
+- **Few effects, each exact, one sound for one kind of event.** Sound only what moves the story on, never every
+  motion, and give the same event the same effect for the whole film. A part or a label appears: `pop`. A count runs:
+  `S.ticks`, one tick a step. Something lands, shuts or is struck out: `thud`. An answer, a step done: `ding` or
+  `chime`. A fast move across the frame: `whoosh`. The build into a reveal: `revswell`, ending on it.
+- **Under a voice, or under an explanation, stay out of the way.** Sparse and even: a pad, a low mallet, a light
+  pulse; no tune in the voice's own register, no solo that draws the ear, no jump in loudness from scene to scene. Set
+  no level for the voice: the player lowers the score under each line by itself and brings it back after the last
+  one, so let that return be the swell into the end card. Effects there are quieter (`vel`) and fall on the word they belong to or between two lines.
 - **Keep an arc.** Start near silent, bring the groove in with the action, drop back before the end, build into the hit as the
   end card lands, then let the last chord ring. Make the hit clearly louder than the opening.
 - **Let the world pick the instruments.** A lullaby wants glockenspiel and pad, a foundry low pads and struck metal, a product
@@ -52,4 +60,4 @@ A film with no list of scenes has no `kit.score`: the same body goes in `window.
   (`{into: 1}` reverses it), `revswell` (swells into its `t` over `dur`), `roll`, `boing`, `thud`.
 
 An unknown drum or effect is silent. `pattern` and `drums` with `repeat` overrun happily, so compute the count to fit. An event
-timed 0.1 s or more before 0 is dropped, so the sound for an early entrance goes at 0. A 30 s score is a few hundred events; the player takes 20,000 at most. The mix is brought to the same loudness (−16 LUFS) in the player and in Export, and the film starts muted: mute and volume are the viewer's.
+timed 0.1 s or more before 0 is dropped, so the sound for an early entrance goes at 0. A 30 s score is a few hundred events; the player takes 20,000 at most. The mix is brought to the same loudness (−16 LUFS) in the player and in Export. The film plays with its sound on; mute and volume are the viewer's.

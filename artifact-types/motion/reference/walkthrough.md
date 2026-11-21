@@ -81,4 +81,4 @@ on screen, a cursor that never jumps between beats without a fade,
 captions never over their region, at most one secondary color per
 scene, and every click landing on its target at its click time.
 `open-artifact check` checks the documents, not the picture; stills
-come only when the person asks (SKILL.md; without a host, finalize.md says how).
+show the picture (finalize.md, "Look as you go").
