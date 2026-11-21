@@ -6,6 +6,7 @@
 import type { IncomingMessage } from 'node:http';
 import { RPC_ERRORS, type SessionRef, type ToolCallResult, type ToolDefinition } from '@open-artifact/protocol';
 import { MCP_APP_NOTE, SHOW_TOOL, VIEW_URI, clientShowsApps, viewContents, viewListing } from './mcp-app.ts';
+import { samePath } from './paths.ts';
 
 /** MCP protocol version answered when the client names none. */
 export const MCP_PROTOCOL = '2025-06-18';
@@ -26,12 +27,14 @@ export interface McpMeta {
   harness?: string;
   sessionId?: string;
   threadId?: string;
+  conversationId?: string;
   workspace?: string;
 }
 
-/** Finds a session from process ids, and a session's folder (the Harness hub). */
+/** Finds a session from process ids or recent hooks, and a session's folder (the Harness hub). */
 export interface PidLookup {
-  byPid(pids: number[]): SessionRef | null;
+  byPid(pids: number[], harness?: string): SessionRef | null;
+  recentSession?(harness: string, workspace?: string | null): SessionRef | null;
   workspaceOf?(ref: SessionRef): string | null;
 }
 
@@ -44,7 +47,7 @@ const header = (request: IncomingMessage, name: string): string | undefined => {
 export function callerFromRequest(request: IncomingMessage, pids: PidLookup, meta: McpMeta = {}): SessionRef {
   const harness = String(header(request, MCP_HEADERS.harness) ?? meta.harness ?? 'mcp');
   const sessionHeader = header(request, MCP_HEADERS.session);
-  const session = sessionHeader ? String(sessionHeader) : (meta.sessionId ?? meta.threadId ?? null);
+  const session = sessionHeader ? String(sessionHeader) : (meta.sessionId ?? meta.threadId ?? meta.conversationId ?? null);
   const workspaceHeader = header(request, MCP_HEADERS.workspace);
   let workspace: string | null = meta.workspace ?? null;
   if (workspaceHeader) {
@@ -54,10 +57,19 @@ export function callerFromRequest(request: IncomingMessage, pids: PidLookup, met
       workspace = workspaceHeader;
     }
   }
-  const ppid = header(request, MCP_HEADERS.ppid);
-  if (!session && ppid) {
-    const ref = pids.byPid(ppid.split(',').map(Number).filter((n) => n > 1));
-    if (ref) return { harness: ref.harness, session: ref.session, workspace: ref.workspace ?? workspace };
+  if (!session) {
+    const ppid = header(request, MCP_HEADERS.ppid);
+    if (ppid) {
+      const ref = pids.byPid(
+        ppid.split(',').map(Number).filter((n) => n > 1),
+        harness,
+      );
+      if (ref && (!workspace || !ref.workspace || samePath(ref.workspace, workspace))) {
+        return { harness: ref.harness, session: ref.session, workspace: ref.workspace || workspace };
+      }
+    }
+    const recent = pids.recentSession?.(harness, workspace) ?? null;
+    if (recent) return { harness: recent.harness, session: recent.session, workspace: recent.workspace || workspace };
   }
   return { harness, session, workspace };
 }
@@ -136,7 +148,7 @@ export async function handleMcp(
       return reply({ contents: [viewContents(context.origin, version)] });
     case 'tools/call': {
       const meta = params?._meta ?? {};
-      const metaSession = meta.sessionId ?? meta.threadId;
+      const metaSession = meta.sessionId ?? meta.threadId ?? meta.conversationId;
       const who: SessionRef = { ...caller, ...(metaSession ? { session: metaSession } : {}) };
       // A bridge started in a plugin's folder names no folder: the session's own, when the daemon knows it.
       if (!who.workspace) who.workspace = context.workspaceOf?.(who) ?? null;

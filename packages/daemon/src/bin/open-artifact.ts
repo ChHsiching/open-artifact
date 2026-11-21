@@ -146,7 +146,9 @@ function watchWakes(options: {
   const pending = new Map<string, ReturnType<typeof setTimeout>>();
   const resolveMine = async (state: DaemonState): Promise<SessionRef | null> => {
     if (mine) return mine;
-    const body = await api<{ session?: SessionRef | null }>(state, 'session.resolve', { pids }).catch(() => ({ session: null }));
+    const body = await api<{ session?: SessionRef | null }>(state, 'session.resolve', { pids, harness: options.harness, workspace: ownWorkspace() }).catch(() => ({
+      session: null,
+    }));
     if (body.session?.session) mine = body.session;
     return mine;
   };
@@ -238,6 +240,7 @@ async function mcpBridge(): Promise<void> {
   if (argv.includes('--channel')) argv.splice(argv.indexOf('--channel'), 1);
   const session = sessionFromEnv(harness);
   const workspace = ownWorkspace();
+  const ppids = ancestors(process.ppid, 4).join(',');
   let state: DaemonState = await ensureDaemon();
   // The client shows MCP Apps (it said so in initialize): the daemon then offers ShowArtifact and its view.
   let apps = false;
@@ -246,7 +249,7 @@ async function mcpBridge(): Promise<void> {
     Authorization: `Bearer ${state.token}`,
     'X-Open-Artifact-Harness': harness,
     ...(workspace ? { 'X-Open-Artifact-Workspace': encodeURIComponent(workspace) } : {}),
-    'X-Open-Artifact-PPID': ancestors(process.ppid, 2).join(','),
+    'X-Open-Artifact-PPID': ppids,
     ...(session ? { 'X-Open-Artifact-Session': session } : {}),
     ...(apps ? { 'X-Open-Artifact-UI': '1' } : {}),
   });
@@ -279,6 +282,11 @@ async function mcpBridge(): Promise<void> {
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         const response = await fetch(`${state.url}/mcp`, { method: 'POST', headers: headers(), body: JSON.stringify(message) });
+        if (response.status === 401 && attempt === 0) {
+          // The daemon restarted with a new token (e.g. after idle exit); refresh once and retry.
+          state = await ensureDaemon();
+          continue;
+        }
         if (response.status === 202) return;
         let text = await response.text();
         if (channel && message.method === 'initialize' && text) {

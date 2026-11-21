@@ -52,27 +52,36 @@ function run(dir: string, args: string[], vars: Record<string, string> = {}): { 
 
 const claudeCode = { CLAUDECODE: '1', CLAUDE_CODE_SESSION_ID: 'claude-session' };
 const codex = { CODEX_THREAD_ID: 'codex-thread' };
+const antigravity = { ANTIGRAVITY_AGENT: '1', ANTIGRAVITY_CONVERSATION_ID: 'ag-conv-1' };
 
 test('launcher: a plugin naming its harness never takes another agent app’s session', () => {
-  // An app started from inside a Claude Code or Codex session holds that session's variables.
-  for (const harness of ['antigravity', 'cursor', 'copilot', 'chatgpt']) {
-    for (const leaked of [claudeCode, codex, { ...claudeCode, ...codex }]) {
+  // An app started from inside a Claude Code, Codex or Antigravity session holds that session's variables.
+  for (const harness of ['cursor', 'copilot', 'chatgpt']) {
+    for (const leaked of [claudeCode, codex, antigravity, { ...claudeCode, ...codex, ...antigravity }]) {
       assert.deepEqual(caller(['mcp', '--harness', harness], leaked), { harness, session: null }, `${harness} with ${Object.keys(leaked)}`);
       assert.deepEqual(caller(['hook', 'Stop', '--harness', harness], leaked), { harness, session: null });
     }
   }
-  assert.deepEqual(caller(['mcp', '--harness', 'codex'], claudeCode), { harness: 'codex', session: null });
-  assert.deepEqual(caller(['mcp', '--harness', 'codex'], { ...claudeCode, ...codex }), { harness: 'codex', session: 'codex-thread' });
-  assert.deepEqual(caller(['mcp', '--harness', 'claude-code'], codex), { harness: 'claude-code', session: null });
-  assert.deepEqual(caller(['mcp', '--harness', 'claude-code'], { ...claudeCode, ...codex }), { harness: 'claude-code', session: 'claude-session' });
+  for (const leaked of [claudeCode, codex, { ...claudeCode, ...codex }]) {
+    assert.deepEqual(caller(['mcp', '--harness', 'antigravity'], leaked), { harness: 'antigravity', session: null });
+    assert.deepEqual(caller(['hook', 'Stop', '--harness', 'antigravity'], leaked), { harness: 'antigravity', session: null });
+  }
+  assert.deepEqual(caller(['mcp', '--harness', 'antigravity'], { ...claudeCode, ...antigravity }), { harness: 'antigravity', session: 'ag-conv-1' });
+  assert.deepEqual(caller(['mcp', '--harness', 'codex'], { ...claudeCode, ...antigravity }), { harness: 'codex', session: null });
+  assert.deepEqual(caller(['mcp', '--harness', 'codex'], { ...claudeCode, ...codex, ...antigravity }), { harness: 'codex', session: 'codex-thread' });
+  assert.deepEqual(caller(['mcp', '--harness', 'claude-code'], { ...codex, ...antigravity }), { harness: 'claude-code', session: null });
+  assert.deepEqual(caller(['mcp', '--harness', 'claude-code'], { ...claudeCode, ...codex, ...antigravity }), { harness: 'claude-code', session: 'claude-session' });
 });
 
 test('launcher: without --harness it goes by the variables', () => {
   assert.deepEqual(caller(['artifact', '{}'], claudeCode), { harness: 'claude-code', session: 'claude-session' });
   assert.deepEqual(caller(['artifact', '{}'], codex), { harness: 'codex', session: 'codex-thread' });
+  assert.deepEqual(caller(['artifact', '{}'], antigravity), { harness: 'antigravity', session: 'ag-conv-1' });
+  assert.deepEqual(caller(['artifact', '{}'], { ANTIGRAVITY_CONVERSATION_ID: 'ag-only' }), { harness: 'antigravity', session: 'ag-only' });
+  assert.deepEqual(caller(['artifact', '{}'], { ANTIGRAVITY_AGENT: '1' }), { harness: 'antigravity', session: null });
   assert.deepEqual(caller(['artifact', '{}'], {}), { harness: null, session: null });
   // Variables the person set win over both.
-  assert.deepEqual(caller(['mcp', '--harness', 'cursor'], { ...claudeCode, OPEN_ARTIFACT_HARNESS: 'x', OPEN_ARTIFACT_SESSION: 's' }), {
+  assert.deepEqual(caller(['mcp', '--harness', 'cursor'], { ...claudeCode, ...antigravity, OPEN_ARTIFACT_HARNESS: 'x', OPEN_ARTIFACT_SESSION: 's' }), {
     harness: 'x',
     session: 's',
   });

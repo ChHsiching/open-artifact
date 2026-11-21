@@ -1593,7 +1593,7 @@ ${rows ? `<ul>\n${rows}\n</ul>` : '<p>No artifacts yet. Ask an agent to make one
         // A harness hook (`open-artifact hook <event>`): remember the session and its processes, hand it what waited
         // (unless `take: false`: a later hook of the same turn hands it over).
         const body = await readJsonBody<{ harness: string; session: string; workspace: string; pids: number[]; take?: boolean }>(req);
-        const ref: SessionRef = { harness: String(body.harness ?? 'mcp'), session: body.session ?? null, workspace: body.workspace ?? null };
+        const ref: SessionRef = { harness: String(body.harness ?? 'mcp'), session: body.session || null, workspace: body.workspace || null };
         for (const pid of Array.isArray(body.pids) ? body.pids : []) this.harnesses.registerPid(Number(pid), ref);
         this.harnesses.remember(ref);
         const keys = [sessionKeyOf(ref), sessionKeyOf({ harness: ref.harness, session: null, workspace: ref.workspace })].filter((k): k is string => !!k);
@@ -1603,9 +1603,12 @@ ${rows ? `<ul>\n${rows}\n</ul>` : '<p>No artifacts yet. Ask an agent to make one
       }
       case 'session.resolve': {
         // Which session a hook registered for these processes (an MCP bridge asks for its own, to watch its wakes).
-        const body = await readJsonBody<{ pids?: number[] }>(req);
+        const body = await readJsonBody<{ pids?: number[]; harness?: string; workspace?: string | null }>(req);
         const pids = (Array.isArray(body.pids) ? body.pids : []).map(Number).filter((n) => n > 1);
-        return sendJson(res, 200, { session: this.harnesses.byPid(pids) });
+        const harness = typeof body.harness === 'string' ? body.harness : undefined;
+        const workspace = typeof body.workspace === 'string' && body.workspace ? body.workspace : null;
+        const session = this.harnesses.byPid(pids, harness) ?? (harness ? this.harnesses.recentSession(harness, workspace) : null);
+        return sendJson(res, 200, { session });
       }
       case 'session.attach':
         return sendJson(res, 200, this.harnesses.pollAttach(await this.pollBody(req)));
@@ -1656,10 +1659,11 @@ ${rows ? `<ul>\n${rows}\n</ul>` : '<p>No artifacts yet. Ask an agent to make one
     } catch {
       return sendJson(res, 400, { jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } });
     }
-    const caller = callerFromRequest(req, this.harnesses);
     const ui = uiFromRequest(req);
-    const one = (message: McpMessage): Promise<McpReply | null> =>
-      handleMcp(message, { tools: this.tools, caller, version: VERSION, workspaceOf: (ref) => this.harnesses.workspaceOf(ref), ui, origin: this.origin });
+    const one = (message: McpMessage): Promise<McpReply | null> => {
+      const caller = callerFromRequest(req, this.harnesses, message?.params?._meta);
+      return handleMcp(message, { tools: this.tools, caller, version: VERSION, workspaceOf: (ref) => this.harnesses.workspaceOf(ref), ui, origin: this.origin });
+    };
     if (Array.isArray(body)) {
       const out = (await Promise.all(body.map(one))).filter((reply): reply is McpReply => reply !== null);
       if (out.length) return sendJson(res, 200, out);

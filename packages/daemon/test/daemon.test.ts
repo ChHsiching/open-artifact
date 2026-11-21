@@ -1,8 +1,10 @@
 import { TEST_HOME, tempDir, until } from './helpers.ts';
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { request } from 'node:http';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+import { createInterface } from 'node:readline';
 import { after, before, test } from 'node:test';
 import {
   HARNESS_PATH,
@@ -16,6 +18,7 @@ import {
 } from '@open-artifact/protocol';
 import { HarnessClient, api, readDaemon } from '../src/client.ts';
 import { BOOT_PLACEHOLDER, startDaemon, type Daemon } from '../src/daemon.ts';
+import { harnessProfile } from '../src/harness.ts';
 import { files } from '../src/paths.ts';
 import { sessionKeyOf } from '../src/store.ts';
 
@@ -187,6 +190,128 @@ test('MCP from a plugin folder: the session’s folder, from its hook or its Cod
     assert.ok((await publish('thread-rolled', 'Rolled')).startsWith(join(rolled, 'artifacts')));
   } finally {
     delete process.env.CODEX_HOME;
+  }
+});
+
+test('Antigravity: sessionEnv, recent-session fallback when MCP has no session/PID match, and inbox routing', async () => {
+  assert.equal(harnessProfile('antigravity').sessionEnv, 'ANTIGRAVITY_CONVERSATION_ID');
+
+  const wsA = tempDir('open-artifact-ag-a-');
+  const wsB = tempDir('open-artifact-ag-b-');
+  const wsUnseen = tempDir('open-artifact-ag-c-');
+
+  const publish = async (title: string, headers: Record<string, string>) => {
+    const response = await mcp(
+      { jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'Artifact', arguments: { action: 'publish', type_url: 'open-artifact://type/design', title } } },
+      headers,
+    );
+    const body = (await response.json()) as { result: { content: Array<{ text: string }>; isError: boolean } };
+    assert.equal(body.result.isError, false, body.result.content[0]?.text);
+    const made = JSON.parse(body.result.content[0]!.text) as ToolCallResult;
+    return daemon.store.require(artifactIdOf(String(made.url))!);
+  };
+
+  // Hooks register two Antigravity sessions on a shared language_server PID (99001), plus a Claude session on 99002.
+  await api(state, 'hook', { event: 'SessionStart', harness: 'antigravity', session: 'ag-conv-a', workspace: wsA, pids: [99001] });
+  await new Promise((done) => setTimeout(done, 15));
+  await api(state, 'hook', { event: 'UserPromptSubmit', harness: 'antigravity', session: 'ag-conv-b', workspace: wsB, pids: [99001] });
+  await api(state, 'hook', { event: 'SessionStart', harness: 'claude-code', session: 'claude-other', workspace: wsA, pids: [99002] });
+
+  // 1. Plugin-folder MCP call (no session, no workspace, no matching PID, e.g. Windows / detached LS / daemon restart):
+  //    falls back to the most recently seen Antigravity session and places the artifact in its workspace.
+  const noPid = await publish('AG No PID', { 'X-Open-Artifact-Harness': 'antigravity', 'X-Open-Artifact-PPID': '88888' });
+  assert.deepEqual(noPid.owner, { harness: 'antigravity', session: 'ag-conv-b', workspace: wsB });
+  assert.ok(noPid.root.startsWith(join(wsB, 'artifacts')), noPid.root);
+
+  // 2. Ask from browser routes to antigravity:ag-conv-b (not unowned) and PreInvocation receives it.
+  const ask = await api<{ via: string }>(state, LIBRARY_ROUTES.ask, { id: noPid.id, text: 'Change the hero title' });
+  assert.equal(ask.via, 'inbox');
+  assert.equal(daemon.inbox.count('unowned'), 0);
+  const delivered = await api<{ messages: string[] }>(state, 'hook', { event: 'UserPromptSubmit', harness: 'antigravity', session: 'ag-conv-b', workspace: wsB, pids: [99001] });
+  assert.equal(delivered.messages.length, 1);
+  assert.match(delivered.messages[0]!, /Change the hero title/);
+
+  // 3. Workspace-scoped MCP call matches wsA's session even when wsB was more recent on the shared PID.
+  const byWs = await publish('AG Workspace A', {
+    'X-Open-Artifact-Harness': 'antigravity',
+    'X-Open-Artifact-Workspace': encodeURIComponent(wsA),
+    'X-Open-Artifact-PPID': '99001',
+  });
+  assert.deepEqual(byWs.owner, { harness: 'antigravity', session: 'ag-conv-a', workspace: wsA });
+  assert.ok(byWs.root.startsWith(join(wsA, 'artifacts')), byWs.root);
+
+  // 4. An unseen workspace does NOT steal another workspace's session.
+  const unseen = await publish('AG Unseen WS', {
+    'X-Open-Artifact-Harness': 'antigravity',
+    'X-Open-Artifact-Workspace': encodeURIComponent(wsUnseen),
+    'X-Open-Artifact-PPID': '99001',
+  });
+  assert.deepEqual(unseen.owner, { harness: 'antigravity', session: null, workspace: wsUnseen });
+
+  // 5. Shared PID from another harness (claude-code on 99002) is NOT hijacked by an antigravity MCP call.
+  const isolated = await publish('AG PID Isolated', {
+    'X-Open-Artifact-Harness': 'antigravity',
+    'X-Open-Artifact-Workspace': encodeURIComponent(wsA),
+    'X-Open-Artifact-PPID': '99002',
+  });
+  assert.deepEqual(isolated.owner, { harness: 'antigravity', session: 'ag-conv-a', workspace: wsA });
+
+  // 6. Plain unnamed MCP client does NOT steal Antigravity's recent session.
+  const plain = await publish('Plain MCP', { 'X-Open-Artifact-Workspace': encodeURIComponent(wsB) });
+  assert.deepEqual(plain.owner, { harness: 'mcp', session: null, workspace: wsB });
+
+  // 7. Stale sessions outside the freshness window are not matched.
+  process.env.OPEN_ARTIFACT_RECENT_SESSION_MS = '1';
+  try {
+    await new Promise((done) => setTimeout(done, 10));
+    assert.equal(daemon.harnesses.recentSession('antigravity', wsA), null);
+    assert.equal(daemon.harnesses.recentSession('antigravity', null), null);
+  } finally {
+    delete process.env.OPEN_ARTIFACT_RECENT_SESSION_MS;
+  }
+});
+
+test('MCP bridge: refreshes daemon token on 401 after a daemon restart', async () => {
+  const bin = resolve(import.meta.dirname, '..', 'src', 'bin', 'open-artifact.ts');
+  const child = spawn(process.execPath, [bin, 'mcp', '--harness', 'antigravity'], {
+    env: { ...process.env, OPEN_ARTIFACT_HOME: TEST_HOME, ANTIGRAVITY_CONVERSATION_ID: '' },
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  const lines = createInterface({ input: child.stdout });
+  const pending = new Map<number, (msg: Record<string, unknown>) => void>();
+  lines.on('line', (line) => {
+    try {
+      const msg = JSON.parse(line) as Record<string, unknown>;
+      if (typeof msg.id === 'number') pending.get(msg.id)?.(msg);
+    } catch {
+      /* ignore */
+    }
+  });
+  const call = (id: number, method: string, params: Record<string, unknown> = {}) =>
+    new Promise<Record<string, unknown>>((resolveCall, rejectCall) => {
+      const timer = setTimeout(() => rejectCall(new Error(`timeout waiting for ${method}`)), 5000);
+      pending.set(id, (msg) => {
+        clearTimeout(timer);
+        pending.delete(id);
+        resolveCall(msg);
+      });
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`);
+    });
+  try {
+    const first = await call(1, 'ping');
+    assert.deepEqual(first.result, {});
+    // Restart the daemon on the same port with a new token while the MCP bridge stays alive (forces HTTP 401).
+    const samePort = daemon.port;
+    daemon.close();
+    await new Promise((done) => setTimeout(done, 50));
+    daemon = await startDaemon({ port: samePort, quiet: true, shellDir, homeDir: join(shellDir, 'no-home') });
+    state = (await readDaemon())!;
+    assert.equal(daemon.port, samePort);
+    const second = await call(2, 'ping');
+    assert.deepEqual(second.result, {}, 'recovers on HTTP 401 after daemon restart with a new token');
+  } finally {
+    lines.close();
+    child.kill();
   }
 });
 

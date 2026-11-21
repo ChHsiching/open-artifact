@@ -4,7 +4,7 @@
  * home folder.
  */
 
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
 import { OpenArtifactError } from '@open-artifact/protocol';
@@ -62,6 +62,20 @@ export function readJson<T>(file: string, fallback: T): T {
 /** Writes a JSON file atomically, pretty-printed. */
 export function writeJson(file: string, value: unknown, mode?: number): void {
   writeFileAtomic(file, `${JSON.stringify(value, null, 2)}\n`, mode);
+}
+
+/** Whether two folder paths point to the same location (resolving symlinks when present, and case on Windows). */
+export function samePath(a: string, b: string): boolean {
+  const normalize = (dir: string): string => {
+    let full = resolve(dir);
+    try {
+      full = realpathSync(full);
+    } catch {
+      /* folder may not exist yet */
+    }
+    return process.platform === 'win32' ? full.toLowerCase() : full;
+  };
+  return normalize(a) === normalize(b);
 }
 
 /** A path under `root` that does not leave it. Throws `bad_path` on `..` and absolute paths. */

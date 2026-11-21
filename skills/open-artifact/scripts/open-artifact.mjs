@@ -13,9 +13,9 @@
  *   node scripts/open-artifact.mjs help                        the daemon CLI's other commands
  *
  * Who is calling: `OPEN_ARTIFACT_HARNESS` and `OPEN_ARTIFACT_SESSION` when set; in Claude Code the harness is
- * `claude-code` and the session `CLAUDE_CODE_SESSION_ID`; in Codex `codex` and `CODEX_THREAD_ID`; otherwise `cli` and
- * no session (the workspace, the current folder, still owns what is made). A plugin's MCP server and hooks pass
- * `--harness` themselves.
+ * `claude-code` and the session `CLAUDE_CODE_SESSION_ID`; in Codex `codex` and `CODEX_THREAD_ID`; in Antigravity
+ * `antigravity` and `ANTIGRAVITY_CONVERSATION_ID`; otherwise `cli` and no session (the workspace, the current folder,
+ * still owns what is made). A plugin's MCP server and hooks pass `--harness` themselves.
  *
  * In a repository checkout without vendor/ (before `node scripts/build-skill.mjs`), the daemon runs from source.
  */
@@ -63,15 +63,16 @@ if (!env.OPEN_ARTIFACT_PLUGIN_DIR && basename(dirname(skillDir)) === 'skills' &&
 
 // The harness, from the variables each sets in the commands its agent runs, and its session id from the same.
 const harnesses = [
-  ['claude-code', 'CLAUDECODE', 'CLAUDE_CODE_SESSION_ID'],
-  ['codex', 'CODEX_THREAD_ID', 'CODEX_THREAD_ID'],
+  ['claude-code', ['CLAUDECODE'], 'CLAUDE_CODE_SESSION_ID'],
+  ['codex', ['CODEX_THREAD_ID'], 'CODEX_THREAD_ID'],
+  ['antigravity', ['ANTIGRAVITY_CONVERSATION_ID', 'ANTIGRAVITY_AGENT'], 'ANTIGRAVITY_CONVERSATION_ID'],
 ];
 // A plugin's MCP server and hooks name their harness with `--harness`: that wins over the variables, so an app started
 // from inside another agent's session (and holding its variables) does not take that session for its own.
 const named = process.argv.indexOf('--harness');
 if (named > 1 && process.argv[named + 1] && !env.OPEN_ARTIFACT_HARNESS) env.OPEN_ARTIFACT_HARNESS = process.argv[named + 1];
-for (const [name, marker, sessionVariable] of harnesses) {
-  if (env.OPEN_ARTIFACT_HARNESS ? env.OPEN_ARTIFACT_HARNESS !== name : !env[marker]) continue;
+for (const [name, markers, sessionVariable] of harnesses) {
+  if (env.OPEN_ARTIFACT_HARNESS ? env.OPEN_ARTIFACT_HARNESS !== name : !markers.some((marker) => env[marker])) continue;
   env.OPEN_ARTIFACT_HARNESS = name;
   if (!env.OPEN_ARTIFACT_SESSION && env[sessionVariable]) env.OPEN_ARTIFACT_SESSION = env[sessionVariable];
   break;

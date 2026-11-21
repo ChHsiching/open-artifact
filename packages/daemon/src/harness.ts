@@ -47,7 +47,7 @@ import {
   type WakePayload,
 } from '@open-artifact/protocol';
 import type { Inbox } from './inbox.ts';
-import { files, readJson, writeJson } from './paths.ts';
+import { files, readJson, samePath, writeJson } from './paths.ts';
 import { codexThreadWorkspace } from './codex.ts';
 import { sessionKeyOf } from './store.ts';
 import type { WebSocketConnection } from './ws.ts';
@@ -60,6 +60,13 @@ const POLL_GRACE_MS = Number(process.env.OPEN_ARTIFACT_POLL_GRACE_MS ?? 20_000);
 const POLL_MAX_MS = 60_000;
 /** The longest `inbox.wait`, ms. */
 const INBOX_WAIT_MAX_MS = 3_600_000;
+/** How recently a hook or attach must have seen a session for a session-less MCP bridge to fall back to it, ms. */
+const RECENT_SESSION_MS = 2 * 60 * 60_000;
+
+function recentSessionMaxAgeMs(): number {
+  const fromEnv = Number(process.env.OPEN_ARTIFACT_RECENT_SESSION_MS);
+  return Number.isFinite(fromEnv) && process.env.OPEN_ARTIFACT_RECENT_SESSION_MS ? fromEnv : RECENT_SESSION_MS;
+}
 
 // ---- profiles ----------------------------------------------------------------------------------------------------
 
@@ -367,8 +374,8 @@ export class HarnessHub extends EventEmitter<{ changed: [] }> {
   readonly sessions = new Map<string, LiveSession>();
 
   private readonly options: HarnessHubOptions;
-  /** Process ids registered by hooks and attaches → their session. */
-  private readonly pids = new Map<number, SessionRef>();
+  /** Process ids registered by hooks and attaches → their session, per harness. */
+  private readonly pids = new Map<number, Map<string, SessionRef>>();
   private readonly known: Record<string, KnownSession>;
   /** Polling connections by session key. */
   private readonly polls = new Map<string, PollConnection>();
@@ -480,7 +487,7 @@ export class HarnessHub extends EventEmitter<{ changed: [] }> {
     if (!key) return null;
     const before = this.known[key];
     // A call that does not know the folder keeps the one a hook said.
-    this.known[key] = { ...(before ?? {}), ...ref, workspace: ref.workspace ?? before?.workspace ?? null, ...extra, seenAt: new Date().toISOString() };
+    this.known[key] = { ...(before ?? {}), ...ref, workspace: ref.workspace || before?.workspace || null, ...extra, seenAt: new Date().toISOString() };
     this.persist();
     return key;
   }
@@ -497,17 +504,55 @@ export class HarnessHub extends EventEmitter<{ changed: [] }> {
   }
 
   /** A session ref registered for one of these process ids (hooks, attaches). */
-  byPid(pids: number[]): SessionRef | null {
+  byPid(pids: number[], harness?: string): SessionRef | null {
+    const want = harness && harness !== 'mcp' && harness !== 'unknown' ? harness : null;
     for (const pid of pids) {
-      const ref = this.pids.get(Number(pid));
-      if (ref) return ref;
+      const byHarness = this.pids.get(Number(pid));
+      if (!byHarness) continue;
+      if (want) {
+        const ref = byHarness.get(want);
+        if (ref) return ref;
+      } else {
+        let last: SessionRef | null = null;
+        for (const ref of byHarness.values()) last = ref;
+        if (last) return last;
+      }
     }
     return null;
   }
 
+  /**
+   * The most recently seen session for `harness` in `sessions.json`, for MCP bridges that start before any session
+   * exists and share no ancestor PID with hooks (e.g. Antigravity on Windows, detached language servers, or after a
+   * daemon restart). When `workspace` is given, only sessions in that workspace match.
+   */
+  recentSession(harness: string, workspace?: string | null, maxAgeMs = recentSessionMaxAgeMs()): SessionRef | null {
+    if (!harness || harness === 'mcp' || harness === 'unknown') return null;
+    const cutoff = Date.now() - maxAgeMs;
+    const candidates = Object.values(this.known)
+      .filter((s) => {
+        if (s.harness !== harness || !s.session) return false;
+        const seen = Date.parse(s.seenAt);
+        return Number.isFinite(seen) && seen >= cutoff;
+      })
+      .sort((a, b) => Date.parse(b.seenAt) - Date.parse(a.seenAt));
+    if (!candidates.length) return null;
+    if (workspace) {
+      const match = candidates.find((s) => !!s.workspace && samePath(s.workspace, workspace));
+      return match ? { harness: match.harness, session: match.session, workspace: match.workspace || workspace } : null;
+    }
+    const latest = candidates[0]!;
+    return { harness: latest.harness, session: latest.session, workspace: latest.workspace || null };
+  }
+
   /** Maps a process id to a session, so MCP calls from its children map to it. */
   registerPid(pid: number, ref: SessionRef): void {
-    if (Number(pid) > 1) this.pids.set(Number(pid), ref);
+    const num = Number(pid);
+    if (num <= 1) return;
+    let byHarness = this.pids.get(num);
+    if (!byHarness) this.pids.set(num, (byHarness = new Map()));
+    byHarness.delete(ref.harness);
+    byHarness.set(ref.harness, ref);
   }
 
   /** What the harness calls its agent: the connected adapter's word, else the profile's. */
