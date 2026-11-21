@@ -2,7 +2,10 @@
 
 // Control, zero-width and bidi characters, which never belong in a link.
 const INVISIBLE = /[\u0000-\u001F\u007F-\u009F​-‏‪-‮⁦-⁩]/g;
-const MAX_LENGTH = 2048;
+/** Web addresses can be long (tracking queries, signed links); everything else, and links in suggestions, stays short. */
+export const WEB_MAX_BYTES = 8192;
+export const LINK_MAX_BYTES = 2048;
+const MAX_LENGTH = WEB_MAX_BYTES;
 const HOST = /^(?:[\p{L}\p{N}\p{M}._-]+|\[[0-9a-f:.]+\])(?::\d{1,5})?$/iu;
 const ASCII_HOSTNAME = /^(?:[a-z0-9._-]+|\[[0-9a-f:.]+\])$/i;
 const PRINTABLE = /^[\x21-\x7e]+$/;
@@ -73,6 +76,50 @@ export function normalizeHref(input: string): string | null {
   if (/^[a-z][a-z0-9+-]*:/i.test(text) || /\s/.test(text)) return null;
   if (EMAIL.test(text)) return `mailto:${text}`;
   return checkedAddress(`https://${text}`, true);
+}
+
+const encoder = new TextEncoder();
+const byteLength = (text: string) => encoder.encode(text).length;
+const OTHER_LINK = /^(?:[#/]|mailto:|tel:)/i;
+
+/** How many UTF-8 bytes a link may take. */
+export const linkLimit = (href: string, suggesting = false): number => (!suggesting && /^https?:/i.test(href) ? WEB_MAX_BYTES : LINK_MAX_BYTES);
+
+/** The bytes `text` would take saved as a web address (a bare host gets `https://`); null when it isn't one. */
+function webAddressBytes(text: string): number | null {
+  const address = /^[a-z][a-z0-9+-]*:/i.test(text) ? text : `https://${text}`;
+  try {
+    const url = new URL(address);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+    return byteLength(PRINTABLE.test(address) ? address : url.href);
+  } catch {
+    return null;
+  }
+}
+
+export type HrefCheck = { href: string } | { problem: 'not_link' } | { problem: 'too_long'; limit: number };
+
+/** A typed link checked: the address it means, or why it can't be saved (`limit`: the bytes it went over). */
+export function checkHref(input: string, suggesting = false): HrefCheck {
+  const href = normalizeHref(input);
+  if (href) {
+    const limit = linkLimit(href, suggesting);
+    return byteLength(href) > limit ? { problem: 'too_long', limit } : { href };
+  }
+  const text = tidy(input);
+  const other = OTHER_LINK.test(text);
+  const limit = suggesting || other ? LINK_MAX_BYTES : WEB_MAX_BYTES;
+  if (input.length > MAX_LENGTH) return { problem: 'too_long', limit };
+  const bytes = other ? null : webAddressBytes(text);
+  return bytes !== null && bytes > WEB_MAX_BYTES ? { problem: 'too_long', limit } : { problem: 'not_link' };
+}
+
+/** Why the address can't be saved, in words. */
+export function hrefProblem(checked: Exclude<HrefCheck, { href: string }>, suggesting: boolean): string {
+  if (checked.problem === 'not_link') return "That doesn't look like a link";
+  const bytes = `${checked.limit.toLocaleString('en-US')} bytes`;
+  if (checked.limit === WEB_MAX_BYTES) return `Web addresses can be at most ${bytes} long`;
+  return suggesting ? `Links in a suggestion can be at most ${bytes} long` : `Links other than web addresses can be at most ${bytes} long`;
 }
 
 /** An http(s) link split for showing: what opens, its origin and the rest. Null for any other link. */
