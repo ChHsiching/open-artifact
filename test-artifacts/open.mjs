@@ -8,6 +8,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { writeTestConnectors } from './test-connectors.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const argv = process.argv.slice(2);
@@ -44,5 +45,10 @@ const cli = path.join(HERE, '..', 'artifact-types', type, 'scripts', 'cli.mjs');
 if (!existsSync(cli)) {
   console.error(`No ${type} CLI yet: run npm run build first.`);
   process.exit(1);
+}
+if (type === 'data') {
+  const state = path.join(HERE, '.home', 'data-cli');
+  process.env.OPEN_ARTIFACT_TYPE_SERVER_HOME = state;
+  process.env.OPEN_ARTIFACT_CONNECTORS = writeTestConnectors(state);
 }
 process.exit(argv.includes('--stop') ? run(cli, 'stop', root) : run(cli, 'open', root, '--type', type, '--json'));

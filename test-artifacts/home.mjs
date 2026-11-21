@@ -6,6 +6,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { writeTestConnectors } from './test-connectors.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.dirname(HERE);
@@ -24,6 +25,7 @@ Object.assign(process.env, {
   OPEN_ARTIFACT_HOME: path.join(HOME, 'daemon'),
   OPEN_ARTIFACT_USER_TYPES: path.join(HOME, 'types'),
   OPEN_ARTIFACT_TYPE_SERVER_HOME: path.join(HOME, 'servers'),
+  OPEN_ARTIFACT_CONNECTORS: writeTestConnectors(HOME),
 });
 
 /** `{ type, name, root }` for every artifact folder here (`<type>/<name>/`). */

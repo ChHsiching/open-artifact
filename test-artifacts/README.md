@@ -30,14 +30,17 @@ node test-artifacts/open.mjs whiteboard/elements --stop       # stops its server
 ```
 
 Stop it before opening the same artifact from the home page, so two servers don't write to one folder.
+The home page and the standalone Data server both configure the local mock `sales` MCP connector for the Data fixtures.
+To test replacing a CSV, open `data/sales-and-signups` and choose Sources → Monthly signups → File → Edit the file → Replace with a file. Pick `data/signups-replacement.csv`. The preview should show seven rows, ending with 310 signups and a single `Email, referral` field.
 
 ## Start over
 
-Edits and comments made on the page change the artifact's `db/`. To get the original back, run its script again: it
-replaces `db/` and runs the type's `check`.
+Edits made on the page change the artifact's data (`db/` for dashboards and whiteboards, `sheet/` for spreadsheets). Close the editor
+and stop its server before running the generator again. The generator replaces the data and runs the type's `check`.
 
 ```bash
 node test-artifacts/whiteboard/elements.gen.mjs     # or: node test-artifacts/open.mjs whiteboard/elements --reset
+node test-artifacts/sheets/sales.gen.mjs            # or: node test-artifacts/open.mjs sheets/sales --reset
 ```
 
 `git checkout -- test-artifacts/<path>` works too. After changing a script, run it and commit the result with it.
@@ -49,4 +52,8 @@ stays out of git.
 
 | Path | What it has |
 |---|---|
+| `data/sales-and-signups` | CSV and JSON sources, a local mock MCP connector, regional revenue filters, charts, calculated totals and page links. The Support tab has a source that deliberately fails. |
+| `data/saved-rows` | A form that saves team notes. Open it in two tabs to check that a new note appears in both and survives a reload. |
+| `motion/playback` | A five-second, two-scene film with editable text, an animated SVG group, two palettes, a generated score and a captioned narration clip. Use it to try scrubbing, scene timing, layer edits, anchored comments and exports. |
+| `sheets/sales` | A three-row sales table with a total of 240 and a Summary tab that reads the total. Edit an amount to test recalculation, filter by region, or select `Sales!A1:B4` to insert a chart. |
 | `whiteboard/elements` | One of every element kind, style and option: the twelve shapes, hollow and stroked shapes, left-aligned text, notes and a sticker, arrows (labelled, dashed, two-headed, dot end, no head, with bends, free end), text in every size with wrapping and a placeholder, pen strokes, a table with fills and heat colours, an HTML embed you can vote in, link cards, a timer, pictures (linked and cropped) and an SVG drawing in each of the seven styles |
