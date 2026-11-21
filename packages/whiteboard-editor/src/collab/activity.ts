@@ -1,8 +1,8 @@
 /**
  * The agent's activity as the board shows it: what it is doing ("Writing",
  * "Connecting", from the kind of element it just wrote), spoken to screen
- * readers ("The agent is writing on the board."), and new elements fading
- * in one after another rather than popping in at once.
+ * readers ("The agent is writing on the board."). How its new elements go
+ * together is replayed by the build show (build-show.ts).
  *
  * An element counts as the agent's new one when the agent wrote its
  * document and it appeared on the board at about the same time; the two
@@ -15,7 +15,7 @@ import { useAgent } from '../services/agent.ts';
 import { maybeSession } from '../services/session.ts';
 import { useBoard } from '../state/board.ts';
 import { announce } from './announce.ts';
-import { APPEAR_DURATION_MS, activityAnnouncement, appearDelays, elementActivity } from './activity-labels.ts';
+import { activityAnnouncement, elementActivity } from './activity-labels.ts';
 
 /** Least time between two spoken activity lines (ms). */
 const ANNOUNCE_GAP_MS = 4000;
@@ -50,28 +50,6 @@ export function writtenElements(changes: Readonly<Record<string, unknown>>): Arr
   return written;
 }
 
-function reducedMotion(): boolean {
-  return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-}
-
-/** Fades the given elements in, one after another. */
-function playEntrance(ids: readonly string[]): void {
-  if (reducedMotion() || typeof document === 'undefined') return;
-  const delays = appearDelays(ids.length);
-  ids.forEach((id, index) => {
-    const delay = delays[index];
-    if (delay === undefined) return;
-    const element = document.querySelector<HTMLElement>(`[data-wb-id="${id}"]`);
-    element?.animate(
-      [
-        { opacity: 0, scale: '0.96' },
-        { opacity: 1, scale: '1' },
-      ],
-      { duration: APPEAR_DURATION_MS, delay, easing: 'cubic-bezier(0.2, 0, 0, 1)', fill: 'backwards' },
-    );
-  });
-}
-
 /** Starts following the agent's writes; returns a function that stops. */
 export function startActivity(): () => void {
   const db = maybeSession()?.db;
@@ -104,9 +82,6 @@ export function startActivity(): () => void {
         announce(activityAnnouncement(label));
       }
     }
-    // Let React draw the new elements before animating them.
-    const ids = created.map(([id]) => id);
-    requestAnimationFrame(() => playEntrance(ids));
   };
   const schedule = (): void => {
     if (scheduled) return;

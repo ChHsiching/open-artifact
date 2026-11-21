@@ -22,7 +22,7 @@ import { useView } from '../state/view.ts';
 import { invalidateAll } from './frames.ts';
 import { artifactPath, projectPath, session } from './session.ts';
 import { remoteCanvasChanged } from './follow.ts';
-import { boardArrived } from './build.ts';
+import { boardArrived, boardChanged } from './build.ts';
 
 /** Delay between the last change and the save, ms. */
 const SAVE_DELAY = 600;
@@ -156,11 +156,13 @@ function remoteFile(path: string, _hash: string | null, run: RemoteRun): RemoteF
     held: run.textEdit?.board === project,
     apply(text, hash) {
       const before = useDocument.getState();
-      const arriving = text !== null && before.boards[project]?.source == null;
+      const was = before.boards[project]?.source;
+      const arriving = text !== null && was == null;
       const planned = project in before.canvas.boards;
       run.dropped += useDocument.getState().remoteBoard(project, text, text === null ? null : hash);
       run.changedBoards.push(project);
       if (arriving) boardArrived(project, planned);
+      else if (text !== null && was != null && text !== was) boardChanged(project, was);
     },
   };
 }

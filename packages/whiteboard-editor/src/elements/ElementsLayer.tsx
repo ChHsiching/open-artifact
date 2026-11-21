@@ -47,6 +47,7 @@ import { ArrowView, StrokeView } from './LineViews.tsx';
 import { LinkView, TableView, TimerView } from './CardViews.tsx';
 import { NoteView, SectionView, ShapeView, TextView } from './BlockViews.tsx';
 import { useBoardRecovery } from '../services/load-recovery.ts';
+import { elementDrawn } from '../collab/build-show.ts';
 import { rotationStyle } from './style.ts';
 import { elementDomId, useItemProps } from './item.tsx';
 import { useElementView } from './view-state.ts';
@@ -73,6 +74,10 @@ function PausedMedia({ element }: { element: Extract<BoardElement, { type: 'imag
 export const ElementView = memo(function ElementView({ id }: { id: ElementId }) {
   const element = useShownElement(id);
   const paused = useBoardRecovery((state) => state.paused);
+  // The agent's build show starts from here, before the change paints (collab/build-show.ts).
+  useLayoutEffect(() => {
+    if (element) elementDrawn(id);
+  }, [id, element]);
   if (!element) return null;
   if (paused && (element.type === 'image' || element.type === 'html')) return <PausedMedia element={element} />;
   switch (element.type) {

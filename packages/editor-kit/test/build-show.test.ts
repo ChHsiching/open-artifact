@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 import {
   blockKind,
   cursorAt,
+  keepBlocks,
   outlinesAt,
   pickSteps,
   planBuild,
@@ -103,5 +104,18 @@ describe('revealKeyframes', () => {
     assert.ok(frames[0]!.clipPath);
     const own = revealKeyframes('box', { x: 0, y: 0, w: 10, h: 10 }, 1, false);
     assert.ok(own.every((f) => f.clipPath === undefined));
+  });
+});
+
+describe('keepBlocks', () => {
+  it('keeps the chosen blocks under their nearest kept ancestor', () => {
+    const blocks = [block(0, 0, 100, 100, 'frame'), block(0, 0, 50, 50, 'box', 0), block(0, 0, 10, 10, 'text', 1), block(60, 0, 10, 10, 'text', 0)];
+    const kept = keepBlocks(blocks, (_, i) => i !== 1);
+    assert.deepEqual(
+      kept.map((b) => b.parent),
+      [-1, 0, 0],
+      'the text inside the dropped box hangs from the frame',
+    );
+    assert.deepEqual(keepBlocks(blocks, (_, i) => i === 2).map((b) => b.parent), [-1]);
   });
 });

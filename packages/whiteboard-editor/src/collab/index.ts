@@ -2,7 +2,7 @@
  * Collaboration and the agent on the board: presence (cursors, selections,
  * cursor chat, following, live gestures), the view context the agent reads, requests to
  * the agent and their status, the agent's claims and activity, comments,
- * ideas and the empty board's guidance.
+ * ideas, the agent's build show and the empty board's guidance.
  *
  * {@link startCollab} starts every service once the session (and the
  * Shell bridge) has started; the three components draw it:
@@ -15,6 +15,7 @@ import { startActivity } from './activity.ts';
 import { startAreaPick } from './area-pick.ts';
 import { startAskKeys } from './AskPanel.tsx';
 import { startAsks } from './asks.ts';
+import { startBuildShow } from './build-show.ts';
 import { startClaims } from './claims.ts';
 import { startPeerColors } from './colors.ts';
 import { startComments } from './comments.ts';
@@ -33,6 +34,7 @@ export { CollabOverlay } from './CollabOverlay.tsx';
 export { UploadPlaceholders } from './UploadPlaceholders.tsx';
 export { useAgentActivity } from './activity.ts';
 export { useAreaPick } from './area-pick.ts';
+export { finishBoardBuild, useBoardBuild } from './build-show.ts';
 export { askAgent, useAsks, type AskTarget, type AskVia, type LocalAsk } from './asks.ts';
 export { useClaims } from './claims.ts';
 export { useComments } from './comments.ts';
@@ -66,6 +68,7 @@ export function startCollab(): () => void {
     startAskKeys(),
     startIdeas(),
     startActivity(),
+    startBuildShow(),
   ];
   return () => {
     for (const stop of stops.reverse()) stop();

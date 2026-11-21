@@ -342,7 +342,13 @@ export interface CollectOptions {
 
 /** The blocks under `root` (not `root` itself), in document order, in frame units. */
 export function collectBlocks(root: Element, frame: BuildSize, options: CollectOptions = {}): BuildBlock[] {
-  const win = root.ownerDocument.defaultView;
+  return collectElements(root.children, frame, options);
+}
+
+/** The blocks of `elements` and what is in them, in the order given, in frame units. */
+export function collectElements(elements: Iterable<Element>, frame: BuildSize, options: CollectOptions = {}): BuildBlock[] {
+  const list = [...elements];
+  const win = list[0]?.ownerDocument.defaultView;
   if (!win) return [];
   const origin = options.origin ?? { x: 0, y: 0 };
   const scale = options.scale || 1;
@@ -368,8 +374,25 @@ export function collectBlocks(root: Element, frame: BuildSize, options: CollectO
     if (MEDIA.has(tag)) return;
     for (const child of el.children) visit(child, here);
   };
-  for (const child of root.children) visit(child, -1);
+  for (const el of list) visit(el, -1);
   return blocks;
+}
+
+/**
+ * Keeps the blocks `keep` accepts (a show of part of a frame, such as what a
+ * change added), each under its nearest kept ancestor.
+ */
+export function keepBlocks<T extends BuildBlockInfo>(blocks: readonly T[], keep: (block: T, index: number) => boolean): T[] {
+  const placed = new Map<number, number>();
+  const kept: T[] = [];
+  blocks.forEach((block, i) => {
+    if (!keep(block, i)) return;
+    let p = block.parent;
+    while (p >= 0 && !placed.has(p)) p = blocks[p]!.parent;
+    placed.set(i, kept.length);
+    kept.push({ ...block, parent: p >= 0 ? placed.get(p)! : -1 });
+  });
+  return kept;
 }
 
 /** A show running on a DOM. */

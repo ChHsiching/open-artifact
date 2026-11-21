@@ -19,6 +19,7 @@ import { DECK_PATH, DECK_STYLESHEET_PATH, parseDeckIndex, slideIdFromPath, slide
 import { toast } from '@open-artifact/ui';
 import { configureDeck, deckOrder, indexText, isDirty, slideNeedsWrite, slideText, useDeck, type SentBatch } from '../state/deck.ts';
 import { useView } from '../state/view.ts';
+import { slideChanged } from './build-show.ts';
 import { noteRemoteSlides } from './creation.ts';
 import { clearRecovery, saveRecovery } from './recovery.ts';
 import { session } from './session.ts';
@@ -199,7 +200,9 @@ function remoteFile(path: string, hash: string | null, run: RemoteRun): RemoteFi
     hash: entry?.hash,
     held: run.textEdit?.slideId === id,
     apply(text, hash) {
+      const before = useDeck.getState().slides[id]?.slide;
       const outcome = useDeck.getState().remoteSlide(id, text, text === null ? null : hash);
+      if (before && text !== null && (outcome === 'applied' || outcome === 'merged')) slideChanged(id, before);
       if (outcome === 'conflict') run.conflicts.push(id);
       else if (outcome === 'merged') run.mergedSlides.push(id);
       if (outcome !== 'same' && outcome !== 'conflict') run.changedSlides.push(id);

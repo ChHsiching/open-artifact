@@ -7,14 +7,17 @@
  * agent's cursor. Between slides the cursor waits where it stopped.
  *
  * The stage starts a slide's show in a layout effect (`beginSlideBuild`), so
- * the slide never paints whole first. Once the viewer presses or types
+ * the slide never paints whole first. When the agent changes a slide that
+ * is already there, the stage goes to it the same way and replays only the
+ * nodes the change added or changed. Once the viewer presses or types
  * anywhere on the page, the stage stops going to arriving slides until the
  * agent's next writing session; a press on the stage also shows the slide
  * being drawn at once. Readers who ask for less motion see no show.
  */
 
-import { SLIDE_HEIGHT, SLIDE_WIDTH } from '@open-artifact/slides-core';
-import { collectBlocks, planBuild, playBuild, prefersReducedMotion, type BuildPoint, type BuildRun } from '@open-artifact/editor-kit';
+import { SLIDE_HEIGHT, SLIDE_WIDTH, type Slide } from '@open-artifact/slides-core';
+import { collectBlocks, keepBlocks, planBuild, playBuild, prefersReducedMotion, type BuildPoint, type BuildRun } from '@open-artifact/editor-kit';
+import { changedNodePaths } from '../lib/changed-nodes.ts';
 import { deckOrder, useDeck } from '../state/deck.ts';
 import { useView } from '../state/view.ts';
 import { useAgent } from './agent.ts';
@@ -31,12 +34,17 @@ const STAGE_TIMEOUT_MS = 1200;
 
 let started = false;
 const queue: string[] = [];
+/** Slides queued for a change, with what they were before it: only what changed since is shown. */
+const bases = new Map<string, Slide>();
 let running: { id: string; run: BuildRun } | null = null;
 let pendingTimer: ReturnType<typeof setTimeout> | undefined;
 /** The viewer took over the stage in this writing session. */
 let tookOver = false;
 /** The cursor's last place, in slide units. */
 let cursor: BuildPoint | null = null;
+
+/** Where the stage writes a node's path on its element (render/SlideView.tsx). */
+const PATH_ATTRIBUTE = 'data-open-artifact-path';
 
 const writing = (): boolean => useCreation.getState().writing || useAgent.getState().status.busy;
 
@@ -55,13 +63,16 @@ function pump(): void {
     const id = queue.shift();
     if (!id) break;
     const view = useView.getState();
-    if (!useDeck.getState().slides[id] || view.mode !== 'edit' || view.presenting) continue;
-    if (tookOver && view.current !== id) continue;
+    if (!useDeck.getState().slides[id] || view.mode !== 'edit' || view.presenting || (tookOver && view.current !== id)) {
+      bases.delete(id);
+      continue;
+    }
     useSlideBuild.setState({ pending: id, idle: null });
     if (view.current !== id) view.showSlide(id);
     clearTimeout(pendingTimer);
     pendingTimer = setTimeout(() => {
       if (useSlideBuild.getState().pending !== id) return;
+      bases.delete(id);
       useSlideBuild.setState({ pending: null });
       pump();
     }, STAGE_TIMEOUT_MS);
@@ -80,7 +91,14 @@ export function beginSlideBuild(root: HTMLElement, id: string): void {
   const box = root.getBoundingClientRect();
   const scale = box.width / SLIDE_WIDTH || 1;
   const frame = { w: SLIDE_WIDTH, h: SLIDE_HEIGHT };
-  const blocks = collectBlocks(root, frame, { origin: { x: box.left, y: box.top }, scale });
+  let blocks = collectBlocks(root, frame, { origin: { x: box.left, y: box.top }, scale });
+  const base = bases.get(id);
+  bases.delete(id);
+  if (base) {
+    const now = useDeck.getState().slides[id]?.slide;
+    const changed = now ? changedNodePaths(base, now) : new Set<string>();
+    blocks = keepBlocks(blocks, (block) => changed.has(block.el.closest(`[${PATH_ATTRIBUTE}]`)?.getAttribute(PATH_ATTRIBUTE) ?? ''));
+  }
   if (!blocks.length) {
     useSlideBuild.setState({ pending: null });
     queueMicrotask(pump);
@@ -102,6 +120,21 @@ export function beginSlideBuild(root: HTMLElement, id: string): void {
 /** Ends the running show at once. */
 export function finishSlideBuild(): void {
   running?.run.finish();
+}
+
+/**
+ * The agent changed slide `id`, which was `before` (called by sync once the
+ * change is in the deck). Its show replays what the change added or changed.
+ */
+export function slideChanged(id: string, before: Slide): void {
+  if (!started || prefersReducedMotion() || !writing()) return;
+  const view = useView.getState();
+  if (view.mode !== 'edit' || view.presenting || (tookOver && view.current !== id)) return;
+  // Still to come: its show then covers this change too.
+  if (queue.includes(id) || useSlideBuild.getState().pending === id) return;
+  bases.set(id, before);
+  queue.push(id);
+  pump();
 }
 
 /** Whether the stage is showing the agent's slides as they arrive (agent following then waits). */
@@ -136,6 +169,7 @@ export function startBuildShow(): void {
     if ((state.mode !== previous.mode && state.mode !== 'edit') || (state.presenting && !previous.presenting)) {
       finishSlideBuild();
       queue.length = 0;
+      bases.clear();
     }
   });
   // The viewer pressing or typing takes the stage back.
@@ -143,6 +177,7 @@ export function startBuildShow(): void {
     if (!writing() && !running && !queue.length) return;
     tookOver = true;
     queue.length = 0;
+    bases.clear();
     useSlideBuild.setState({ idle: null });
   };
   window.addEventListener(

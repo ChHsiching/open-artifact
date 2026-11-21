@@ -7,6 +7,12 @@
  * cursor, and the camera brings it into view while it follows the agent.
  * Between artboards the cursor waits on the next one canvas.json plans.
  *
+ * When the agent changes an artboard that is already there, the canvas
+ * replays only the blocks rendered from the template elements the change
+ * added or changed: as a live artboard re-renders (before it paints), unless
+ * another show is running or waiting; an artboard showing a snapshot keeps
+ * it until its frame is live and its show starts.
+ *
  * One artboard at a time, in the order they arrive. Until its show starts an
  * arriving artboard stays invisible (its frame boots hidden), so nothing
  * flashes; it is kept live and out of snapshots until the show ends. A press
@@ -17,10 +23,12 @@
 import { boardsOnPage, pageOf, type Rect } from '@open-artifact/design-core';
 import {
   collectBlocks,
+  keepBlocks,
   planBuild,
   playBuild,
   prefersReducedMotion,
   shiftPlan,
+  type BuildBlock,
   type BuildIdle,
   type BuildPoint,
   type BuildRun,
@@ -33,6 +41,7 @@ import { useAgent } from './agent.ts';
 import { focusAgentWork } from './follow.ts';
 import { frameOf } from './frames.ts';
 import { holdLive } from './live.ts';
+import { changedTids } from '../lib/changed-template.ts';
 
 /** Artboards that arrive this soon after the agent stopped are still its work, ms. */
 const AFTER_BUSY_MS = 8000;
@@ -41,6 +50,10 @@ const BOOT_TIMEOUT_MS = 8000;
 /** How long one artboard's show may take, alone or with more waiting, ms. */
 const BUDGET_MS = 5600;
 const BUDGET_QUEUED_MS = 3000;
+/** A changed artboard that has not re-rendered by then shows without a show, ms. */
+const CHANGE_TIMEOUT_MS = 3000;
+/** Where the board runtime writes the tid of the template element an element came from. */
+const TID_ATTRIBUTE = 'data-dc-tpl';
 
 interface BuildState {
   /** Arriving artboards kept invisible until their show starts. */
@@ -60,6 +73,10 @@ let running: { path: string; run: BuildRun | null; skip: boolean } | null = null
 let cursor: BuildPoint | null = null;
 let lastBusyAt = -Infinity;
 let idleTimer: ReturnType<typeof setTimeout> | undefined;
+/** Artboards queued for a change, with their source before it: only what changed since is shown. */
+const bases = new Map<string, string>();
+/** A changed live artboard waiting to re-render. */
+let watching: { path: string; stop: () => void } | null = null;
 
 const agentActive = (): boolean => useAgent.getState().status.busy || performance.now() - lastBusyAt < AFTER_BUSY_MS;
 
@@ -117,6 +134,21 @@ async function settle(doc: Document): Promise<void> {
   await nextFrame();
 }
 
+/** Where a show on `entry` starts, in its units: where the cursor waits, else where it stopped. */
+function startOn(entry: Rect): BuildPoint | undefined {
+  const at = useBuild.getState().idle?.at ?? cursor;
+  return at ? { x: at.x - entry.x, y: at.y - entry.y } : undefined;
+}
+
+/** The blocks rendered from template elements that changed since `base`. */
+function changedSince(blocks: readonly BuildBlock[], path: string, base: string): BuildBlock[] {
+  const now = useDocument.getState().boards[path]?.source;
+  if (now == null) return [];
+  const changed = changedTids(base, now);
+  if (!changed.size) return [];
+  return keepBlocks(blocks, (block) => changed.has(Number(block.el.closest(`[${TID_ATTRIBUTE}]`)?.getAttribute(TID_ATTRIBUTE) ?? NaN)));
+}
+
 /** Plays one artboard's show; resolves when it ends. */
 async function play(path: string): Promise<void> {
   const release = holdLive(path);
@@ -129,9 +161,12 @@ async function play(path: string): Promise<void> {
     const { canvas } = useDocument.getState();
     const entry = canvas.boards[path];
     if (!entry || running?.path !== path || running.skip || pageOf(canvas, entry) !== useView.getState().page) return;
-    const blocks = collectBlocks(doc.body, { w: entry.w, h: entry.h });
+    let blocks = collectBlocks(doc.body, { w: entry.w, h: entry.h });
+    const base = bases.get(path);
+    bases.delete(path);
+    if (base !== undefined) blocks = changedSince(blocks, path, base);
     if (!blocks.length) return;
-    const start = cursor ? { x: cursor.x - entry.x, y: cursor.y - entry.y } : undefined;
+    const start = startOn(entry);
     const plan = planBuild(blocks, { w: entry.w, h: entry.h }, { start, budget: queue.length ? BUDGET_QUEUED_MS : BUDGET_MS });
     const run = playBuild(blocks, plan);
     running.run = run;
@@ -192,6 +227,90 @@ export function boardArrived(path: string, planned: boolean): void {
   void pump();
 }
 
+/** Plays the show of what changed in a live artboard since `base`; false when there is none to play. */
+function playChange(path: string, doc: Document, base: string, release: () => void): boolean {
+  if (running || queue.length || !doc.body) return false;
+  const { canvas } = useDocument.getState();
+  const entry = canvas.boards[path];
+  if (!entry || pageOf(canvas, entry) !== useView.getState().page) return false;
+  const frame = { w: entry.w, h: entry.h };
+  const blocks = changedSince(collectBlocks(doc.body, frame), path, base);
+  if (!blocks.length) return false;
+  focusAgentWork(path);
+  const start = startOn(entry);
+  const plan = planBuild(blocks, frame, { start, budget: BUDGET_MS });
+  const run = playBuild(blocks, plan);
+  running = { path, run, skip: false };
+  useBuild.setState({ show: { plan: shiftPlan(plan, entry.x, entry.y), startedAt: run.startedAt }, idle: null });
+  void run.done.then(() => {
+    const last = plan.steps[plan.steps.length - 1];
+    if (last) cursor = { x: last.to.x + entry.x, y: last.to.y + entry.y };
+    release();
+    if (running?.run === run) running = null;
+    useBuild.setState({ show: null });
+    updateIdle();
+    void pump();
+  });
+  return true;
+}
+
+/** Waits for a live artboard to re-render with its new source, then shows what changed. */
+function watchChange(path: string, doc: Document, base: string): void {
+  watching?.stop();
+  const release = holdLive(path);
+  const stop = (): void => {
+    observer.disconnect();
+    clearTimeout(timer);
+    if (watching === watch) watching = null;
+  };
+  // Mutation records arrive after the frame's render, before it paints.
+  const observer = new MutationObserver(() => {
+    stop();
+    if (!playChange(path, doc, base, release)) release();
+  });
+  const timer = setTimeout(() => {
+    stop();
+    release();
+  }, CHANGE_TIMEOUT_MS);
+  const watch = {
+    path,
+    stop: () => {
+      stop();
+      release();
+    },
+  };
+  watching = watch;
+  observer.observe(doc.body, { subtree: true, childList: true, attributes: true, characterData: true });
+}
+
+/**
+ * The agent changed an artboard that had a source, which was `before`
+ * (called by sync after the merge, before the frame takes the new source).
+ */
+export function boardChanged(path: string, before: string): void {
+  if (!started || prefersReducedMotion() || !agentActive()) return;
+  const { canvas } = useDocument.getState();
+  const entry = canvas.boards[path];
+  const view = useView.getState();
+  if (!entry || pageOf(canvas, entry) !== view.page || view.mode !== 'canvas' || view.textEdit?.board === path) return;
+  // Still to come: its show then covers this change too.
+  if (queue.includes(path)) return;
+  const doc = view.frames[path]?.booted ? frameOf(path)?.contentDocument : undefined;
+  if (doc?.body) {
+    // Live: it re-renders in place. Another show running or waiting: it just changes.
+    if (queue.length || (running && running.path !== path)) return;
+    watchChange(path, doc, before);
+    return;
+  }
+  // A snapshot: the frame boots hidden under it and shows the change once its show starts.
+  bases.set(path, before);
+  const hidden = new Set(useBuild.getState().hidden);
+  hidden.add(path);
+  useBuild.setState({ hidden });
+  queue.push(path);
+  void pump();
+}
+
 /** Starts following arrivals. Runs once, after the project has loaded. */
 export function startBuildShow(): () => void {
   if (started) return () => undefined;
@@ -210,6 +329,8 @@ export function startBuildShow(): () => void {
     if (running && state.textEdit && state.textEdit.board === running.path) finishBuild();
     if (state.page !== previous.page || state.mode !== previous.mode) {
       finishBuild();
+      watching?.stop();
+      bases.clear();
       for (const path of queue.splice(0)) reveal(path);
       updateIdle();
     }
@@ -227,6 +348,8 @@ export function startBuildShow(): () => void {
     offView();
     window.removeEventListener('pointerdown', press, true);
     finishBuild();
+    watching?.stop();
+    bases.clear();
     for (const path of queue.splice(0)) reveal(path);
     clearTimeout(idleTimer);
   };

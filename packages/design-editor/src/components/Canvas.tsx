@@ -51,6 +51,7 @@ import { dashArray, noteBounds, noteFontSize } from '../lib/notes.ts';
 import { noteRect } from '../lib/scene.ts';
 import { BoardFrame } from './BoardFrame.tsx';
 import { BuildLayer } from './BuildLayer.tsx';
+import { useBuild } from '../services/build.ts';
 import { NoteView } from './NoteView.tsx';
 import { Overlay } from './Overlay.tsx';
 import { CommentCapture, CommentPins } from './comments/CommentPins.tsx';
@@ -1121,6 +1122,7 @@ function DomWorld({ boards, notes }: { boards: string[]; notes: string[] }) {
   const canvas = useDocument((s) => s.canvas);
   const live = useLive((s) => s.live);
   const snapshots = useLive((s) => s.snapshots);
+  const building = useBuild((s) => s.hidden);
   return (
     <>
       {/* Dot grid that follows the camera. */}
@@ -1145,7 +1147,8 @@ function DomWorld({ boards, notes }: { boards: string[]; notes: string[] }) {
               className="absolute overflow-hidden bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_2px_8px_rgba(0,0,0,0.06)]"
               style={{ left: entry.x, top: entry.y, width: entry.w, height: entry.h, borderRadius: entry.radius }}
             >
-              {snapshot && !(shown && frames[path]?.booted) ? (
+              {/* An artboard waiting for its build show keeps its snapshot under the hidden frame. */}
+              {snapshot && !(shown && frames[path]?.booted && !building.has(path)) ? (
                 <img data-board-snapshot="" src={snapshot} alt="" draggable={false} className="pointer-events-none absolute left-0 top-0 block select-none" style={{ width: entry.w, height: entry.h }} />
               ) : null}
               {shown ? <BoardFrame path={path} mode={playing === path ? 'play' : 'edit'} onNavigate={playTarget} width={entry.w} height={entry.h} interactive={textEdit?.board === path || playing === path} hideUntilBooted={Boolean(snapshot)} /> : null}
