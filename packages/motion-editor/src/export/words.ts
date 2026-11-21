@@ -7,6 +7,8 @@ export const CANCEL = 'Cancel';
 export const CLOSE = 'Close';
 export const DONE = 'Done';
 export const TRY_AGAIN = 'Try again';
+export const RELOAD = 'Reload';
+export const RELOAD_TO_EXPORT = 'The editor was updated after this page opened. Reload the page, then export again.';
 export const EXPORT_ANYWAY = 'Export anyway';
 export const USE_SMALLER = 'Use smaller settings';
 

@@ -27,6 +27,7 @@ import {
 } from '@open-artifact/motion-export';
 import type { FilmSound } from '@open-artifact/motion-audio';
 import { askShape } from '../agent/requests.ts';
+import { isStaleBuildError } from '../app/stale-build.ts';
 import { sendAgentRequest } from '../agent/send.ts';
 import { filmEngine } from '../engine/engine-context.ts';
 import { maybeSession } from '../host/session.ts';
@@ -225,6 +226,7 @@ function failure(error: unknown, format: ExportFormatId, state: ExportState): Fa
   const fps = filmFacts()?.fps ?? state.video.fps;
   const smaller = format === 'video' && canMakeSmaller(state.video, fps);
   const title = words.notSaved(format);
+  if (isStaleBuildError(error)) return { title, message: words.RELOAD_TO_EXPORT, fix: null, smaller: false };
   if (error instanceof GifTooLargeError) return { title, message: `${words.gifOverLimit(Math.floor(error.maxBytes / 1_048_576))} ${words.TRY_SMALL}`, fix: null, smaller: false };
   if (error instanceof MovTooLargeError) return { title: error.message, message: movWayOut(state), fix: null, smaller: false };
   if (error instanceof VideoUnsupportedError) return { title, message: words.NO_VIDEO_HERE, fix: null, smaller: false };

@@ -7,6 +7,10 @@
 import { RETOUCHED_MODULE, SCENES_MODULE, exportedRetouchedText, withRefacedSceneFonts, type Film } from '@open-artifact/motion-core';
 import { buildSourceZip, standaloneFile, type ExportedFile, type FilmFacts, type SourceFont, type SourceZip } from '@open-artifact/motion-export';
 import type { StageAsset, StageFilm } from '@open-artifact/motion-stage';
+// Load the scripts with the editor so an open tab can still export after a rebuild replaces its assets.
+import audioScript from 'virtual:motion-standalone-audio';
+import playerScript from 'virtual:motion-stage-player';
+import runtimeScript from 'virtual:motion-stage-runtime';
 import { applyFilmRecords } from '../engine/applied-film.ts';
 import { useCameUp } from '../engine/came-up.ts';
 import { filmStageFaces } from '../engine/film-faces.ts';
@@ -67,23 +71,14 @@ export async function offlineStageFilm(film: Film): Promise<StageFilm> {
   };
 }
 
-async function scripts(sounds: boolean): Promise<{ runtime: string; player: string; audio: string | null }> {
-  const [runtime, player, audio] = await Promise.all([
-    import('virtual:motion-stage-runtime'),
-    import('virtual:motion-stage-player'),
-    sounds ? import('virtual:motion-standalone-audio') : Promise.resolve(null),
-  ]);
-  return { runtime: runtime.default, player: player.default, audio: audio === null ? null : audio.default };
-}
-
 async function pageFile(input: CodeInput, fonts: readonly SourceFont[]): Promise<ExportedFile> {
-  const [film, code] = await Promise.all([offlineStageFilm(input.film), scripts(input.sounds)]);
+  const film = await offlineStageFilm(input.film);
   return standaloneFile({
     title: input.facts.title,
     film,
-    runtimeScript: code.runtime,
-    playerScript: code.player,
-    audioScript: code.audio,
+    runtimeScript,
+    playerScript,
+    audioScript: input.sounds ? audioScript : null,
     ...(input.background !== undefined ? { background: input.background } : {}),
     // Only typefaces the page puts on travel with it; a film without faces shows in the viewer's own fonts.
     licences: film.faces === null ? [] : licenceNotices(fonts),

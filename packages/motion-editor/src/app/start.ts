@@ -29,6 +29,7 @@ import { installStyle } from '../style/install.ts';
 import { installVoiceover } from '../voiceover/install.ts';
 import { installExport } from '../export/install.ts';
 import { markInspector } from '../panels/inspector.ts';
+import { watchStaleBuild } from './stale-build.ts';
 import { startViewContext } from './view-context.ts';
 
 export type AppPhase = 'starting' | 'ready' | 'failed';
@@ -50,6 +51,7 @@ export async function startVideoApp(): Promise<() => void> {
     },
     installShortcuts(window),
     guardFileDrops(window),
+    watchStaleBuild(window),
     registerPlaybackShortcuts(),
     registerCommentShortcuts(),
     startComments(),

@@ -2,6 +2,7 @@
 
 import { Button, Dialog } from '@open-artifact/ui';
 import type { ReactNode } from 'react';
+import { reloadPage, useStaleBuild } from '../app/stale-build.ts';
 import { useFilm } from '../stores/film.ts';
 import { useWorking } from '../stores/working.ts';
 import { ExportOptions } from './ExportOptions.tsx';
@@ -39,6 +40,8 @@ function OptionsFooter(): ReactNode {
 
 function StepFooter({ step }: { step: Exclude<ExportStep, { kind: 'options' }> }): ReactNode {
   const agent = useWorking((state) => state.name);
+  // Trying again in a page whose parts are gone from the server fails the same way; only a reload helps.
+  const stale = useStaleBuild((state) => state.stale);
   switch (step.kind) {
     case 'confirm':
       return (
@@ -76,6 +79,10 @@ function StepFooter({ step }: { step: Exclude<ExportStep, { kind: 'options' }> }
           {file !== null ? (
             <Button variant="primary" onClick={() => downloadInstead(file)}>
               {words.DOWNLOAD_INSTEAD}
+            </Button>
+          ) : stale ? (
+            <Button variant="primary" onClick={reloadPage}>
+              {words.RELOAD}
             </Button>
           ) : (
             <Button variant="primary" onClick={backToOptions}>

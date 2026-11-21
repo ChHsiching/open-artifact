@@ -1,10 +1,12 @@
 // End-to-end tests of the installed Motion type: CLI validation and write rules, live playback in Chrome,
 // compact Properties / Theme inspector, panel toggle announcements, layer retouching and SVG group hide parts,
+// standalone HTML export after an editor rebuild, the reload ask when a rebuild took away a part not loaded yet,
 // Export dialog Escape, stray file-drop guard, and read-only inline iframe (#view-inline).
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { after, before, describe, it } from 'node:test';
+import { pathToFileURL } from 'node:url';
 import { findChrome, launch } from './lib/browser.mjs';
 import { cli } from './lib/cli.mjs';
 import { until } from './lib/http.mjs';
@@ -76,11 +78,13 @@ const BASE_CSS = `:root { --bg: #f5efe6; --ink: #1c2430; --accent: #d98a3d; --mu
 .headline { font-family: var(--font-display, sans-serif); font-size: 72px; color: var(--ink); margin: 0; }`;
 
 describe(TYPE, { skip: skip() }, () => {
-  let run, root, url, publicUrl, browser, page;
+  let run, root, url, publicUrl, browser, page, editorAssets, downloads;
 
   before(async () => {
     const { dir } = install(typePath(TYPE), TYPE);
     const home = tmpDir('motion-home');
+    editorAssets = path.join(dir, 'scripts', 'editors', TYPE, 'assets');
+    downloads = path.join(home, 'Downloads');
     run = cli(dir, { HOME: home, OPEN_ARTIFACT_TYPE_SERVER_HOME: tmpDir('motion-state'), OPEN_ARTIFACT_USER: 'E2E' });
     root = path.join(tmpDir('motion-film'), 'film');
     ({ url: publicUrl } = await run.json(['open', root, '--type', TYPE, '--title', 'Smoke film', '--json']));
@@ -90,6 +94,10 @@ describe(TYPE, { skip: skip() }, () => {
       { op: 'set', path: 'modules/base.css', data: { kind: 'css', text: BASE_CSS } },
       { op: 'set', path: 'modules/scene-intro.js', data: { kind: 'js', text: introSceneCode() } },
       { op: 'set', path: 'modules/scene-outro.js', data: { kind: 'js', text: OUTRO_SCENE } },
+      { op: 'set', path: 'modules/score.js', data: { kind: 'js', text: `kit.score((S) => {
+        S.program('keys', 'marimba');
+        S.note('keys', 'C5', { t: 0, dur: 0.5, vel: 65 });
+      });` } },
       { op: 'set', path: 'film/script', data: { code: 'window.CUT = kit.scenes();' } },
     ];
     const wrote = await run.run(['write-db', root, JSON.stringify(writes)]);
@@ -294,5 +302,86 @@ describe(TYPE, { skip: skip() }, () => {
     });
     assert.equal(readDoc(root, 'film/meta').title, 'Smoke film');
     assert.deepEqual(page.problems.filter((p) => !p.includes('/favicon.ico')), []);
+  });
+
+  it('exports a playable HTML file with sound after the open editor loses its JavaScript files', { ...T, skip: browserSkip }, async () => {
+    await page.evaluate(`document.querySelector('button[aria-label="Export"]').click()`);
+    // Let the dialog finish its MP4 capability check, which uses a separate renderer.
+    assert.ok(await page.waitFor(`(() => {
+      const dialog = document.querySelector('[role="dialog"]');
+      return dialog && !dialog.textContent.includes('Checking this browser');
+    })()`, 10_000));
+    await page.evaluate(`document.querySelector('[role="dialog"] button[aria-label="One HTML file that plays the animation offline"]').click()`);
+    assert.ok(await page.waitFor(`document.querySelector('[role="dialog"] button[aria-label="One HTML file that plays the animation offline"][aria-pressed="true"]')`, 10_000));
+
+    // A rebuild can replace the JavaScript files while this tab is still running the old editor.
+    const scripts = fs.readdirSync(editorAssets).filter((name) => name.endsWith('.js'));
+    const held = tmpDir('motion-editor-scripts');
+    const moved = [];
+    try {
+      for (const name of scripts) {
+        fs.renameSync(path.join(editorAssets, name), path.join(held, name));
+        moved.push(name);
+      }
+      await page.evaluate(`[...document.querySelectorAll('[role="dialog"] button')].find((button) => button.textContent.trim() === 'Export').click()`);
+      assert.ok(await page.waitFor(`(() => {
+        const dialog = document.querySelector('[role="dialog"]');
+        return dialog?.textContent.includes('Exported Smoke film.html') || dialog?.textContent.includes('Try again');
+      })()`, 10_000), 'the export dialog did not report a result');
+      const status = await page.evaluate(`document.querySelector('[role="dialog"]').innerText`);
+      assert.match(status, /Exported Smoke film\.html/, status);
+
+      const file = path.join(downloads, 'Smoke film.html');
+      const player = await browser.load(pathToFileURL(file).href, {
+        ready: `typeof window.filmAudio === 'function' && !!document.querySelector('iframe')`,
+      });
+      try {
+        assert.ok(await player.waitFor(`document.querySelector('.headline')?.textContent === 'Hello motion'`, 10_000));
+        assert.deepEqual(player.problems, []);
+      } finally {
+        await player.close();
+      }
+    } finally {
+      for (const name of moved) fs.renameSync(path.join(held, name), path.join(editorAssets, name));
+    }
+  });
+
+  it('asks for a reload when a rebuild took away a part the open editor had not loaded yet', { ...T, skip: browserSkip }, async () => {
+    // The GIF and video exports load the frame painter on demand; a rebuild that ran first has deleted it.
+    const painters = fs.readdirSync(editorAssets).filter((name) => /^_virtual_motion-raster-frame-.*\.js$/.test(name));
+    assert.ok(painters.length > 0, 'the build has no frame painter chunk');
+    const held = tmpDir('motion-editor-painter');
+    const moved = [];
+    let fresh = null;
+    try {
+      for (const name of painters) {
+        fs.renameSync(path.join(editorAssets, name), path.join(held, name));
+        moved.push(name);
+      }
+      fresh = await browser.load(url, {
+        ready: `document.querySelector('[data-video-transport] button[aria-label="Play"], [data-video-transport] button[aria-label="Pause"]')`,
+        ignore: [/raster-frame/, /dynamically imported module/i],
+      });
+      await fresh.evaluate(`document.querySelector('button[aria-label="Export"]').click()`);
+      assert.ok(await fresh.waitFor(`document.querySelector('[role="dialog"]')`, 10_000));
+      await fresh.evaluate(`document.querySelector('[role="dialog"] button[aria-label="A GIF: no sound, plays in a loop"]').click()`);
+      assert.ok(await fresh.waitFor(`document.querySelector('[role="dialog"] button[aria-label="A GIF: no sound, plays in a loop"][aria-pressed="true"]')`, 10_000));
+      await fresh.evaluate(`[...document.querySelectorAll('[role="dialog"] button')].find((button) => button.textContent.trim() === 'Export').click()`);
+
+      assert.ok(
+        await fresh.waitFor(`document.querySelector('[role="dialog"]')?.textContent.includes('Reload the page, then export again')`, 10_000),
+        await fresh.evaluate(`document.querySelector('[role="dialog"]')?.innerText ?? 'no dialog'`),
+      );
+      const buttons = await fresh.evaluate(`[...document.querySelectorAll('[role="dialog"] button')].map((button) => button.textContent.trim())`);
+      assert.ok(buttons.includes('Reload'), JSON.stringify(buttons));
+      assert.ok(!buttons.includes('Try again'), JSON.stringify(buttons));
+      assert.equal(
+        await fresh.evaluate(`[...document.querySelectorAll('[data-tone="warning"]')].some((notice) => notice.textContent.includes('The editor was updated') && [...notice.querySelectorAll('button')].some((button) => button.textContent.trim() === 'Reload'))`),
+        true,
+      );
+    } finally {
+      await fresh?.close();
+      for (const name of moved) fs.renameSync(path.join(held, name), path.join(editorAssets, name));
+    }
   });
 });
