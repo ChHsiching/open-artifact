@@ -93,7 +93,7 @@ Decide where your output will live before you make anything.
 const MAKING_ARTIFACTS = `<making_artifacts>
 - Continuing earlier work: find the artifact with Artifact {action: "list"} and change that one. Do not make a second artifact for a new version.
 - A new artifact: call Artifact {action: "quickstart", intent} once, before reading a type's skill or writing any file, unless you already hold the type's type_url. Then create it with the create call that quickstart returns.
-- Create the artifact once you have the material: its folder starts empty. With open: "after_first_write" (as in quickstart's create call), the page opens for the person after your first write and shows the rest as it lands, when your app shows pages by itself.
+- Create the artifact once you have the material: its folder starts empty. By default (open: "after_first_write"), the page opens for the person after your first write and shows the rest as it lands, when your app shows pages by itself; open: "never" keeps it closed.
 - The create result carries the type's instructions. Read them before writing and follow them: they are the type's own guide to its files.
 - Write the files into root with your own file tools. Then run the type's check (Artifact {action: "call", url, name: "check"}) and fix what it reports.
 - When the create result has no open, show the page once the content is written, never while it is empty: open view_url in your app's built-in browser (its browser panel or tab) if you have one; only when you have none, Artifact {action: "open", url} opens it in the computer's browser. In your reply, say in one line what you made; give its view_url when the page did not open for the person.

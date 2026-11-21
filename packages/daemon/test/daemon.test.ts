@@ -258,6 +258,45 @@ test('wake: delivered live to a connected HarnessClient', async () => {
   }
 });
 
+test('create: the page opens in the app after the first write by default; open: "never" keeps it closed', async () => {
+  const opened: string[] = [];
+  const client = new HarnessClient({
+    harness: 'dsh',
+    caps: { open: true },
+    autoStart: false,
+    handlers: {
+      'host.open': (params) => {
+        opened.push(params.url);
+        return { opened: true };
+      },
+    },
+  });
+  const create = (title: string, extra: Record<string, unknown> = {}) =>
+    api<ToolCallResult>(state, 'tools.call', {
+      name: 'Artifact',
+      arguments: { action: 'publish', type_url: 'open-artifact://type/design', title, ...extra },
+      caller: { harness: 'dsh', session: 'open-1', workspace },
+    });
+  try {
+    await client.connect();
+    await client.attach({ session: 'open-1', workspace, status: 'idle' });
+    const made = await create('Opens by default');
+    assert.equal(made.open, 'after_first_write');
+    assert.equal(made.note, undefined);
+    const closed = await create('Stays closed', { open: 'never' });
+    assert.equal(closed.open, undefined);
+    assert.equal(closed.note, undefined);
+    assert.deepEqual(opened, [], 'nothing opens while the folder is empty');
+    writeFileSync(join(String(made.root), 'index.html'), '<!doctype html><title>x</title>');
+    writeFileSync(join(String(closed.root), 'index.html'), '<!doctype html><title>x</title>');
+    await until(() => opened.length > 0, 10_000);
+    await new Promise((done) => setTimeout(done, 3000)); // past the poll and settle for the second one
+    assert.deepEqual(opened, [made.url]);
+  } finally {
+    client.close();
+  }
+});
+
 test('wake: with no adapter connected it waits in the inbox', async () => {
   const id = await createDesign('Offline', 'gone-1');
   const result = await api<{ via: string }>(state, LIBRARY_ROUTES.ask, { id, text: 'Are you there?' });

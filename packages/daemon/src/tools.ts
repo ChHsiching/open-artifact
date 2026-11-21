@@ -228,8 +228,8 @@ export interface ToolsOptions {
    */
   agentActing?: (artifactId: string, phase: 'start' | 'end') => void;
   /**
-   * `open: "after_first_write"`: opens the page for the person once the agent
-   * first writes its content. `false`: the caller's app cannot show pages, so
+   * `open: "after_first_write"` (the default on create): opens the page for the
+   * person once the agent first writes its content. `false`: the caller's app cannot show pages, so
    * nothing was set up.
    */
   openAfterFirstWrite?: (record: ArtifactRecord, caller: SessionRef) => boolean;
@@ -525,8 +525,8 @@ export class Tools {
     if (!type) throw new OpenArtifactError('type_missing', `No type ${typeId} is installed.`, { fix: 'Artifact {action: "list", scope: "types"} lists what is.' });
     if (!type.enabled) throw new OpenArtifactError('unsupported', `The type ${typeId} is turned off in settings.`);
     if (!type.runnable) throw new OpenArtifactError('type_not_runnable', type.problems.join(' ') || `${typeId} cannot run.`);
-    if (args.open !== undefined && args.open !== 'after_first_write' && args.open !== 'now') {
-      throw new OpenArtifactError('invalid_argument', 'open: "after_first_write" (the page opens once you write its content) or "now".');
+    if (args.open !== undefined && args.open !== 'after_first_write' && args.open !== 'now' && args.open !== 'never') {
+      throw new OpenArtifactError('invalid_argument', 'open: "after_first_write" (the default: the page opens once you write its content), "now" or "never".');
     }
     const title = String(args.title ?? '').trim() || type.artifactTitle || type.title;
     const root = this.resolveFolder(args.folder, caller, title);
@@ -539,14 +539,15 @@ export class Tools {
     this.o.log(`created ${record.id} (${typeId}) at ${root} for ${sessionKeyOf(caller) ?? 'nobody'}`);
     const actions = await this.knownActions(type, false);
     const check = this.hasCheck(type, actions);
-    // open: "now" shows the page at once; "after_first_write" once the content lands. Only in the caller's own app
-    // (`host.open`): where only the computer's browser could show it, the agent opens it, in its app's built-in browser
-    // when it has one.
+    // open: "after_first_write" (the default) shows the page once the content lands; "now" at once; "never" not at
+    // all. Only in the caller's own app (`host.open`): where only the computer's browser could show it, the agent
+    // opens it, in its app's built-in browser when it has one.
     let opening: Opening | undefined;
+    const wanted = args.open ?? 'after_first_write';
     const inApp = this.o.harnesses().canOpen(caller);
-    if (args.open === 'now' && inApp) {
+    if (wanted === 'now' && inApp) {
       if ((await this.open({ action: 'open', url: artifactUrl(record.id) }, caller)).opened) opening = 'now';
-    } else if (args.open === 'after_first_write' && inApp && this.o.openAfterFirstWrite?.(record, caller)) {
+    } else if (wanted === 'after_first_write' && inApp && this.o.openAfterFirstWrite?.(record, caller)) {
       opening = 'after_first_write';
     }
     return {
@@ -555,7 +556,7 @@ export class Tools {
       file_path: root,
       view_url: this.o.viewUrl(record.id),
       type_url: typeUrl(typeId),
-      ...(opening ? { open: opening } : args.open ? { note: this.o.harnesses().canShow(caller) ? OPEN_YOURSELF : OPEN_NOT_AVAILABLE } : {}),
+      ...(opening ? { open: opening } : args.open && args.open !== 'never' ? { note: this.o.harnesses().canShow(caller) ? OPEN_YOURSELF : OPEN_NOT_AVAILABLE } : {}),
       ...(actions?.length ? { actions } : {}),
       instructions: this.instructionsFor(type, record, actions, opening),
       next:
