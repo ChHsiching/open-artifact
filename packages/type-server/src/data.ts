@@ -20,6 +20,7 @@ import {
   USER_DATA_COLLECTION,
   checkDataProject,
   dataHistoryIgnores,
+  isInViewerFolder,
   isValidDashboardFilename,
   isValidDatasetId,
   scaffoldDataProject,
@@ -40,6 +41,9 @@ export function scaffoldData(title: string): Record<string, string> {
 export const validateDataContext = (value: unknown): unknown => validateDataViewContext(value);
 
 export const dataHistoryIgnoresPath = (path: string): boolean => dataHistoryIgnores(path);
+
+/** A commenter of a share link writes only their own folder, `data/users/<their id>/…` (their saved rows and reports). */
+export const dataCommenterWrites = (path: string, guestId: string): boolean => isInViewerFolder(path, guestId);
 
 /** Checks a data artifact. `files` maps document paths (`datasets/sales`) to the raw JSON text on disk. */
 export function checkData(files: ReadonlyMap<string, string>, context: DataCheckContext = {}): CheckFinding[] {

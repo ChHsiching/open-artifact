@@ -11,6 +11,7 @@ import {
   parseParameters,
   parseStoredQueryArgs,
   prepareDashboardContent,
+  resolveSavedRowsPath,
   sanitizeSingleLine,
   type CalculationEngine,
   type CalculationReport,
@@ -48,6 +49,7 @@ import {
   loadDataset,
   type LiveDatasetStore,
 } from './query-store.ts';
+import { createSavedRowsReader, type SavedRowsReader } from './saved-rows.ts';
 import { getDashboardNotice, getDatasetNotice, getDatasetStatus, getOldestDatasetUpdate, getToolbarText, partitionUsedDatasets } from './status.ts';
 import { createToolResultCache, getToolCacheGcTime } from './tool-cache.ts';
 
@@ -85,6 +87,10 @@ export interface DataEngineOptions {
   /** A fixed per-connector concurrency instead of the adaptive one. */
   concurrency?: number;
   store?: DatasetsStore;
+  /** Where saved rows are read (the session's store when left out). */
+  savedRows?: SavedRowsReader;
+  /** Who `data/users/me` stands for (the session's viewer when left out). */
+  viewerId?: () => string | null;
 }
 
 /** The engine that turns the dashboard's datasets into runs and tables for the page and the panels. */
@@ -120,8 +126,8 @@ export interface DataEngine {
   use(ids: Iterable<string>): void;
   /** The source the viewer opened in the Sources panel: it loads too. */
   select(id: string | null): void;
-  /** The page's `data-fetchpriority` lists. */
-  setFetchPriority(high: readonly string[], low: readonly string[]): void;
+  /** The page's `data-fetchpriority` lists, and the sources it marks only under `[hidden]` (loaded last). */
+  setFetchPriority(high: readonly string[], low: readonly string[], hidden?: readonly string[]): void;
   retryFailed(): void;
   /** Tries again the queries of a connector (or those that failed to connect). */
   retry(connector?: string): void;
@@ -139,6 +145,8 @@ export interface DataEngine {
   tick(now?: number): void;
   /** Resolves once nothing is scheduled or loading. */
   settled(): Promise<void>;
+  /** The page wrote these saved-row documents: the sources that show them catch up. */
+  rereadSaved(documents: readonly string[]): Promise<void>;
   dispose(): void;
 }
 
@@ -196,9 +204,17 @@ export function createDataEngine(options: DataEngineOptions = {}): DataEngine {
     now,
   });
   const client = createMcpToolClient({ mcp, cache });
+  const ownsSavedRows = options.savedRows === undefined;
+  const savedRows = options.savedRows ?? createSavedRowsReader({ db: () => maybeSession()?.db ?? null, clock });
+  const viewerId = options.viewerId ?? (() => maybeSession()?.viewer.id ?? null);
+  const savedRowsPath = (path: string): string => {
+    const id = viewerId();
+    return id === null || id === '' ? path : resolveSavedRowsPath(path, id);
+  };
   const env = {
     client,
     clock,
+    savedRows: (path: string) => savedRows.load(savedRowsPath(path)),
     ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
     ...(options.base === undefined ? {} : { base: options.base }),
   };
@@ -214,7 +230,7 @@ export function createDataEngine(options: DataEngineOptions = {}): DataEngine {
   const reports = new Map<string, CalculationReport>();
   let requested: string[] = [];
   let selected: string | null = null;
-  let priority: { high: readonly string[]; low: readonly string[] } = { high: [], low: [] };
+  let priority: { high: readonly string[]; low: readonly string[]; hidden: readonly string[] } = { high: [], low: [], hidden: [] };
   let dataVersion = 0;
   let syncScheduled = false;
   let publishScheduled = false;
@@ -315,7 +331,7 @@ export function createDataEngine(options: DataEngineOptions = {}): DataEngine {
   const sync = (): void => {
     syncScheduled = false;
     if (disposed) return;
-    live.sync(applyFetchPriority(partitionUsedDatasets(base, usedIds()).used, priority.high, priority.low));
+    live.sync(applyFetchPriority(partitionUsedDatasets(base, usedIds()).used, priority.high, priority.low, priority.hidden));
     schedulePublish(false);
   };
 
@@ -331,7 +347,7 @@ export function createDataEngine(options: DataEngineOptions = {}): DataEngine {
       has: (id) => baseById.has(id),
       input: (id) => {
         const result = readSource(id);
-        return { status: result.status, rows: result.rows };
+        return { status: result.status, rows: result.rows, ...(result.value === undefined ? {} : { value: result.value }) };
       },
       stateOf: (id) => [baseById.get(id), live.get(id)],
       params: () => effective,
@@ -382,6 +398,27 @@ export function createDataEngine(options: DataEngineOptions = {}): DataEngine {
   };
 
   live.subscribe(() => schedulePublish(true));
+  const stopSavedRows = savedRows.subscribe((path) => {
+    const table = savedRows.current(path);
+    if (table === null) return;
+    for (const dataset of base)
+      if (dataset.source.kind === 'store' && savedRowsPath(dataset.source.path) === path) live.put(dataset, { ok: true, table, ms: 0 });
+  });
+
+  /** A calculation is refreshing while one of its sources is, and cut when one of their tables is. */
+  const calculationState = (sources: readonly string[]): { refreshing: boolean; truncated: boolean } => {
+    let refreshing = false;
+    let truncated = false;
+    for (const id of sources) {
+      if (!baseById.has(id)) continue;
+      const run = live.get(id);
+      const table = getRunTable(run);
+      if (table === null) continue;
+      if (run.status === 'running') refreshing = true;
+      if (table.cut !== undefined) truncated = true;
+    }
+    return { refreshing, truncated };
+  };
 
   const engine: DataEngine = {
     store,
@@ -394,14 +431,14 @@ export function createDataEngine(options: DataEngineOptions = {}): DataEngine {
       }
       markRequested([id, ...under]);
       const data = calculations.data(id);
+      const state = data.status === 'ok' ? calculationState(under) : { refreshing: false, truncated: false };
       return {
         status: data.status,
         data: data.value,
         columns: [],
         rows: [],
         message: data.message,
-        refreshing: false,
-        truncated: false,
+        ...state,
         meta: [],
         value: data.value,
       };
@@ -480,8 +517,8 @@ export function createDataEngine(options: DataEngineOptions = {}): DataEngine {
       selected = id;
       scheduleSync();
     },
-    setFetchPriority(high, low) {
-      priority = { high: [...high], low: [...low] };
+    setFetchPriority(high, low, hidden = []) {
+      priority = { high: [...high], low: [...low], hidden: [...hidden] };
       scheduleSync();
     },
     retryFailed: () => live.retryFailed(),
@@ -528,9 +565,12 @@ export function createDataEngine(options: DataEngineOptions = {}): DataEngine {
         await live.settled();
       } while (syncScheduled || publishScheduled || live.pending() > 0);
     },
+    rereadSaved: (documents) => savedRows.reread(documents.map(savedRowsPath)),
     dispose() {
       disposed = true;
       listeners.clear();
+      stopSavedRows();
+      if (ownsSavedRows) savedRows.dispose();
     },
   };
   rebuild();

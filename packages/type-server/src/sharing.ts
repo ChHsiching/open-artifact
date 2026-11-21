@@ -267,21 +267,31 @@ const POSTED_READS = new Set<string>([SHEET_API.read, SHEET_API.widget, DOC_API.
 /** Page routes that act on this computer or reach the agent: the owner's alone. */
 const OWNER_WRITES = new Set<string>([API.agentSend, API.commentsSend, API.downloads, API.mcpCall, SHEET_API.importFile]);
 
+/** What a type lets roles do beyond the table above. */
+export interface RoleOptions {
+  /**
+   * A commenter may write some store documents of their own (the type's `commenterWrites`): the store's write route
+   * lets them through, and the store checks each path.
+   */
+  commenterWrites?: boolean;
+}
+
 /** Whether the role may make a write call to a page route (reads are everyone's). */
-export function roleMay(role: Role, route: string): boolean {
+export function roleMay(role: Role, route: string, options: RoleOptions = {}): boolean {
   if (role === 'owner') return true;
   if (route === API.presence || POSTED_READS.has(route)) return true;
   if (OWNER_WRITES.has(route)) return false;
   if (COMMENT_WRITES.has(route)) return role !== 'viewer';
+  if (route === API.dbWrite && role === 'commenter' && options.commenterWrites === true) return true;
   if (EDIT_WRITES.has(route)) return role === 'editor';
   // A route this list does not know: the owner's, to be safe.
   return false;
 }
 
 /** Throws `not_writer` (403) when the role may not make this call. */
-export function assertRoleMay(viewer: Viewer, route: string, method: string): void {
+export function assertRoleMay(viewer: Viewer, route: string, method: string, options: RoleOptions = {}): void {
   if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return;
-  if (roleMay(viewer.role, route)) return;
+  if (roleMay(viewer.role, route, options)) return;
   const what = OWNER_WRITES.has(route) ? 'Only the owner, on the computer that shares it, can do this.' : `A ${viewer.role} cannot do this.`;
   throw new HttpError(403, 'not_writer', what);
 }

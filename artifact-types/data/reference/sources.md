@@ -10,7 +10,7 @@ A live query's `connector` is the name of an MCP server the owner set up for ope
 
 The tools your own session has are another matter: they are how you explore the data and test a call, and the page can't reach them. A call is live only on a server of the same name in `connectors.json` that offers the same tool. So before you write a dataset on a connector, check that its name is in the file. If it isn't, or the file isn't there, the person adds it: say which server and why, in terms of what they asked for ("Your deals are in HubSpot: add its MCP server to your open-artifact connectors, and the dashboard can read them live."). They add the server and its credentials themselves; you never write the file. Going on without it is their choice, so ask before you use other data. When they say it is done, write the dataset; the page loads it on its next run. One table refused says nothing of the rest of its connector: name it, and who could grant access to it.
 
-When more queries wait than a connector runs at once, `data-fetchpriority`, as in HTML, on a mark or around it, says which go first: `"high"` on the few numbers a reader looks at first, `"low"` on a large detail table. With room for everything it does nothing.
+When more queries wait than a connector runs at once, `data-fetchpriority`, as in HTML, on a mark or around it, says which go first: `"high"` on the few numbers a reader looks at first, `"low"` on a large detail table. With room for everything it does nothing. Sources marked only inside something `hidden`, with no `"high"`, wait for every source that shows.
 
 ## A loader
 

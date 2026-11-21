@@ -390,6 +390,7 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
       // A project-style type with comments gets the comment store alone.
       documents: TYPES[artifact.type].store === 'db',
       ...(TYPES[artifact.type].writesProblem ? { writesProblem: TYPES[artifact.type].writesProblem } : {}),
+      ...(TYPES[artifact.type].commenterWrites ? { commenterWrites: TYPES[artifact.type].commenterWrites } : {}),
       viewerName: viewer.name,
       emit: (name, payload, except) => emit(artifact, name, payload, except),
       onExternal: (paths) => {
@@ -830,7 +831,7 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
     if (method !== 'GET') {
       assertSameOrigin(artifact, req);
       // A guest's role decides what they may write (their page only hides the rest).
-      assertRoleMay(who, route, method);
+      assertRoleMay(who, route, method, { commenterWrites: TYPES[artifact.type].commenterWrites !== undefined });
     }
     /** Who a change is by, for events and the daemon. */
     const author = who.role === 'owner' ? 'owner' : `guest:${who.name}`;
@@ -1060,7 +1061,7 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
 
       default:
         if (artifact.history && (await artifact.history.handle(route, req, res, url, who))) return;
-        if (artifact.db && (await artifact.db.handle(route, req, res, url, who.role === 'owner' ? undefined : { name: who.name, client: author }))) return;
+        if (artifact.db && (await artifact.db.handle(route, req, res, url, who.role === 'owner' ? undefined : { name: who.name, client: author, id: who.id, role: who.role }))) return;
         throw new HttpError(404, 'not_found', `Unknown route ${route}.`);
     }
   };

@@ -114,9 +114,15 @@ export function sheetPageFragment(fragment: string): string {
   return designPageFragment(fragment);
 }
 
-/** A deck framed by another page at {@link INLINE_VIEW_FRAGMENT}: no bar, and the page shows the read-only view. */
+/** The types with a read-only view for another page to frame at {@link INLINE_VIEW_FRAGMENT}. */
+const INLINE_VIEW_TYPES: ReadonlySet<string> = new Set(['slides', 'data']);
+
+/**
+ * A deck or a dashboard framed by another page at {@link INLINE_VIEW_FRAGMENT}: no bar, and the page shows the
+ * read-only view.
+ */
 export function inlineView(boot: Pick<ShellBoot, 'type'>, shellHref: string, embedded: boolean): boolean {
-  return embedded && boot.type === 'slides' && new URL(shellHref).hash === INLINE_VIEW_FRAGMENT;
+  return embedded && INLINE_VIEW_TYPES.has(boot.type) && new URL(shellHref).hash === INLINE_VIEW_FRAGMENT;
 }
 
 /**
@@ -132,7 +138,8 @@ export function pageAddress(boot: Pick<ShellBoot, 'page' | 'id'> & Partial<Pick<
     const at = new URL(boot.page, shell.href);
     at.searchParams.set(SHELL_PARAMS.shell, shell.origin);
     at.searchParams.set(SHELL_PARAMS.id, boot.id);
-    if (boot.type === 'slides' && (SLIDE_FRAGMENT.test(shell.hash) || (embedded && shell.hash === INLINE_VIEW_FRAGMENT))) at.hash = shell.hash;
+    if (boot.type === 'slides' && SLIDE_FRAGMENT.test(shell.hash)) at.hash = shell.hash;
+    if (boot.type !== undefined && inlineView({ type: boot.type }, shell.href, embedded)) at.hash = shell.hash;
     if (boot.type === 'docs') {
       at.searchParams.set('doc_link_base', boot.typeServer?.invite || shell.origin + shell.pathname);
       const tab = shell.searchParams.get('tab');

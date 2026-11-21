@@ -6,10 +6,14 @@
  */
 
 import { DASHBOARD_ROOT_ID } from '../page/runtime.ts';
+import { PRINT_NOTE_ATTRIBUTE } from './print-note.ts';
 
 /** Set, while printing, on `#dash-root` and every element that holds it. */
 export const PRINT_PATH_ATTRIBUTE = 'data-dash-print-path';
 const PRINT_STYLE_ID = 'dash-print-style';
+
+/** The data note beside the page is hidden on screen (by its inline style) and printed under it once it says something. */
+const PRINT_NOTE_CSS = `[${PRINT_PATH_ATTRIBUTE}]>[${PRINT_NOTE_ATTRIBUTE}]:not(:empty){display:block!important;margin:0!important;padding:0 16px 12px!important;text-align:center}`;
 
 export const PRINT_CSS =
   '@media print{' +
@@ -17,6 +21,7 @@ export const PRINT_CSS =
   `[${PRINT_PATH_ATTRIBUTE}]{overflow:visible!important;block-size:auto!important;max-block-size:none!important;min-block-size:0!important;position:static!important;display:block!important;transform:none!important;margin:0!important;border:0!important;box-shadow:none!important}` +
   `[${PRINT_PATH_ATTRIBUTE}]>:not([${PRINT_PATH_ATTRIBUTE}]){display:none!important}` +
   `#${DASHBOARD_ROOT_ID}{print-color-adjust:exact;-webkit-print-color-adjust:exact}` +
+  PRINT_NOTE_CSS +
   '}';
 
 function markPrintPath(): void {

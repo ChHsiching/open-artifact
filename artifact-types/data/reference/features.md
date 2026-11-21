@@ -1,4 +1,4 @@
-# Filters, the page as it shows and the view context
+# Filters, rows people save, the page as it shows and the view context
 
 ## Filters
 
@@ -44,6 +44,32 @@ A date field is an `<input type="date">` outside any form. It fires `change` whi
 A click on a row or a bar can set a filter too: every query that names it runs again. The page then shows what is picked, with a way to clear it. Each `<tr>` with a `data-key` carries its value, and a bar has its row in d3's `.on('click', (event, d) => …)`.
 
 When you add a choice from a short list known up front, picked one at a time, keep it out of the query. One already in a query can stay. In the query, each pick calls the connector again and the reader waits. Out of it, one call returns every option's rows, and a pick redraws at once, because setting a name that no query uses re-runs nothing. "All" is then a row of its own, since distinct counts don't add up. `onData` runs on every load, so setting a field's value there overwrites what someone is typing, unless you skip that while the field has focus.
+
+## Saved rows
+
+A dataset with `source: {kind: "store", path}` follows the store as people save: every save, theirs or anyone else's, reaches each open page without a reload. A part of a path is 1 to 200 of the letters, digits and `_ - . ~ : @ +`, and a path has at most 16 parts. A title someone types is rarely a valid ID, so let `add` make one.
+
+`data/users/me/` is the reader's own folder: each reader saves and sees only theirs, so nothing in it adds up across people. One more part after it names a document (`data/users/me/ticks`), and a collection takes two (`data/users/me/notes/items`). `data/users/me` itself is no source, and neither are the page's reports beside it (`check`, `runs`, `page`, and those named `history-…`). Anywhere else under `data/`, as in `data/team/notes`, everyone who can open the dashboard sees the same rows. The owner and editors save anywhere under `data/`; someone with a commenter link saves only in their own `data/users/me/`; a viewer's write is refused. A shared collection holds only what a reader typed or picked and saved there with a control that says so, never rows the page read with their access, such as another source's answer. Say to the person who may save here and who will see it.
+
+From a script, `await openartifact.use("db")` gives `get(path)`, `list(collection)`, `write(writes)` (the `set`, `update` and `delete` that `write-db` takes, all or nothing), `add(collection, row)`, which stores the row under a new ID and resolves to its path, and `onChange(fn)`, which hears what others save. Each takes paths under `data/`, with `data/users/me` read as the reader's own. Only your code tells a reader that a save failed:
+
+```
+<form id="add-note"><input name="note" required><button>Add</button></form>
+<p id="unsaved" hidden>That note wasn’t saved.</p>
+
+document.getElementById('add-note').addEventListener('submit', async (event) => {
+  const form = event.currentTarget;
+  let saved = true;
+  try {
+    const db = await openartifact.use('db');
+    await db.add('data/users/me/notes/items', { note: form.elements.note.value, at: new Date().toISOString() });
+    form.reset();
+  } catch { saved = false; }
+  document.getElementById('unsaved').hidden = saved;
+});
+```
+
+After a save the dataset's rows change by themselves, and whatever reads them is drawn again, so keep a field people type in outside a drawing. History doesn't keep saved rows, and deleting their dataset leaves them in the store.
 
 ## The page as it shows
 

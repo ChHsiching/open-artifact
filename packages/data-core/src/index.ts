@@ -3,6 +3,7 @@ export * from './connector-types.ts';
 export * from './text.ts';
 export * from './paths.ts';
 export * from './tables.ts';
+export * from './saved-rows.ts';
 export * from './rule-pattern.ts';
 export * from './model.ts';
 export * from './addresses.ts';

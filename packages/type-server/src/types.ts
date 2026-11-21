@@ -17,7 +17,7 @@ import {
   validateViewContext as validateSlidesContext,
 } from '@open-artifact/slides-core';
 import { DOC_MARKER, checkDoc, scaffoldDocType, validateDocContext } from './docs/type.ts';
-import { DATA_MARKER, checkData, dataHistoryIgnoresPath, dataWritesProblem, scaffoldData, validateDataContext } from './data.ts';
+import { DATA_MARKER, checkData, dataCommenterWrites, dataHistoryIgnoresPath, dataWritesProblem, scaffoldData, validateDataContext } from './data.ts';
 import { SHEET_MARKER, checkSheet, scaffoldSheet, validateSheetContext } from './sheets/type.ts';
 import { WHITEBOARD_MARKER, checkWhiteboard, scaffoldWhiteboard, validateWhiteboardContext, whiteboardHistoryIgnores } from './whiteboard.ts';
 
@@ -111,6 +111,11 @@ export interface TypeDefinition {
    * before the store writes anything). `read` gives a document's data now.
    */
   writesProblem?(writes: readonly unknown[], read: (path: string) => unknown): WriteRefusal | null;
+  /**
+   * The store documents (path without `db/`) a commenter of a share link may write, given their id: their own
+   * per-person data. A type without it lets a commenter write nothing to the store.
+   */
+  commenterWrites?(path: string, guestId: string): boolean;
 }
 
 export type TypeName = 'design' | 'design-system' | 'slides' | 'whiteboard' | 'data' | 'sheets' | 'docs';
@@ -194,6 +199,7 @@ export const TYPES: Record<TypeName, TypeDefinition> = {
     comments: true,
     historyIgnores: dataHistoryIgnoresPath,
     writesProblem: dataWritesProblem,
+    commenterWrites: dataCommenterWrites,
   },
   sheets: {
     name: 'sheets',

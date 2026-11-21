@@ -20,8 +20,10 @@ import { useVersionHistory } from './history/store.ts';
 import { followStoredLook, useStyleEditor } from './design/style.ts';
 import { previewLook } from './page/look.ts';
 import { DashboardPage } from './page/DashboardPage.tsx';
+import { PRINT_NOTE_ATTRIBUTE, getPrintDataNote } from './export/print-note.ts';
 import { getStoppedPageFiles } from './page/check.ts';
 import { useToolbarAnnouncements } from './platform/announcements.ts';
+import { isInlineView } from './platform/inline-view.ts';
 import { useAgentActivity } from './platform/agent-activity.ts';
 import { maybeSession } from './services/session.ts';
 import { useDatasets } from './state/datasets.ts';
@@ -34,7 +36,7 @@ import { PageFixingNotice, PageNeedsFixNotice } from './app/Notices.tsx';
 import { PageTools } from './app/PageTools.tsx';
 import { SidePanel } from './app/SidePanel.tsx';
 import { Toolbar } from './app/Toolbar.tsx';
-import { useDashboardData, usePageSnapshot } from './app/data-view.ts';
+import { useDashboardData, usePageSnapshot, type DashboardData } from './app/data-view.ts';
 import { askToFixPage, askWhySourcesFailed } from './app/requests.ts';
 import { ReadAloudSlot } from './app/slots.tsx';
 import { useAppPhase } from './app/start.ts';
@@ -57,6 +59,8 @@ function useDocumentTitle(): void {
 
 function Dashboard(): ReactElement {
   useDocumentTitle();
+  const inline = isInlineView();
+  useRootClass('dash-inline-view', inline);
   const shown = useShownContent();
   const status = useDocument((state) => state.status);
   const save = useDocument((state) => state.save);
@@ -126,7 +130,7 @@ function Dashboard(): ReactElement {
 
   return (
     <div className="dash-app">
-      <Toolbar data={data} text={toolbarText} empty={empty} checkWorking={checkWorking} />
+      {inline ? null : <Toolbar data={data} text={toolbarText} empty={empty} checkWorking={checkWorking} />}
       <div className="dash-body">
         <main className="dash-main" data-dash-content="">
           {above === null ? null : (
@@ -141,6 +145,7 @@ function Dashboard(): ReactElement {
             onLink={view.onLink}
             beforeRoot={<ReadAloudSlot />}
           />
+          {files.length > 0 ? <PrintDataNote data={data} /> : null}
           <PageTools filters={view.filters} onPoint={view.onPoint} />
           {noPage ? <EmptyDashboard editable={editable} working={working} /> : null}
         </main>
@@ -148,9 +153,27 @@ function Dashboard(): ReactElement {
       </div>
       <EditDialogs />
       <DraftDialog />
-      <CommentLayer />
-      <AskBox />
+      {inline ? null : (
+        <>
+          <CommentLayer />
+          <AskBox />
+        </>
+      )}
     </div>
+  );
+}
+
+/**
+ * The data's date and whether any is missing, kept out of sight beside the page; only the print rules show it. It is
+ * hidden by an inline style, not the `hidden` attribute, since the base styles hold `[hidden]` with a layered
+ * `!important` that a print rule can't undo.
+ */
+function PrintDataNote({ data }: { data: DashboardData }): ReactElement {
+  const note = useMemo(() => getPrintDataNote(data.used, data.runOf), [data.used, data.runOf]);
+  return (
+    <p style={{ display: 'none' }} className="dash-note" data-uncommentable="" {...{ [PRINT_NOTE_ATTRIBUTE]: '' }}>
+      {note}
+    </p>
   );
 }
 

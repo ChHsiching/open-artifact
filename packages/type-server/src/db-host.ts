@@ -28,6 +28,7 @@ import {
   type DbDocument,
   type DbWrite,
   type JsonRecord,
+  type Role,
 } from '@open-artifact/runtime/capabilities';
 import {
   API,
@@ -83,6 +84,18 @@ export interface DbHostOptions {
   documents?: boolean;
   /** Refuses an agent's batch the type's page would drop part of (the type's `writesProblem`). */
   writesProblem?(writes: readonly unknown[], read: (path: string) => unknown): { code: string; message: string } | null;
+  /** The documents a commenter may write, by their id (the type's `commenterWrites`); without it, none. */
+  commenterWrites?(path: string, guestId: string): boolean;
+}
+
+/** A guest of a share link, as the server passes them to {@link DbHost.handle}. */
+export interface DbGuest {
+  name: string;
+  /** Who their writes are by, for events. */
+  client: string;
+  /** Their viewer id (`guest-…`) and role, for what they may write. */
+  id?: string;
+  role?: Role;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -506,6 +519,21 @@ export class DbHost {
     return thread;
   }
 
+  /**
+   * Throws `not_writer` (403) unless every write of a commenter's batch is to a document the type lets them write,
+   * checked before anything is written.
+   */
+  private assertCommenterWrites(writes: unknown, guestId: string): void {
+    if (!Array.isArray(writes)) return;
+    const may = this.options.commenterWrites;
+    for (const raw of writes as Array<{ path?: unknown } | null>) {
+      const path = guarded(() => splitPath(raw?.path, 'doc')).join('/');
+      if (may === undefined || guestId === '' || !may(path, guestId)) {
+        throw new HttpError(403, 'not_writer', `A commenter can write only their own documents, not ${path}.`);
+      }
+    }
+  }
+
   /* ---- page routes ------------------------------------------------------- */
 
   /**
@@ -513,7 +541,7 @@ export class DbHost {
    * `as` names a guest of a share link: their comments carry their name, and
    * their writes their author.
    */
-  async handle(route: string, req: IncomingMessage, res: ServerResponse, url: URL, as?: { name: string; client: string }): Promise<boolean> {
+  async handle(route: string, req: IncomingMessage, res: ServerResponse, url: URL, as?: DbGuest): Promise<boolean> {
     const method = req.method ?? 'GET';
     const postOnly = (): void => {
       if (method !== 'POST') throw new HttpError(405, 'invalid', 'POST only.');
@@ -534,6 +562,7 @@ export class DbHost {
       case API.dbWrite: {
         postOnly();
         const body = await readJson<Partial<DbWriteRequest>>(req, MAX_WRITE_BODY);
+        if (as?.role === 'commenter') this.assertCommenterWrites(body.writes, as.id ?? '');
         const client = typeof body.client === 'string' ? body.client : '';
         const changed = this.write(body.writes, client || as?.client || 'owner', client || undefined);
         if (changed.length) this.options.onWrite?.(changed, client);

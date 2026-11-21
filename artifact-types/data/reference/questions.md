@@ -24,7 +24,7 @@ a number), never a finding you haven't seen.
 
 **If you ask, no connector fits and no data was given**, say in one line that this works best on live numbers, and
 that they can add the server that holds them to their open-artifact `connectors.json` or carry on with a file or
-sample data, unless they asked for sample data or you can look the numbers up.
+sample data, unless they asked for sample data, mean to type the numbers in on the page themselves, or you can look the numbers up.
 
 ## After the answers
 
