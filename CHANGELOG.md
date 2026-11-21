@@ -6,6 +6,25 @@ agent plugins. Since 0.9.0 they all share one version; before that `dsh-open-art
 Each entry is written from the commits since the previous tag (`node scripts/changelog.mjs` lists them); see
 [Releasing](README.md#releasing).
 
+## [0.12.1] - 2026-11-21
+
+Record narrated Motion films, review scenes as they arrive, and hear the film from the first play.
+
+### Added
+
+- Motion includes a text-to-speech tool that records individual or batch voiceover clips across providers and
+  reports clip durations and, on supported models, word timing for captions.
+- New Motion guides cover visual explainers, historical films, and animated overlays for existing footage.
+
+### Changed
+
+- The Motion workflow opens the film as soon as the first scenes are available and checks stills scene by scene
+  as the film takes shape.
+
+### Fixed
+
+- The Motion player now starts with sound when you first press Play.
+
 ## [0.12.0] - 2026-11-20
 
 Create and export animated films with Motion, build interactive sheets, and share read-only slides and dashboards.
@@ -270,6 +289,7 @@ One version for every package, with Docs and Sheets in every plugin.
 - Plugins for Claude Code, Codex, Cursor, Copilot, ChatGPT and DeepSeek Harness.
 - English and Chinese READMEs, under Apache-2.0.
 
+[0.12.1]: https://github.com/JimLiu/open-artifact/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/JimLiu/open-artifact/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/JimLiu/open-artifact/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/JimLiu/open-artifact/compare/v0.9.2...v0.10.0

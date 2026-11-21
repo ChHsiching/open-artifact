@@ -1,6 +1,6 @@
 {
   "name": "@open-artifact/runtime",
-  "version": "0.12.0",
+  "version": "0.12.1",
   "private": true,
   "type": "module",
   "description": "The window.openartifact page runtime: capability contracts, the local provider and the Shell protocol.",
@@ -13,7 +13,7 @@
     "./doc-api": "./src/doc-api.ts"
   },
   "dependencies": {
-    "@open-artifact/protocol": "0.12.0"
+    "@open-artifact/protocol": "0.12.1"
   },
   "license": "Apache-2.0"
 }
