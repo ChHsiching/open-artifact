@@ -35,7 +35,7 @@ import type {
   RoomMessage,
   Viewer,
 } from './capabilities.ts';
-import type { SheetFrame } from './sheet-api.ts';
+import type { SheetFrame, SheetWalkthrough } from './sheet-api.ts';
 import type { DocFrame } from './doc-api.ts';
 
 /** Route paths, relative to the page base. */
@@ -292,6 +292,8 @@ export interface ServerEvents {
   history: HistoryChangeEvent;
   /** A frame of the workbook's edit log (types with `store: "workbook"`). */
   sheet: SheetFrame;
+  /** A walkthrough the agent sent, to one page of the owner's (`SHEET_WALKTHROUGH_EVENT`; types with `store: "workbook"`). */
+  sheetWalkthrough: SheetWalkthrough;
   /** A write to a doc, its tabs or its dropdown lists (types with `store: "doc"`). */
   doc: DocFrame;
 }

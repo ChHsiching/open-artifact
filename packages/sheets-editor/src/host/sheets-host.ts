@@ -7,6 +7,7 @@ import type {
   RoomCapability,
   SheetCapability,
   SheetPerson,
+  SheetWalkthrough,
   ShellConnection,
   Viewer,
 } from '@open-artifact/runtime';
@@ -33,14 +34,21 @@ export interface RoomPeersEvent {
   peers: PeerOfRoom[];
 }
 
-export type AgentSendState = 'available' | 'rejected';
+/** Whether the agent session takes what the page sends: now, once it is opened or summoned, or not at all. */
+export type AgentSendState = 'available' | 'available_if_opened' | 'available_if_summoned' | 'rejected';
+
+/** How a payload is sent to the agent session: sent at once or staged for the person to send, with or without presence. */
+export interface AgentSendOptions {
+  deliver?: 'send' | 'stage';
+  attachPresence?: false;
+}
 
 export interface PageRoom {
   peers(): PeerOfRoom[];
   presence(patch: Record<string, unknown>): Promise<void>;
   onPeers(listener: (event: RoomPeersEvent) => void, onGone?: () => void): () => void;
   canSendToAgentSession(): Promise<AgentSendState>;
-  sendToAgentSession(payload: unknown): Promise<void>;
+  sendToAgentSession(payload: unknown, options?: AgentSendOptions): Promise<void>;
 }
 
 export interface PersonProfile {
@@ -78,6 +86,11 @@ export interface SheetsHost {
   page: PageApi;
   agentStatus(): AgentStatus | null;
   onAgentStatus(listener: (status: AgentStatus) => void): () => void;
+  /**
+   * Hears the walkthroughs the agent sends (only on the owner's page it used last). One that comes while no listener
+   * is attached waits for the first to attach, and a newer one takes its place: the page shows the latest only.
+   */
+  onWalkthrough(listener: (walkthrough: SheetWalkthrough) => void): () => void;
 }
 
 export const VIEWER_PRESENCE_KEY = 'person';
@@ -183,8 +196,8 @@ function createPageRoom(room: RoomCapability, agent: AgentCapability | null, meA
     async sendToAgentSession(payload) {
       const request = agentRequestOf(payload);
       if (agent === null || request === null || !(await agent.status()).available) throw Object.assign(new Error('No agent takes requests from this page.'), { code: 'agent_unavailable' });
-      const result = await agent.send(request);
-      if (result.status === 'failed')
+      const sent = await agent.send(request);
+      if (sent.status === 'failed')
         throw Object.assign(new Error('The agent could not take the request.'), { code: 'agent_unavailable' });
     },
   };
@@ -251,6 +264,7 @@ export async function connectSheetsHost(): Promise<SheetsHost> {
   };
   if (caps.comments !== null)
     capabilities.comments = startPageComments({ capability: caps.comments, abilities, bridge, agentStatus: status, onAgentStatus, window });
+  const onWalkthrough = hearWalkthroughs(caps.sheet);
   return {
     caps,
     viewer,
@@ -260,5 +274,31 @@ export async function connectSheetsHost(): Promise<SheetsHost> {
     page,
     agentStatus: () => status,
     onAgentStatus,
+    onWalkthrough,
+  };
+}
+
+/**
+ * Listens for walkthroughs from the start, so one sent before the page has mounted its listener is not lost: it is
+ * kept (the latest only) and handed to the first listener that attaches.
+ */
+function hearWalkthroughs(sheet: SheetCapability | null): SheetsHost['onWalkthrough'] {
+  const listeners = new Set<(walkthrough: SheetWalkthrough) => void>();
+  let waiting: SheetWalkthrough | null = null;
+  sheet?.onWalkthrough((walkthrough) => {
+    if (listeners.size === 0) {
+      waiting = walkthrough;
+      return;
+    }
+    for (const listener of listeners) listener(walkthrough);
+  });
+  return (listener) => {
+    listeners.add(listener);
+    if (waiting !== null) {
+      const kept = waiting;
+      waiting = null;
+      listener(kept);
+    }
+    return () => void listeners.delete(listener);
   };
 }

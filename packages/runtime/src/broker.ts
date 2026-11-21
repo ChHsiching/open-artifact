@@ -86,7 +86,7 @@ export const BROKERED_EVENTS = {
   db: { onChange: 'change' },
   comments: { onChange: 'threads' },
   history: { onChange: 'change' },
-  sheet: { onFrame: 'frame' },
+  sheet: { onFrame: 'frame', onWalkthrough: 'walkthrough' },
   doc: { onFrame: 'frame' },
 } as const satisfies Partial<Record<CapabilityName, Readonly<Record<string, string>>>>;
 
@@ -352,6 +352,7 @@ export function createShellProvider(options: ShellProviderOptions = {}): Capabil
           widget: (request) => c('widget', [request]),
           importFile: (file, name) => c('importFile', [file, name], true),
           onFrame: (listener) => listen('sheet', BROKERED_EVENTS.sheet.onFrame, listener),
+          onWalkthrough: (listener) => listen('sheet', BROKERED_EVENTS.sheet.onWalkthrough, listener),
         };
         return ns;
       }

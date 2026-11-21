@@ -108,7 +108,7 @@ export function designPageFragment(fragment: string): string {
 /** The page parameter is shared with Design. Old Sheet links used #sheet- followed by the sheet ID. */
 export function sheetPageFragment(fragment: string): string {
   if (fragment.startsWith('#sheet-') && !fragment.includes('=')) {
-    const id = fragment.slice(6);
+    const id = fragment.slice('#sheet-'.length);
     return id ? '#' + new URLSearchParams({ page: id }).toString() : '';
   }
   return designPageFragment(fragment);

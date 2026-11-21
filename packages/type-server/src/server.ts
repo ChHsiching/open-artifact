@@ -69,10 +69,10 @@ import { indexedUploads, normalizeSystemIndex } from '@open-artifact/design-syst
 import { sendArchive } from './archive.ts';
 import { ConnectorsHost } from './connectors.ts';
 import { McpError } from './mcp-client.ts';
-import { SHEET_API, type SheetReadRequest, type SheetSendRequest, type WidgetRequest } from '@open-artifact/runtime/sheet-api';
+import { SHEET_API, SHEET_WALKTHROUGH_EVENT, type SheetReadRequest, type SheetSendRequest, type SheetWalkthrough, type WidgetRequest } from '@open-artifact/runtime/sheet-api';
 import { SheetRefusalError } from '@open-artifact/sheets-core';
 import { SheetStore, type Viewer as SheetViewer } from './sheets/store.ts';
-import { SHEET_ACTIONS, SheetsCommandError, assertSheetFor, isSheetsCommand, runSheetCall, type SheetCall } from './sheets/cli.ts';
+import { SHEET_ACTIONS, SheetsCommandError, assertSheetFor, isSheetsCommand, runSheetCall, type SheetCall, type SheetCallHost } from './sheets/cli.ts';
 import { DOC_API, type DocCallRequest, type DocHistoryRequest, type DocReadRequest, type DocRestoreRequest, type DocSessionRequest, type DocVersionRequest } from '@open-artifact/runtime/doc-api';
 import { DocHost, DocRequestError } from './docs/host.ts';
 import { DOC_ACTIONS, type DocActionName, isDocAction, runDocAction } from './docs/actions.ts';
@@ -222,6 +222,8 @@ const agentFor = (viewer: Viewer, status: AgentStatus): AgentStatus => (viewer.r
 class OpenArtifact {
   readonly store: ArtifactStore;
   readonly clients = new Map<string, Client>();
+  /** When each page last connected or told its presence: the owner's latest is the one a walkthrough goes to. */
+  readonly usedAt = new Map<string, number>();
   readonly peers = new Map<string, Peer>();
   /**
    * Origins of Open Artifact Shells that framed the page (named by the
@@ -500,7 +502,10 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
       if (closed) return;
       closed = true;
       closeSheet?.();
-      if (artifact.clients.get(id) === client) artifact.clients.delete(id);
+      if (artifact.clients.get(id) === client) {
+        artifact.clients.delete(id);
+        artifact.usedAt.delete(id);
+      }
       artifact.doc?.release(id);
       peerViewers.delete(`${artifact.id}\0${id}`);
       if (artifact.peers.delete(id)) emit(artifact, 'peers', peerList(artifact));
@@ -509,6 +514,7 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
     };
     artifact.clients.get(id)?.end();
     artifact.clients.set(id, client);
+    artifact.usedAt.set(id, Date.now());
     await startWatching(artifact);
     if (!closed) {
       client.send('agent', agentFor(client.viewer, await refreshStatus(artifact)));
@@ -951,6 +957,7 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
         const holder = artifact.clients.get(body.client)?.viewer.id ?? peerViewers.get(`${artifact.id}\0${body.client}`);
         if (holder && holder !== who.id) throw new HttpError(403, 'not_granted', 'That client is someone else.');
         peerViewers.set(`${artifact.id}\0${body.client}`, who.id);
+        if (artifact.clients.has(body.client)) artifact.usedAt.set(body.client, Date.now());
         const peer = { ...(artifact.peers.get(body.client) ?? { id: body.client, kind: 'person' as const, state: {} }), name: who.name };
         const state = { ...peer.state };
         for (const [key, value] of Object.entries(body.patch)) {
@@ -1146,11 +1153,33 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
    * A Sheet's call (`read`, `update`, `batch`, `widget`, `info`, `export`): on the open Sheet's store, so its pages
    * hear of an update at once, or on one made for the call when the Sheet is not open here.
    */
+  /**
+   * Gives a walkthrough to the page the owner used last (the latest to connect or tell its presence). False when the
+   * owner has no page of the Sheet open: guests never get one.
+   */
+  const showWalkthrough = (artifact: OpenArtifact, walkthrough: SheetWalkthrough): boolean => {
+    let chosen: Client | undefined;
+    let latest = -1;
+    for (const [id, client] of artifact.clients) {
+      if (client.viewer.role !== 'owner') continue;
+      const at = artifact.usedAt.get(id) ?? 0;
+      if (at >= latest) {
+        chosen = client;
+        latest = at;
+      }
+    }
+    chosen?.send(SHEET_WALKTHROUGH_EVENT, walkthrough);
+    return chosen !== undefined;
+  };
+
   const runSheetAction = async (name: SheetCall['name'], body: Partial<ActionRequest>, res: ServerResponse): Promise<void> => {
     const { root, open, type } = await callTargetOf(body);
     if (type !== 'sheets' || !hosted.has(type)) throw new HttpError(404, 'unknown_action', `No action ${name}: ${root} is not a Sheet.`);
     const call: SheetCall = { name, args: body.args && typeof body.args === 'object' ? (body.args as SheetCall['args']) : {} };
-    const run = (store: SheetStore): unknown => runSheetCall(store, call);
+    // An open Sheet has a page to link to and may have the owner's page to show a walkthrough on; one made for the
+    // call has neither.
+    const host: SheetCallHost = open ? { artifactUrl: pageUrl(open), showWalkthrough: (walkthrough) => showWalkthrough(open, walkthrough) } : {};
+    const run = (store: SheetStore): unknown => runSheetCall(store, call, host);
     try {
       assertSheetFor(root, call);
       if (open?.sheet) {

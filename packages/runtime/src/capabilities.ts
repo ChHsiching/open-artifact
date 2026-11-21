@@ -13,6 +13,7 @@
 import type {
   ImportFileResponse,
   SheetFrame,
+  SheetWalkthrough,
   SheetReadAnswers,
   SheetReadRefusal,
   SheetReadRequest,
@@ -822,6 +823,11 @@ export interface SheetCapability {
   importFile(file: Blob, name: string): Promise<ImportFileResponse>;
   /** Subscribes to the stream's frames: a snapshot first on every (re)connect, then edits, clocks and widgets. */
   onFrame(listener: (frame: SheetFrame) => void): () => void;
+  /**
+   * Subscribes to the walkthroughs the agent sends the person. Only one page of the owner's hears each, the one
+   * they used last; guests hear none. A walkthrough sent while no listener is attached is not kept here.
+   */
+  onWalkthrough(listener: (walkthrough: SheetWalkthrough) => void): () => void;
 }
 
 /* -------------------------------------------------------------------------- */

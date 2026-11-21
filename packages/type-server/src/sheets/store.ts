@@ -25,6 +25,7 @@ import {
   AgentError,
   applyEdits,
   ChartReader,
+  checkWalkthrough,
   clockReading,
   csvOf,
   deletedSheets,
@@ -60,6 +61,7 @@ import {
   type SheetEditsRequest,
   type SheetSendRequest,
   type SheetSendResponse,
+  type SheetView,
   sheetsOf,
   type SnapshotFrame,
   undeleted,
@@ -67,6 +69,7 @@ import {
   type WidgetRequest,
   type WidgetResponse,
   type WidgetState,
+  type SheetWalkthrough,
   type WorkbookContents,
   workbookOf,
   xlsxChartsOf,
@@ -889,8 +892,8 @@ export class SheetStore {
   }
 
   /**
-   * One of the agent's reads (readSheets, readCells, readCellFormats, readConditionalFormats, readCharts), from the
-   * workbook as it stands, or as it stood at `atRevision`.
+   * One of the agent's reads (readSheets, readCells, readCellFormats, readConditionalFormats, readCharts,
+   * readInteractive), from the workbook as it stands, or as it stood at `atRevision`.
    */
   agentRead(payload: unknown = { kind: 'readSheets' }, atRevision?: number): EngineMessage {
     this.rescan();
@@ -902,14 +905,32 @@ export class SheetStore {
       try {
         let charts: ChartReader | undefined;
         const before = this.edits.slice(0, at).flatMap((e) => e.ops);
+        const reader = (sheets: SheetView[]) => (charts ??= new ChartReader(workbook, sheets, (more) => undeleted(this.engine, [...before, ...more])));
         return readWorkbook(payload, {
           workbook,
           answer: (request) => session.answer(request),
           utility: (request) => this.engine.utility(request),
           calculationTookTooLong: unfinished,
           timeZone: this.timeZone,
-          charts: (view, sheets) => (charts ??= new ChartReader(workbook, sheets, (more) => undeleted(this.engine, [...before, ...more]))).chartsOf(view),
+          charts: (view, sheets) => reader(sheets).chartsOf(view),
+          interactive: (view, sheets) => reader(sheets).interactiveOf(view),
         });
+      } finally {
+        release();
+      }
+    });
+  }
+
+  /**
+   * A walkthrough the agent sends (showGuide's `guide`), checked against the workbook as it stands: its stops, or a
+   * refusal (unreadableRead, unknownSheetName, outsideTheSheet). Showing it is the host's (cli.ts, runSheetCall).
+   */
+  checkWalkthrough(guide: unknown): SheetWalkthrough {
+    this.rescan();
+    return this.refusing(() => {
+      const { workbook, release } = this.contents();
+      try {
+        return checkWalkthrough(guide, sheetsOf(workbook));
       } finally {
         release();
       }

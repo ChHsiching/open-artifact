@@ -71,7 +71,7 @@ import {
   type ServerEvents,
   type SessionResponse,
 } from './http-api.ts';
-import { SHEET_API, SHEET_EVENT, type ImportFileResponse, type SheetFrame, type SheetSendResponse, type WidgetResponse } from './sheet-api.ts';
+import { SHEET_API, SHEET_EVENT, SHEET_WALKTHROUGH_EVENT, type ImportFileResponse, type SheetFrame, type SheetSendResponse, type SheetWalkthrough, type WidgetResponse } from './sheet-api.ts';
 import {
   DOC_API,
   type DocHistoryRequest,
@@ -497,9 +497,16 @@ export function createLocalProvider(options: LocalProviderOptions = {}): Capabil
     async sheet() {
       const { stores } = await getSession();
       if (!stores?.sheet) return null;
+      // Sends go one at a time, each once the one before it is answered: the server takes them, and the page hears
+      // their answers, in the order the page made them, though each request is a fetch of its own.
+      let sending: Promise<unknown> = Promise.resolve();
       const capability: SheetCapability = {
         read: (request) => post(SHEET_API.read, request),
-        send: (request) => post<SheetSendResponse>(SHEET_API.send, request),
+        send: (request) => {
+          const answer = sending.then(() => post<SheetSendResponse>(SHEET_API.send, request));
+          sending = answer.catch(() => undefined);
+          return answer;
+        },
         widget: (request) => post<WidgetResponse>(SHEET_API.widget, request),
         importFile: (file, name) =>
           json<ImportFileResponse>(
@@ -508,6 +515,7 @@ export function createLocalProvider(options: LocalProviderOptions = {}): Capabil
             { name },
           ),
         onFrame: (listener: (frame: SheetFrame) => void) => subscribe(SHEET_EVENT, listener),
+        onWalkthrough: (listener: (walkthrough: SheetWalkthrough) => void) => subscribe(SHEET_WALKTHROUGH_EVENT, listener),
       };
       return capability;
     },

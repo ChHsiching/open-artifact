@@ -12,9 +12,10 @@
 // A tab whose renderer crashed, or that Chrome let go of while the page was still in use, is a problem too (`tab gone:
 // …`); a call on a tab that is gone fails with what became of it (closed by the test, crashed, let go of, Chrome gone).
 // Input goes through the DevTools protocol as real events: `page.click`, `page.clickTimes` (2 = a word, 3 = a
-// paragraph), `page.rightClick` (a context menu), `page.hover` (the mouse over a point, nothing pressed), `page.type`
-// (keys, to whatever has focus), `page.press` (a named key or a shortcut) and `page.typeIme` (composed text, as pinyin
-// sends it). E2E_HEADFUL=1 runs Chrome with a window, to watch a case; the default is headless.
+// paragraph), `page.rightClick` (a context menu), `page.hover` (the mouse over a point, nothing pressed),
+// `page.dragMouse` (pressed, moved, let go), `page.type` (keys, to whatever has focus), `page.press` (a named key or a
+// shortcut) and `page.typeIme` (composed text, as pinyin sends it). E2E_HEADFUL=1 runs Chrome with a window, to watch a
+// case; the default is headless.
 //
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -384,6 +385,19 @@ export async function launch({ chrome = findChrome(), width = 1440, height = 900
     async function hover(x, y) {
       await onTop('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
     }
+    /**
+     * Drag with the real mouse from `[x, y]` to `[toX, toY]`: press, move there in `steps` moves, release. A page that
+     * waits for the pointer to move some way before it starts a drag sees it start.
+     */
+    async function dragMouse([x, y], [toX, toY], { steps = 10 } = {}) {
+      await onTop('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
+      await onTop('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', buttons: 1, clickCount: 1 });
+      for (let n = 1; n <= steps; n++) {
+        await onTop('Input.dispatchMouseEvent', { type: 'mouseMoved', x: x + ((toX - x) * n) / steps, y: y + ((toY - y) * n) / steps, button: 'left', buttons: 1 });
+        await sleep(16);
+      }
+      await onTop('Input.dispatchMouseEvent', { type: 'mouseReleased', x: toX, y: toY, button: 'left', buttons: 0, clickCount: 1 });
+    }
     /** Click with the real mouse's right button at (x, y): the page gets a contextmenu event, as from a person. */
     async function rightClick(x, y) {
       await onTop('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
@@ -432,7 +446,7 @@ export async function launch({ chrome = findChrome(), width = 1440, height = 900
     }
     /** A raw DevTools call on the page's own session (benchmarks: Input, Performance, Memory). */
     const cdp = (method, params = {}) => send(method, params, top);
-    const page = { problems, urls, evaluate, evaluateAll, crashed, waitFor, click, clickTimes, rightClick, hover, type, typeIme, press, close, cdp };
+    const page = { problems, urls, evaluate, evaluateAll, crashed, waitFor, click, clickTimes, rightClick, hover, dragMouse, type, typeIme, press, close, cdp };
     async function close() {
       closedAt ??= Date.now();
       pagesOpen.delete(page);

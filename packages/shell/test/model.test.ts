@@ -71,6 +71,14 @@ describe('shell model', () => {
     assert.equal(new URL(pageAddress(boot, address + '#artboard-a=b')!).hash, '');
   });
 
+  it('hands a sheet the page of a sheet link, with the cells it points at', () => {
+    const boot = { id: 'book', page: 'http://localhost:8000/', type: 'sheets' };
+    const address = 'http://localhost:8100/a/book';
+    const pageOf = (hash: string) => new URLSearchParams(new URL(pageAddress(boot, address + hash)!).hash.slice(1)).get('page');
+    assert.equal(pageOf('#sheet-sht_a.0'), 'sht_a.0');
+    assert.equal(pageOf('#sheet-sht_a.0~A2-D2'), 'sht_a.0~A2-D2');
+    assert.equal(pageOf('#page=sht_a.0'), 'sht_a.0');
+  });
   it('names the agent: host, then boot, then fallback', () => {
     assert.equal(agentNameOf({ origin: 'x', caps: {}, agentName: 'Helper' }, { agentName: 'Boot' }, 'Agent'), 'Helper');
     assert.equal(agentNameOf(null, { agentName: 'Boot' }, 'Agent'), 'Boot');
