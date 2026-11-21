@@ -1,8 +1,9 @@
 // End-to-end tests of the data type's command line: the fixture dashboard (fixtures/data) is written through write-db
 // and passes check; a broken copy of each kind fails it with the finding the page would show; write-db refuses what
 // the page would drop and writes nothing; history leaves out dash/settings; upload, read-db --text and delete-asset;
-// open, wait and stop. In a browser: what a guest's page may save (a commenter only their own folder), and the
-// read-only embedded view of a dashboard another page frames through the Shell.
+// open, wait and stop. In a browser: what a guest's page may save (a commenter only their own folder), the
+// read-only embedded view of a dashboard another page frames through the Shell, and the empty dashboard's format
+// picker and file import.
 //
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -11,6 +12,7 @@ import path from 'node:path';
 import { after, before, describe, it } from 'node:test';
 import { findChrome, launch } from './lib/browser.mjs';
 import { cli, run } from './lib/cli.mjs';
+import { until } from './lib/http.mjs';
 import { browserOff, fixtures, install, removeTmp, tmpDir, typePath } from './lib/target.mjs';
 
 const T = { timeout: 90000 };
@@ -312,6 +314,49 @@ describe(`${TYPE} in a browser`, { skip: skip() || browserSkip }, () => {
     } finally {
       await guest?.close();
       await server.stop();
+    }
+  });
+
+  it('offers the formats on an empty dashboard, tells the agent the pick, and hands it imported files', T, async () => {
+    const { dir } = install(typePath(TYPE), 'data-empty-type');
+    const empty = cli(dir, { OPEN_ARTIFACT_TYPE_SERVER_HOME: path.join(tmpDir('data-empty-state'), 'state'), OPEN_ARTIFACT_USER: 'E2E' });
+    const root = path.join(tmpDir('data-empty'), 'dashboard');
+    let page, waiter;
+    try {
+      const opened = await empty.json(['open', root, '--type', TYPE, '--title', 'Imports', '--json']);
+      waiter = await empty.start(['wait', root, '--timeout', '60'], { firstLine: false });
+      assert.ok(await until(() => fs.existsSync(path.join(root, '_agent', 'waiting')), 10000), 'wait wrote no heartbeat');
+      page = await browser.load(opened.url, { ready: "document.querySelector('.dash-empty[data-forms]')", ignore: [/\/favicon\.ico$/] });
+      const labels = await page.evaluateAll("[...document.querySelectorAll('.dash-forms label')].map(label => label.textContent.trim()).join('|')");
+      assert.ok(labels.includes('Dashboard|Visual analysis|Scrollyteller|Visual short'), labels.join(' / '));
+      await page.evaluateAll("document.querySelector('.dash-forms input[value=scroll-story]')?.click()");
+      assert.ok(
+        await until(async () => (await empty.json(['context', root, '--json'])).context?.form === 'scroll-story', 10000),
+        'the picked format never reached the view context',
+      );
+      const handed = await page.evaluateAll(`(() => {
+        const input = document.querySelector('.dash-empty input[type=file]');
+        if (!input) return false;
+        const files = new DataTransfer();
+        files.items.add(new File(['month,sales\\n2026-01,120\\n'], 'sales.csv', { type: 'text/csv' }));
+        files.items.add(new File([new Uint8Array([80, 75, 3, 4])], 'Budget.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+        input.files = files.files;
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+        return true;
+      })()`);
+      assert.ok(handed.includes(true), 'no file input on the empty page');
+      const { code } = await waiter.exited;
+      const said = waiter.stdout();
+      assert.equal(code, 0, said);
+      assert.match(said, /Build this dashboard as a Scrollyteller from the files I imported/);
+      assert.match(said, /"sales\.csv" at \/_blob\/[0-9a-f]{32} \(CSV\)/);
+      assert.match(said, /"Budget\.xlsx" at \/_blob\/[0-9a-f]{32} \(Excel workbook\)/);
+      assert.deepEqual(fs.readdirSync(path.join(root, '_blobs')).map(name => path.extname(name)).sort(), ['.csv', '.xlsx']);
+      assert.deepEqual(page.problems, []);
+    } finally {
+      waiter?.child.kill();
+      await page?.close();
+      await empty.run(['stop']).catch(() => {});
     }
   });
 

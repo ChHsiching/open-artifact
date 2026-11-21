@@ -10,10 +10,14 @@ approves an action. Leave out anything already settled. Ask at most three questi
 
 1. **What's this for?** Dashboard (recommended), Deep-dive analysis, Report to share, A short visual. If the request
    already names one of these shapes (a story, a deep dive, a short visual), they have picked: ask the story question
-   instead, unless the request gives the story. The word "dashboard" alone picks nothing.
+   instead, unless the request gives the story. The word "dashboard" alone picks nothing. The format picked on the
+   empty page counts as an answer too: a view context `form` (or an import request's format) of `visual-analysis`,
+   `scroll-story` or `visual-short` means ask the story question instead, and `dashboard`, the format left as it was,
+   means leave this question out.
 2. **Where the numbers come from.** If a connector fits (a server in their open-artifact `connectors.json`, explored
    with your session's own tools for the same service), use it, say which, and don't search. Ask only if several fit
-   equally, as a pick-any question listing only those, with no file, paste or sample option.
+   equally, as a pick-any question listing only those, with no file, paste or sample option. Files they imported or
+   gave you are the answer: leave this question out.
 3. **How it should look.** The options are Use the standard look, Clay, Ocean and Meadow. If the person has
    design-system artifacts (`Artifact {action: "list", type: "design-system"}` under a host, `open-artifact list`
    standalone; check silently), the one they changed last goes first, under its title, and replaces Meadow. Leave this

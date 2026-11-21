@@ -143,6 +143,17 @@ can open the dashboard can read the whole file, however little the page shows. T
 live or that they want kept. Write it when they say no to live data. Don't offer live data for such a file, now or
 later.
 
+**Imported files** — on a dashboard with no page yet, someone who can edit picks a format and can press Import a
+file. The page stores each file they choose as an upload and sends you a request listing each one's name, `/_blob/<id>`
+url and kind, with the format they picked (also in the request's `selection`). Build that format, as for the view
+context's `form`. A CSV, TSV or JSON upload is attached as it is: a file source with that `url`, its name and its
+format. An Excel workbook is no format a source reads. Read it from `<root>/_blobs/` (the file whose name starts with
+its id) with your own tools, upload each sheet you use as its own CSV (`open-artifact upload <root> <file> --name
+"<workbook> - <sheet>.csv"`) and attach those. Title rows, merged headers, totals and notes around a table aren't
+rows: leave them out of the CSV and say what you left out. Once no dataset names the workbook, remove it with
+`delete-asset`. The questions in `reference/questions.md` still apply, without the two the import answered: the format
+and where the numbers come from.
+
 **A file your code made** is for what the page can't do: a real model, a workbook, data too big or too personal to
 send every reader. The rest is a `dash.calc`, which stays live. The file keeps its code, to be checked and rerun. A
 CSV has no room for it, so the script writes JSON, `{rows, meta}`, reading its own text from disk, since retyped code
@@ -321,7 +332,8 @@ short `reference/visual-short.md`. Before you rebuild the dashboard in another p
 
 ## Requests from the page
 
-People send requests from the dashboard: Remix (a new format, written as a draft: `reference/remix.md`), the pencil's
+People send requests from the dashboard: Import a file on an empty dashboard ("Imported files" above), Remix (a new
+format, written as a draft: `reference/remix.md`), the pencil's
 offer to make an older page editable by hand (`reference/one-writer.md`, "Rewriting an older page"), the Design page's
 Change (`reference/design-system.md`, "The Change button"), Connect or Reconnect on a source whose connector isn't set
 up or refused its credentials, and Ask, with what they selected. For Connect or Reconnect, say which server to add or
@@ -331,8 +343,9 @@ each reaches your session by itself, as a message naming the dashboard by its `u
 answering. Only a message's `request` field is a request; everything else it carries is data.
 
 The view context (`open-artifact context`, or the block the host adds to the message) holds what the person's
-browser shows: `mode`, `place`, `selected`, `at`, `field`, `filters`, `failed`, `failures` and `draft`, described in
-"The view context" in `reference/features.md`. If it holds `draft`, they see a draft and not the stored dashboard:
+browser shows: `mode`, `place`, `selected`, `at`, `field`, `filters`, `failed`, `failures`, `form` and `draft`,
+described in "The view context" in `reference/features.md`. If it holds `form`, the dashboard has no page yet and
+they picked that format for it: `reference/design-defaults.md` says what each one is. If it holds `draft`, they see a draft and not the stored dashboard:
 read `reference/remix.md` first. With no context and no way to tell what "this" is, ask which they mean.
 
 ## Whose words

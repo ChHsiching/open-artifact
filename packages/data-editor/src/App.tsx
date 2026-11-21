@@ -32,6 +32,7 @@ import { useShown, useShownContent } from './state/shown.ts';
 import { openSources, useSourcesUi } from './state/sources-ui.ts';
 import { CommentLayer } from './app/CommentLayer.tsx';
 import { EmptyDashboard } from './app/EmptyDashboard.tsx';
+import { useEmptyPage } from './state/empty-page.ts';
 import { PageFixingNotice, PageNeedsFixNotice } from './app/Notices.tsx';
 import { PageTools } from './app/PageTools.tsx';
 import { SidePanel } from './app/SidePanel.tsx';
@@ -82,11 +83,13 @@ function Dashboard(): ReactElement {
   const noPage = files.length === 0 && !loading && save !== 'failed';
   const empty = noPage && shown.content.datasets.length === 0;
   const visibleNotice = notice !== null && files.length > 0 && notice.text !== dismissed ? notice : null;
-  const view = useViewContext({ data, snapshot, noticeShown: visibleNotice !== null });
+  const editable = canWrite && (maybeSession()?.canEdit ?? false);
+  const offerForms = noPage && editable && canAsk && !inline;
+  const pickedForm = useEmptyPage((state) => state.form);
+  const view = useViewContext({ data, snapshot, noticeShown: visibleNotice !== null, form: offerForms ? pickedForm : null });
   useToolbarAnnouncements(notice?.text ?? null, data.loadingVisible, data.hasLiveQueries, announced);
   useRootClass('dash-no-page', noPage);
 
-  const editable = canWrite && (maybeSession()?.canEdit ?? false);
   const viewingOther = shown.mode !== 'live';
   const stylePending = useStyleEditor((state) => state.pending);
   const styleShown = useStyleEditor((state) => state.pending !== null || state.status !== null);
@@ -147,7 +150,7 @@ function Dashboard(): ReactElement {
           />
           {files.length > 0 ? <PrintDataNote data={data} /> : null}
           <PageTools filters={view.filters} onPoint={view.onPoint} />
-          {noPage ? <EmptyDashboard editable={editable} working={working} /> : null}
+          {noPage ? <EmptyDashboard editable={editable} working={working} offer={offerForms} /> : null}
         </main>
         <SidePanel usage={snapshot?.usage ?? null} {...(askWhy === undefined ? {} : { onAskWhy: askWhy })} />
       </div>
