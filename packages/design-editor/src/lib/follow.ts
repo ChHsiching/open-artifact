@@ -132,6 +132,8 @@ export interface Follower {
   paged(): void;
   /** Go to the new work and follow again (the chip's button). */
   show(): void;
+  /** The agent is drawing this item: bring it into view, unless the viewer took over. */
+  focus(key: string): void;
   /** Stop following; returns whether it was following. */
   stop(): boolean;
   /** Forget the unseen count (the chip's Hide). */
@@ -378,6 +380,18 @@ export function createFollower(host: FollowHost): Follower {
         lingerUntil = host.now() + LINGER_MS;
       }
       request(true);
+    },
+    focus(key) {
+      if (!allowed || ended || (!working && host.now() >= lingerUntil)) return;
+      const box = host.boxes().get(key);
+      if (!box || shownIn(box, view())) return;
+      cancelPending();
+      baseZoom ??= host.camera().zoom;
+      const zoom = { min: Math.max(host.minZoom, baseZoom * MIN_ZOOM_FACTOR), max: baseZoom };
+      const pad = FRAME_PADDING / zoom.max;
+      seen.add(key);
+      host.go(cameraFor({ x: box.x - pad, y: box.y - pad, w: box.w + 2 * pad, h: box.h + 2 * pad }, zoom, host.screen()));
+      refresh();
     },
     stop() {
       const was = stopFollowing();

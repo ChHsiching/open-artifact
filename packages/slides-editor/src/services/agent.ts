@@ -33,6 +33,7 @@ import { deckOrder, isDirty, useDeck } from '../state/deck.ts';
 import { useView } from '../state/view.ts';
 import { session } from './session.ts';
 import { followOnPeers, followPeer, followPresence, setLead } from './follow.ts';
+import { slideBuildActive } from './build-state.ts';
 
 /** A peer with the view context it published (`state`: the slide it is looking at…). */
 export type PeerView = KitPeerView<SlidesViewContext>;
@@ -89,7 +90,8 @@ export function followAgent(): void {
 /** Someone else wrote these slides: a viewer following the agent sees the last one while it works. */
 export function followAgentWrites(ids: readonly string[]): void {
   const state = useAgent.getState();
-  if (!state.following || !state.status.busy) return;
+  // The stage already goes to each arriving slide while it draws them in.
+  if (!state.following || !state.status.busy || slideBuildActive()) return;
   const target = state.following === FOLLOW_AGENT ? null : usePresence.getState().peers.find((p) => p.id === state.following);
   if (state.following !== FOLLOW_AGENT && target?.kind !== 'agent') return;
   const slides = useDeck.getState().slides;

@@ -50,6 +50,7 @@ import { pendingFit, viewportSize, visibleRect, zoomAt, zoomToBoards, zoomToFit 
 import { dashArray, noteBounds, noteFontSize } from '../lib/notes.ts';
 import { noteRect } from '../lib/scene.ts';
 import { BoardFrame } from './BoardFrame.tsx';
+import { BuildLayer } from './BuildLayer.tsx';
 import { NoteView } from './NoteView.tsx';
 import { Overlay } from './Overlay.tsx';
 import { CommentCapture, CommentPins } from './comments/CommentPins.tsx';
@@ -1088,6 +1089,7 @@ export function Canvas() {
         {pathShown ? <PathDraftView draft={pathShown} /> : null}
         <NodeEditor />
         <CropOverlay />
+        <BuildLayer />
       </CameraFollow>
       {boards.length === 0 && notes.length === 0 ? (
         <div className="pointer-events-none absolute inset-0 z-[3] flex items-center justify-center text-[13px] text-fg-subtle">

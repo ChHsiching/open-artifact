@@ -105,6 +105,11 @@ export function frameKeyPressed(key: string): void {
   if (!modifierOnly(key)) follower?.touched();
 }
 
+/** The agent is drawing this artboard: the camera brings it into view while it follows. */
+export function focusAgentWork(path: string): void {
+  follower?.focus(path);
+}
+
 /** Goes to the new work and follows again. */
 export function showAgentWork(): void {
   follower?.show();

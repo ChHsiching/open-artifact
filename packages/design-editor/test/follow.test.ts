@@ -179,4 +179,24 @@ describe('createFollower', () => {
     follower.paged();
     assert.equal(follower.state().unseen, 0);
   });
+
+  it('brings the artboard the agent draws into view, unless the viewer took over', () => {
+    const { host, boxes } = fakeHost();
+    const follower = createFollower(host);
+    boxes.set('a.dc.html', { x: 0, y: 0, w: 400, h: 300 });
+    boxes.set('b.dc.html', { x: 9000, y: 0, w: 400, h: 300 });
+    follower.focus('b.dc.html');
+    assert.equal(host.gone.length, 0, 'not while the agent is idle');
+    follower.working(true);
+    follower.focus('a.dc.html');
+    assert.equal(host.gone.length, 0, 'already in view');
+    follower.focus('b.dc.html');
+    assert.equal(host.gone.length, 1);
+    assert.ok(shownIn(boxes.get('b.dc.html')!, viewOf(host.camera_, host.screen())));
+    assert.equal(host.gone[0]!.zoom, 1, 'keeps the viewer zoom');
+    host.camera_ = { x: 0, y: 0, zoom: 1 };
+    follower.touched();
+    follower.focus('b.dc.html');
+    assert.equal(host.gone.length, 1, 'the viewer took over');
+  });
 });

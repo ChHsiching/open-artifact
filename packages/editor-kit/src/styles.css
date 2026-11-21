@@ -15,3 +15,76 @@
 @source "./";
 /* The comment components draw in a shadow root with their own stylesheet (collab/cds/comments.css). */
 @source not "./collab/cds";
+
+/* The build show (BuildShowLayer.tsx): the agent's cursor, block outlines, the press ripple, the place it works on next. */
+.oa-build-show {
+  z-index: 4;
+}
+.oa-build-cursor {
+  transition: opacity 240ms ease;
+  will-change: transform;
+}
+.oa-build-cursor svg {
+  margin: -2px 0 0 -3px;
+  transition: transform 120ms ease;
+  transform-origin: 3px 2px;
+}
+.oa-build-cursor[data-pressed="true"] svg {
+  transform: scale(0.86);
+}
+.oa-build-name {
+  position: absolute;
+  left: 15px;
+  top: 17px;
+  white-space: nowrap;
+  border-radius: 999px;
+  background: var(--color-accent);
+  color: var(--color-accent-fg, #fff);
+  font: 500 11px/16px Inter, system-ui, sans-serif;
+  padding: 1px 7px;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.25);
+}
+.oa-build-outline {
+  border: 1.5px solid var(--color-accent);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--color-accent) 6%, transparent);
+  will-change: transform, width, height, opacity;
+}
+.oa-build-outline[data-kind="text"] {
+  border-style: dashed;
+  background: transparent;
+}
+.oa-build-badge {
+  position: absolute;
+  right: -1px;
+  top: calc(100% + 4px);
+  white-space: nowrap;
+  border-radius: 3px;
+  background: var(--color-accent);
+  color: var(--color-accent-fg, #fff);
+  font: 500 10px/14px Inter, system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+  padding: 0 4px;
+}
+.oa-build-ripple {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 2px solid var(--color-accent);
+}
+.oa-build-wait {
+  outline: 1.5px dashed color-mix(in srgb, var(--color-accent) 70%, transparent);
+  outline-offset: 2px;
+  background: color-mix(in srgb, var(--color-accent) 5%, transparent);
+  animation: oa-build-wait 1.6s ease-in-out infinite;
+}
+@keyframes oa-build-wait {
+  50% {
+    background: color-mix(in srgb, var(--color-accent) 11%, transparent);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .oa-build-wait {
+    animation: none;
+  }
+}
