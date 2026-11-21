@@ -18,10 +18,13 @@
 import { parseHtml, VOID_ELEMENTS, type HtmlElement, type HtmlNode } from '@open-artifact/dc/html';
 import {
   isCssProperty,
+  isMarginProperty,
   parseDeclaration,
   foldAliases,
+  readItemMargin,
   splitDeclarations,
   type CssProperty,
+  type ItemMarginRead,
   type ElementKind,
   type StyleContext,
 } from './css/properties.ts';
@@ -51,6 +54,7 @@ import {
   type HeadKind,
   type IconNode,
   type ImageNode,
+  type ItemMargin,
   type ListNode,
   type Marks,
   type NodeBase,
@@ -695,7 +699,10 @@ class SlideCompiler {
       this.common(node, el, attrs, place, ['start', 'reversed'], pinned);
     }
     const looks = new Map<number, Set<string>>();
-    this.listItems(el, 0, node, looks);
+    const margins: Array<{ read: ItemMarginRead; el: HtmlElement }> = [];
+    this.listItems(el, 0, node, looks, margins);
+    const itemMargin = this.itemMargin(el, margins, inBox);
+    if (itemMargin) node.itemMargin = itemMargin;
     for (const [level, seen] of looks) {
       if (seen.size > 1) {
         this.warn(`${describe(el)}: the lists at level ${level + 1} have different markers; they all take the default`, el);
@@ -715,7 +722,7 @@ class SlideCompiler {
    * (at most {@link LIST_LEVELS} levels), and `data-indent="N"` puts an item
    * N levels further in than where it sits.
    */
-  private listItems(el: HtmlElement, level: number, node: ListNode, looks: Map<number, Set<string>>): void {
+  private listItems(el: HtmlElement, level: number, node: ListNode, looks: Map<number, Set<string>>, margins: Array<{ read: ItemMarginRead; el: HtmlElement }>): void {
     for (const child of el.children) {
       if (child.type === 'comment') continue;
       if (child.type === 'text') {
@@ -728,14 +735,20 @@ class SlideCompiler {
       }
       let itemLevel = level;
       const liAttrs = attrMap(child);
+      let read: ItemMarginRead = { margin: { top: 0, bottom: 0 }, sideways: false };
       for (const [name, value] of liAttrs) {
-        if (name === 'style') this.unsupported('<li> is plain — style the list; dropped', child);
-        else if (name === 'data-indent') {
+        if (name === 'style') {
+          const declarations = splitDeclarations(value ?? '');
+          const others = declarations.map(([n]) => n.toLowerCase()).filter((n) => !isMarginProperty(n));
+          if (others.length) this.unsupported(`<li> ${others.join(', ')}: an item takes only a top and bottom margin — style the list; dropped`, child);
+          read = readItemMargin(declarations);
+        } else if (name === 'data-indent') {
           const steps = (value ?? '').trim();
           if (/^\d$/.test(steps)) itemLevel = level + Number(steps);
           else this.warn(`<li data-indent="${steps.slice(0, 20)}"> — a number of levels 0–${LIST_LEVELS - 1}; ignored`, child);
         } else this.attribute(name, child, '<li>');
       }
+      margins.push({ read, el: child });
       if (itemLevel > LIST_LEVELS - 1) {
         this.warn(`a list item ${itemLevel + 1} levels in — lists go ${LIST_LEVELS} levels deep; kept at the last`, child);
         itemLevel = LIST_LEVELS - 1;
@@ -754,9 +767,29 @@ class SlideCompiler {
         if (!looks.has(subLevel)) looks.set(subLevel, new Set());
         looks.get(subLevel)!.add(JSON.stringify(look, Object.keys(look).sort()));
         if (sub.tag !== el.tag && level === 0 && itemLevel === 0) this.note(`a nested <${sub.tag}> in <${el.tag}> takes the outer list's markers`, sub);
-        this.listItems(sub, subLevel, node, looks);
+        this.listItems(sub, subLevel, node, looks, margins);
       }
     }
+  }
+
+  /** The top and bottom margin every item of a list gives itself alike; the rest is reported and dropped. */
+  private itemMargin(list: HtmlElement, margins: ReadonlyArray<{ read: ItemMarginRead; el: HtmlElement }>, inBox: boolean): ItemMargin | undefined {
+    for (const { read, el } of margins) {
+      if (read.reason) this.unsupported(`<li> ${read.reason}; dropped`, el);
+      if (read.sideways) this.unsupported('<li> margin-left / margin-right: an item keeps only its top and bottom margin; dropped', el);
+    }
+    const values = new Set(margins.map(({ read }) => (read.margin ? `${read.margin.top} ${read.margin.bottom}` : 'none')));
+    const first = margins[0]?.read.margin;
+    if (values.size !== 1 || !first) {
+      if ([...values].some((v) => v !== '0 0' && v !== 'none')) this.unsupported(`${describe(list)}: its items give themselves different margins — every <li> takes the same top and bottom margin; dropped`, list);
+      return undefined;
+    }
+    if (first.top === 0 && first.bottom === 0) return undefined;
+    if (inBox) {
+      this.unsupported(`${describe(list)} inside <div data-text>: an <li> takes no margin there — style the div; dropped`, list);
+      return undefined;
+    }
+    return { top: first.top, bottom: first.bottom };
   }
 
   /** The marker declarations of a list that takes nothing else; the rest is reported with `elsewhere`. */

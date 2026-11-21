@@ -20,6 +20,7 @@ import { nodeAt, parsePathKey, SLIDE_HEIGHT, SLIDE_WIDTH, type ConnectorNode, ty
 import { connectorGeometry, connectorStroke, parseStroke, SHAPE_POLYGONS, type Point } from '../../render/geometry.ts';
 import { mountSlide, slidePicture, type MountedSlide } from '../capture.ts';
 import {
+  cornerRadii,
   cornerRadius,
   intersect,
   objectContentRect,
@@ -28,6 +29,7 @@ import {
   parseBoxShadow,
   parseColor,
   parseLinearGradient,
+  pictureOutline,
   pptxFont,
   px,
   splitTop,
@@ -39,7 +41,9 @@ import {
 import { setEastAsianFonts, collectFontUses, embedDeckFonts, fontNoticeText, networkFetchers, noteFontEmbedding, type EmbeddedFont } from './font-embedding.ts';
 import { breathe, hasBuilds, type ExportJob, type ExportSlide } from './job.ts';
 import {
+  centerSingleLine,
   collapseGaps,
+  edgeSpaceAsInset,
   writePptx,
   type Arrowhead,
   type Box,
@@ -589,8 +593,10 @@ class SlideReader {
   /**
    * The paragraphs of a list, one per item (bullets hang in the list's left
    * padding); a nested list's items follow their parent item, one level in.
+   * `ownMargins` adds the list's own margins around them, for a list among
+   * other blocks.
    */
-  private listParagraphs(list: HTMLElement, alpha: number, level = 0, outer = 0): { paragraphs: Paragraph[]; elements: HTMLElement[] } {
+  private listParagraphs(list: HTMLElement, alpha: number, level = 0, outer = 0, ownMargins = true): { paragraphs: Paragraph[]; elements: HTMLElement[] } {
     const style = this.style(list);
     const bullet = this.listMarker(list, style);
     const items = Array.from(list.children).filter((child): child is HTMLLIElement => child instanceof HTMLLIElement);
@@ -630,8 +636,8 @@ class SlideReader {
       collapseGaps(paragraphs);
       const head = paragraphs[0];
       const tail = paragraphs[paragraphs.length - 1];
-      if (head) head.spaceBefore = (head.spaceBefore ?? 0) + px(style.marginTop) || undefined;
-      if (tail) tail.spaceAfter = (tail.spaceAfter ?? 0) + px(style.marginBottom) || undefined;
+      if (head && ownMargins) head.spaceBefore = (head.spaceBefore ?? 0) + px(style.marginTop) || undefined;
+      if (tail && ownMargins) tail.spaceAfter = (tail.spaceAfter ?? 0) + px(style.marginBottom) || undefined;
     } else {
       widen(paragraphs[0], 'spaceBefore', px(style.marginTop));
       widen(paragraphs[paragraphs.length - 1], 'spaceAfter', px(style.marginBottom));
@@ -665,11 +671,7 @@ class SlideReader {
       paragraphs.push({ ...this.paragraph(el, alpha), spaceBefore: undefined, spaceAfter: undefined });
       elements.push(el);
     } else if (kind === 'list') {
-      const list = this.listParagraphs(el, alpha);
-      list.paragraphs.forEach((p, i) => {
-        if (i === 0) p.spaceBefore = undefined;
-        if (i === list.paragraphs.length - 1) p.spaceAfter = undefined;
-      });
+      const list = this.listParagraphs(el, alpha, 0, 0, false);
       paragraphs.push(...list.paragraphs);
       elements.push(...list.elements);
       listPadding = px(style.paddingLeft);
@@ -698,7 +700,9 @@ class SlideReader {
     if (align === 'ctr') box.x -= extra / 2;
     else if (align === 'r') box.x -= extra;
     box.w += extra;
-    const body: TextBody = { paragraphs, inset, anchor: anchorOf(style), wrap: !single };
+    let body: TextBody = { paragraphs, inset, anchor: anchorOf(style), wrap: !single };
+    if (kind === 'list') body = edgeSpaceAsInset(body);
+    if (single) body = centerSingleLine(body, frame.h);
     this.elements.push({ type: 'shape', name: this.name('Text'), box, geometry: { preset: 'rect' }, fill: { type: 'none' }, text: body, textBox: true });
   }
 
@@ -772,6 +776,7 @@ class SlideReader {
         const radiusValue = style.borderTopLeftRadius;
         const radius = whole ? cornerRadius(radiusValue, frame.w, frame.h) * frame.sx : 0;
         const oval = whole && /%$/.test(radiusValue.trim()) && parseFloat(radiusValue) >= 50;
+        const outline = whole ? undefined : this.roundedCut(el, style, visible, clip);
         this.elements.push({
           type: 'picture',
           name: this.name(node?.video ? 'Video' : 'Picture'),
@@ -780,6 +785,7 @@ class SlideReader {
           crop: cropped ? crop : undefined,
           radius: !oval && radius > 0.5 ? radius : undefined,
           oval: oval || undefined,
+          outline: outline?.map(([x, y]) => [x * frame.sx, y * frame.sy] as const),
           shadow: whole && plain ? this.shadow(style.boxShadow, frame, alpha) : undefined,
           alpha: alpha < 1 ? alpha : undefined,
           description: node?.alt || undefined,
@@ -797,6 +803,20 @@ class SlideReader {
     } else if (src) {
       this.job.notes.add('picture', this.entry.number);
     }
+  }
+
+  /**
+   * The outline of a picture that leaves a gap inside its rounded frame, cut
+   * where it reaches into the frame's curves (inside the borders).
+   */
+  private roundedCut(el: HTMLElement, style: CSSStyleDeclaration, picture: Rect, clip: Rect): Array<[number, number]> | undefined {
+    const values = [style.borderTopLeftRadius, style.borderTopRightRadius, style.borderBottomRightRadius, style.borderBottomLeftRadius] as const;
+    const outer = cornerRadii(values, el.offsetWidth, el.offsetHeight);
+    if (!outer.some((r) => r.x > 0.5 && r.y > 0.5)) return undefined;
+    const [l, t, r, b] = [style.borderLeftWidth, style.borderTopWidth, style.borderRightWidth, style.borderBottomWidth].map(px) as [number, number, number, number];
+    const sides: Array<[number, number]> = [[l, t], [r, t], [r, b], [l, b]];
+    const inner = outer.map((radius, i) => ({ x: Math.max(0, radius.x - sides[i]![0]), y: Math.max(0, radius.y - sides[i]![1]) }));
+    return pictureOutline(picture, clip, inner);
   }
 
   /** A dark frame with a play mark, for a video without a poster picture. */

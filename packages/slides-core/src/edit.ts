@@ -543,7 +543,7 @@ export function setListKind(node: TextNode | ListNode, kind: 'ul' | 'ol' | null)
       if (i > 0) runs.push({ text: '\n' });
       runs.push(...item.runs);
     });
-    const { items: _items, tag: _tag, start: _start, reversed: _reversed, levels: _levels, ...rest } = node;
+    const { items: _items, tag: _tag, start: _start, reversed: _reversed, levels: _levels, itemMargin: _itemMargin, ...rest } = node;
     return { ...rest, style: withoutMarkers(rest.style), kind: 'text', tag: 'p', runs: normalizeRuns(runs) };
   }
   if (!kind) return node;

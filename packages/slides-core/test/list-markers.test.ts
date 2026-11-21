@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 import {
   compileSlide,
   createSourceDeck,
+  flattenSlide,
   mapRuns,
   patchNodeStyle,
   patchSourceSlide,
@@ -187,7 +188,8 @@ describe('item styles in a source deck', () => {
     assert.ok(result.diagnostics.some((d) => d.level === 'unsupported' && /<li>/.test(d.message) && /color/.test(d.message) && d.line === 3));
     assert.ok(!result.diagnostics.some((d) => /<li>/.test(d.message) && d.line === 2));
     assert.deepEqual(spaced!.style, {});
-    assert.ok(result.diagnostics.some((d) => d.level === 'unsupported' && /margin-top/.test(d.message) && d.line === 4));
+    assert.deepEqual(spaced!.itemMargin, { top: 12, bottom: 0 });
+    assert.ok(!result.diagnostics.some((d) => d.line === 4), JSON.stringify(result.diagnostics));
     const reread = patchSourceSlide(source, result.slide, patchNodeStyle(result.slide, [2], { color: '#336699' }), deck, { id: 'a', index: 0 });
     assert.equal(reread, source.replace('<ul class="c">', '<ul class="c" style="color:#336699">'));
   });
@@ -210,5 +212,127 @@ describe('item styles in a source deck', () => {
     const result = readSourceSlide('<section id="a">\n  <ul class="n"><li>one</li><li>two</li></ul>\n</section>\n', deck, { id: 'a', index: 0, lints: false });
     assert.equal(result.slide.children[0]!.kind, 'box');
     assert.ok(!result.diagnostics.some((d) => /list-style/.test(d.message)), JSON.stringify(result.diagnostics));
+  });
+});
+
+describe('the space between list items', () => {
+  const spaced = (margin: string) => `<li style="margin:${margin}">`;
+
+  it('reads a top and bottom margin every item shares, nested items too, and writes it back the same', () => {
+    const html = [
+      '<section id="a">',
+      '  <ul>',
+      '    <li style="margin:12px 0">one',
+      '      <ul>',
+      '        <li style="margin:12px 0">two</li>',
+      '      </ul>',
+      '    </li>',
+      '    <li style="margin:12px 0">three</li>',
+      '  </ul>',
+      '  <ol>',
+      '    <li style="margin:0 0 8px">a',
+      '      <ol>',
+      '        <li data-indent="1" style="margin:0 0 8px">b</li>',
+      '      </ol>',
+      '    </li>',
+      '  </ol>',
+      '</section>',
+      '',
+    ].join('\n');
+    const once = compileSlide(html, { id: 'a', lints: false });
+    assert.deepEqual(once.diagnostics.filter((d) => d.level !== 'note'), []);
+    const [bullets, numbers] = once.slide.children as ListNode[];
+    assert.deepEqual(bullets!.itemMargin, { top: 12, bottom: 12 });
+    assert.deepEqual(numbers!.itemMargin, { top: 0, bottom: 8 });
+    assert.equal(serializeSlide(once.slide), html);
+  });
+
+  it('drops margins the items do not share, negative margins and other item styles, with a report, and keeps the top and bottom of a sideways one', () => {
+    for (const items of [
+      `${spaced('12px 0')}a</li><li>b</li>`,
+      `${spaced('12px 0')}a</li>${spaced('16px 0')}b</li>`,
+      `${spaced('-4px 0')}a</li>${spaced('-4px 0')}b</li>`,
+      `${spaced('1em 0')}a</li>${spaced('1em 0')}b</li>`,
+      '<li style="color:#aa0000">a</li><li style="color:#aa0000">b</li>',
+    ]) {
+      const result = compile(`<ul>${items}</ul>`);
+      assert.equal((result.slide.children[0] as ListNode).itemMargin, undefined, items);
+      assert.ok(result.diagnostics.some((d) => d.level === 'unsupported' && /<li>/.test(d.message)), items);
+    }
+    const sideways = compile(`<ul>${spaced('12px 8px')}a</li>${spaced('12px 8px')}b</li></ul>`);
+    assert.deepEqual((sideways.slide.children[0] as ListNode).itemMargin, { top: 12, bottom: 12 });
+    assert.ok(sideways.diagnostics.some((d) => d.level === 'unsupported' && /<li>/.test(d.message) && /left|right|sideways/.test(d.message)));
+  });
+
+  it('keeps no item margins on a list inside a text box', () => {
+    const result = compile(`<div data-text><ul>${spaced('12px 0')}a</li>${spaced('12px 0')}b</li></ul></div>`);
+    const box = result.slide.children[0] as TextBoxNode;
+    assert.equal((box.blocks[0] as ListNode).itemMargin, undefined);
+    assert.ok(result.diagnostics.some((d) => d.level === 'unsupported' && /margin/.test(d.message)));
+  });
+
+  it('keeps the space through word edits and a change of list kind, and not on a paragraph', () => {
+    const list = firstList(`<ul>${spaced('12px 0')}a</li>${spaced('12px 0')}b</li></ul>`);
+    const slide = { id: 'a', hidden: false, style: {}, children: [list], notes: '' };
+    assert.deepEqual((setRuns(slide, [0], [{ text: 'B!' }], undefined, 1).children[0] as ListNode).itemMargin, { top: 12, bottom: 12 });
+    assert.deepEqual((setPlainText(list, 'x\ny\nz') as ListNode).itemMargin, { top: 12, bottom: 12 });
+    assert.deepEqual((setListKind(list, 'ol') as ListNode).itemMargin, { top: 12, bottom: 12 });
+    assert.equal('itemMargin' in setListKind(list, null), false);
+  });
+});
+
+describe('the space between list items in a source deck', () => {
+  const css = '.agenda li{margin:12px 0}.mixed li{margin-top:8px}.mixed li.b{margin-top:16px}.neg li{margin-top:-4px}.pct li{margin-bottom:5%}.em{font-size:40px}.em li{margin-bottom:0.5em}.wide li{margin:12px 24px}';
+  const deck = createSourceDeck(css);
+  const opts = { id: 'a', index: 0 };
+  const read = (source: string) => readSourceSlide(source, deck, { ...opts, lints: false });
+
+  it('keeps a positive px top and bottom margin every item shares, and reports the rest', () => {
+    const source = [
+      '<section id="a">',
+      '  <ul class="agenda"><li>one<ul><li>two</li></ul></li><li>three</li></ul>',
+      '  <ul class="mixed"><li>x</li><li class="b">y</li></ul>',
+      '  <ul class="neg"><li>x</li><li>y</li></ul>',
+      '  <ul class="pct"><li>x</li><li>y</li></ul>',
+      '  <ul class="em"><li>x</li><li>y</li></ul>',
+      '  <ul class="wide"><li>x</li><li>y</li></ul>',
+      '</section>',
+      '',
+    ].join('\n');
+    const result = read(source);
+    const [agenda, mixed, neg, pct, em, wide] = result.slide.children as ListNode[];
+    assert.deepEqual(agenda!.itemMargin, { top: 12, bottom: 12 });
+    assert.deepEqual(em!.itemMargin, { top: 0, bottom: 20 });
+    assert.deepEqual(wide!.itemMargin, { top: 12, bottom: 12 });
+    for (const list of [mixed, neg, pct]) assert.equal(list!.itemMargin, undefined);
+    const reported = (line: number) => result.diagnostics.some((d) => d.level === 'unsupported' && /<li>/.test(d.message) && /margin/.test(d.message) && d.line === line);
+    assert.deepEqual([2, 3, 4, 5, 6, 7].map(reported), [false, true, true, true, false, true]);
+  });
+
+  for (const [what, css2, items] of [
+    ['a rule of the sheet', '.agenda li{margin:12px 0}', '<li>one</li><li>two</li>'],
+    ['each item', '', '<li style="margin:12px 0">one</li><li style="margin:12px 0">two</li>'],
+  ] as const) {
+    it(`writes an edited list back with the space when ${what} gives it`, () => {
+      const sheet = createSourceDeck(css2);
+      const source = `<section id="a">\n  <ul class="agenda">${items}</ul>\n  <p>b</p>\n</section>\n`;
+      const saved = readSourceSlide(source, sheet, { ...opts, lints: false }).slide;
+      assert.deepEqual((saved.children[0] as ListNode).itemMargin, { top: 12, bottom: 12 });
+      const reworded = setRuns(saved, [0], [{ text: 'TWO' }], undefined, 1);
+      const out = patchSourceSlide(source, saved, reworded, sheet, opts);
+      assert.ok(out);
+      if (css2) assert.doesNotMatch(out, /<li style/);
+      const back = readSourceSlide(out, sheet, { ...opts, lints: false });
+      assert.deepEqual((back.slide.children[0] as ListNode).itemMargin, { top: 12, bottom: 12 });
+      assert.equal((back.slide.children[0] as ListNode).items[1]!.runs[0]!.text, 'TWO');
+      assert.ok(!back.diagnostics.some((d) => /<li>/.test(d.message)));
+    });
+  }
+
+  it('keeps the space when the slide is saved flat', () => {
+    const saved = read('<section id="a">\n  <ul class="agenda"><li>one</li><li>two</li></ul>\n</section>\n').slide;
+    const flat = compileSlide(flattenSlide(saved), { id: 'a', lints: false });
+    assert.deepEqual(flat.diagnostics.filter((d) => d.level !== 'note'), []);
+    assert.deepEqual((flat.slide.children[0] as ListNode).itemMargin, { top: 12, bottom: 12 });
   });
 });

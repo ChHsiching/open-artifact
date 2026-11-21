@@ -10,7 +10,7 @@
  */
 
 import { escapeAttribute } from '@open-artifact/dc/html';
-import { formatStyle } from './css/properties.ts';
+import { formatItemMargin, formatStyle } from './css/properties.ts';
 import type {
   BuildSpec,
   ConnectorNode,
@@ -242,11 +242,12 @@ class Writer {
    */
   private items(node: ListNode, start: number, level: number, depth: number, gradientText: boolean): number {
     const levelOf = (i: number): number => node.items[i]?.level ?? 0;
+    const spaced = node.itemMargin ? ` style="margin:${formatItemMargin(node.itemMargin)}"` : '';
     let i = start;
     while (i < node.items.length && levelOf(i) >= level) {
       const item = node.items[i]!;
       const own = levelOf(i);
-      const open = `<li${own > level ? attr('data-indent', own - level) : ''}>${serializeRuns(item.runs, gradientText)}`;
+      const open = `<li${own > level ? attr('data-indent', own - level) : ''}${spaced}>${serializeRuns(item.runs, gradientText)}`;
       if (i + 1 < node.items.length && levelOf(i + 1) > own) {
         this.line(depth, open);
         this.line(depth + 1, `<${node.tag}${styleAttr(node.levels?.[own + 1] ?? {})}>`);

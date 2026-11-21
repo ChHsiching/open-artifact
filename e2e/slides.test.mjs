@@ -47,12 +47,12 @@ describe('slides', { skip: skipFor('slides') }, () => {
     }));
     fs.writeFileSync(path.join(project, 'deck.css'), 'section { background: #ffffff; padding: 128px; } h1 { color: #123456; } ' +
       '@property --total { syntax: "<number>"; inherits: false; initial-value: 0; } ' +
-      '@keyframes count { from { --total: 0; } to { --total: 100; } } .metric { animation: count 2s ease-out both; }');
+      '@keyframes count { from { --total: 0; } to { --total: 100; } } .metric { animation: count 2s ease-out both; } .gaps li { margin: 12px 0; }');
     const contents = [
       '<h1>季度回顾</h1><div><p class="fragment">Details after a click</p></div><aside>Opening notes</aside>' +
         '<x-embed style="position:absolute;left:800px;top:600px;width:400px;height:200px"><canvas width="40" height="40"></canvas><script>document.body.style.background="#18aa44";const ctx=document.querySelector("canvas").getContext("2d");ctx.fillStyle="#1122ee";ctx.fillRect(0,0,40,40)</script></x-embed>',
       '<h1>Plan</h1><p class="metric">100%</p><p>Read through the shared sheet.</p>',
-      '<h1>Close</h1>',
+      '<h1>Close</h1><ul class="gaps"><li>First step</li><li>Second step</li></ul>',
     ];
     for (const [i, id] of fileNames.entries()) fs.writeFileSync(path.join(project, 'slides', id + '.html'), `<section id="${id}">${contents[i]}</section>`);
     ({ url: publicUrl } = await run.json(['open', root, '--json']));
@@ -209,6 +209,10 @@ describe('slides', { skip: skipFor('slides') }, () => {
       if (option !== 'slides as pictures') {
         assert.match(first, /<a:t>季度回顾<\/a:t>/);
         assert.match(first, /<a:ea typeface="Microsoft YaHei"/);
+        // 12px between the items, and the 12px above the first and below the last inside the list's box.
+        const list = [1, 2, 3].map(n => xml(file, `ppt/slides/slide${n}.xml`)).join('').match(/<p:sp>(?:(?!<\/p:sp>)[^])*?<a:t>Second step<\/a:t>[^]*?<\/p:sp>/)?.[0] ?? '';
+        assert.match(list, /tIns="76200"[^>]*bIns="76200"/);
+        assert.match(list, /<a:spcAft><a:spcPts val="600"\/><\/a:spcAft>[^]*?<a:t>First step/);
       }
       assert.match(xml(file, 'ppt/notesSlides/notesSlide1.xml'), /Opening notes/);
       const size = /<p:sldSz cx="(\d+)" cy="(\d+)"/.exec(xml(file, 'ppt/presentation.xml'));

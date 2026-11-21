@@ -47,7 +47,7 @@ import {
   type EmbedNode,
 } from '@open-artifact/slides-core';
 import { ImageIcon, Play, Video } from 'lucide-react';
-import { SECTION_LAYOUT, SLIDE_CLASS, toReactStyle, installSlideStyles } from './css.ts';
+import { SECTION_LAYOUT, SLIDE_CLASS, toReactStyle, installSlideStyles, withItemMargin } from './css.ts';
 import { embedDocument, mountEmbedStill } from './embed-still.ts';
 import { useTextFit } from './fit.ts';
 import { guardSmil } from '../services/motion.ts';
@@ -317,7 +317,7 @@ function ListView({ node, path, inBox }: NodeProps<ListNode> & { inBox?: boolean
   const options = useRenderOptions();
   useTextFit(ref, inBox ? 'none' : node.fit, [node]);
   const Tag = node.tag;
-  const style = toReactStyle(node.style, { resolveUrl: options.resolveSrc });
+  const style = withItemMargin(toReactStyle(node.style, { resolveUrl: options.resolveSrc }), node.itemMargin);
   if (node.fit === 'grow') style.flexShrink = 0;
   return (
     <Tag ref={ref as RefObject<never>} {...frameOf(node, path, 'open-artifact-list', options.builds?.get(path[0]!))} style={style} start={node.start} reversed={node.reversed}>
@@ -341,7 +341,7 @@ function listLevel(items: ListNode['items'], start: number, level: number, Tag: 
     if (at > level) {
       const inner = listLevel(items, i, level + 1, Tag, linkable, levels);
       nodes.push(
-        <li key={`skip-${i}`} style={{ listStyleType: 'none' }}>
+        <li key={`skip-${i}`} style={{ listStyleType: 'none', marginTop: 0, marginBottom: 0 }}>
           <Tag style={look}>{inner.nodes}</Tag>
         </li>,
       );

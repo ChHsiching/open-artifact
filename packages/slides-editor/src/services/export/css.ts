@@ -348,6 +348,122 @@ export function objectContentRect(fit: string, position: string, box: Rect, natu
   return { x: box.x + offset(x, box.w - w), y: box.y + offset(y, box.h - h), w, h };
 }
 
+/** A corner's radius along each axis, px. */
+export interface CornerRadius {
+  x: number;
+  y: number;
+}
+
+/**
+ * The radii of the four corners (top left, top right, bottom right, bottom
+ * left) from their computed `border-*-radius` values; percentages are of the
+ * width across and of the height down, and radii that would overlap shrink
+ * together until they fit.
+ */
+export function cornerRadii(values: readonly [string, string, string, string], width: number, height: number): CornerRadius[] {
+  const length = (word: string | undefined, side: number): number => (!word ? 0 : word.endsWith('%') ? (parseFloat(word) / 100) * side : px(word));
+  const radii = values.map((value) => {
+    const [x, y] = (value || '0').trim().split(/\s+/);
+    return { x: Math.max(0, length(x, width)), y: Math.max(0, length(y ?? x, height)) };
+  });
+  const [tl, tr, br, bl] = radii as [CornerRadius, CornerRadius, CornerRadius, CornerRadius];
+  const fit = (side: number, sum: number): number => (sum > side ? side / sum : 1);
+  const scale = Math.min(fit(width, tl.x + tr.x), fit(width, bl.x + br.x), fit(height, tl.y + bl.y), fit(height, tr.y + br.y));
+  return scale < 1 ? radii.map((r) => ({ x: r.x * scale, y: r.y * scale })) : radii;
+}
+
+const ARC_STEPS = 16;
+
+/** The rounded rectangle as a polygon, clockwise from the top-left arc. */
+function roundedPolygon(box: Rect, radii: readonly CornerRadius[]): Array<[number, number]> {
+  const corners: Array<[number, number, number]> = [
+    [box.x, box.y, Math.PI],
+    [box.x + box.w, box.y, Math.PI * 1.5],
+    [box.x + box.w, box.y + box.h, 0],
+    [box.x, box.y + box.h, Math.PI / 2],
+  ];
+  const points: Array<[number, number]> = [];
+  corners.forEach(([x, y, start], i) => {
+    const r = radii[i]!;
+    if (r.x <= 0 || r.y <= 0) {
+      points.push([x, y]);
+      return;
+    }
+    const cx = x === box.x ? x + r.x : x - r.x;
+    const cy = y === box.y ? y + r.y : y - r.y;
+    for (let step = 0; step <= ARC_STEPS; step++) {
+      const angle = start + (step / ARC_STEPS) * (Math.PI / 2);
+      points.push([cx + r.x * Math.cos(angle), cy + r.y * Math.sin(angle)]);
+    }
+  });
+  return points;
+}
+
+/** Whether a point lies within the rounded rectangle. */
+function insideRounded(box: Rect, radii: readonly CornerRadius[], [px, py]: readonly [number, number]): boolean {
+  const e = 1e-6;
+  if (px < box.x - e || py < box.y - e || px > box.x + box.w + e || py > box.y + box.h + e) return false;
+  const [tl, tr, br, bl] = radii as [CornerRadius, CornerRadius, CornerRadius, CornerRadius];
+  const corners: Array<[CornerRadius, number, number]> = [
+    [tl, box.x + tl.x, box.y + tl.y],
+    [tr, box.x + box.w - tr.x, box.y + tr.y],
+    [br, box.x + box.w - br.x, box.y + box.h - br.y],
+    [bl, box.x + bl.x, box.y + box.h - bl.y],
+  ];
+  return corners.every(([r, cx, cy], i) => {
+    if (r.x <= 0 || r.y <= 0) return true;
+    const outward = (i === 0 || i === 3 ? px < cx : px > cx) && (i < 2 ? py < cy : py > cy);
+    return !outward || ((px - cx) / r.x) ** 2 + ((py - cy) / r.y) ** 2 <= 1 + e;
+  });
+}
+
+/** A polygon cut to a rectangle. */
+function clipToRect(polygon: Array<[number, number]>, rect: Rect): Array<[number, number]> {
+  const edges: Array<[(p: [number, number]) => number]> = [
+    [(p) => p[0] - rect.x],
+    [(p) => rect.x + rect.w - p[0]],
+    [(p) => p[1] - rect.y],
+    [(p) => rect.y + rect.h - p[1]],
+  ];
+  let points = polygon;
+  for (const [distance] of edges) {
+    const out: Array<[number, number]> = [];
+    points.forEach((current, i) => {
+      const previous = points[(i + points.length - 1) % points.length]!;
+      const a = distance(previous);
+      const b = distance(current);
+      if (a >= 0 !== b >= 0) {
+        const t = a / (a - b);
+        out.push([previous[0] + (current[0] - previous[0]) * t, previous[1] + (current[1] - previous[1]) * t]);
+      }
+      if (b >= 0) out.push(current);
+    });
+    points = out;
+  }
+  return points;
+}
+
+/**
+ * The outline a picture is cut to inside a rounded frame, in px relative to
+ * the picture, or nothing when every corner of the picture lies within the
+ * frame's curves (a picture letterboxed away from the corners stays square).
+ */
+export function pictureOutline(picture: Rect, frame: Rect, radii: readonly CornerRadius[]): Array<[number, number]> | undefined {
+  const corners: Array<[number, number]> = [
+    [picture.x, picture.y],
+    [picture.x + picture.w, picture.y],
+    [picture.x + picture.w, picture.y + picture.h],
+    [picture.x, picture.y + picture.h],
+  ];
+  if (picture.w <= 0 || picture.h <= 0 || corners.every((corner) => insideRounded(frame, radii, corner))) return undefined;
+  const outline = clipToRect(roundedPolygon(frame, radii), picture);
+  if (outline.length < 3) return undefined;
+  return outline.filter((p, i) => {
+    const next = outline[(i + 1) % outline.length]!;
+    return Math.abs(p[0] - next[0]) > 1e-6 || Math.abs(p[1] - next[1]) > 1e-6;
+  }).map(([x, y]) => [x - picture.x, y - picture.y]);
+}
+
 /** The overlap of two rectangles (zero size when they do not meet). */
 export function intersect(a: Rect, b: Rect): Rect {
   const x = Math.max(a.x, b.x);

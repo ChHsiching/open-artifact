@@ -47,7 +47,9 @@ like. Write normal CSS. How it is read:
   list). Nested lists nest (`format.md`, Text), and each list, nested ones too, keeps its
   `list-style-type` and `list-style-position`. Rules on `<li>` are not read, except type styles (face,
   size, weight, line height, …) and colour that every item of the list shares, nested items included:
-  those move onto the list.
+  those move onto the list. A top and bottom `margin` in px that every item has alike (`li { margin:
+  12px 0 }`) stays as the space around each item; one that differs between items, is negative or is
+  not in px is dropped with a warning.
 - **Skipping.** `hidden` or `data-deck-skip` on the `<section>` skips the slide when presenting and
   downloading; `data-deck-skip="false"` does not.
 

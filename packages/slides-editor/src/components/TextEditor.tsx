@@ -21,7 +21,7 @@ import {
   type TextBoxNode,
   type TextNode,
 } from '@open-artifact/slides-core';
-import { toReactStyle } from '../render/css.ts';
+import { toReactStyle, withItemMargin } from '../render/css.ts';
 import { useTextFit } from '../render/fit.ts';
 import { RunsView, useRenderOptions } from '../render/SlideView.tsx';
 import { blocksToHtml, indentItems, itemsToHtml, readBlocks, readItems, readRuns, runsToHtml } from '../lib/richtext.ts';
@@ -324,7 +324,7 @@ function ListEditor(props: TextEditorProps & { node: ListNode }): ReactNode {
   useEditable(ref, props, () => itemsToHtml(node), { lineBreakOnEnter: false, placeholder: false });
   useTextFit(ref, node.fit, [node]);
   const Tag = node.tag;
-  return <Tag ref={ref as RefObject<never>} className="open-artifact-list" data-open-artifact-path={pathKey(path)} data-open-artifact-kind="list" style={toReactStyle(node.style, { resolveUrl: options.resolveSrc })} start={node.start} reversed={node.reversed} {...editableProps} />;
+  return <Tag ref={ref as RefObject<never>} className="open-artifact-list" data-open-artifact-path={pathKey(path)} data-open-artifact-kind="list" style={withItemMargin(toReactStyle(node.style, { resolveUrl: options.resolveSrc }), node.itemMargin)} start={node.start} reversed={node.reversed} {...editableProps} />;
 }
 
 function TextBoxEditor(props: TextEditorProps & { node: TextBoxNode }): ReactNode {

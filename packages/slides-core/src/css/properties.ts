@@ -6,7 +6,7 @@
  * re-saved slide byte-stable.
  */
 
-import type { ShapeKind } from '../model.ts';
+import type { ItemMargin, ShapeKind } from '../model.ts';
 import { formatNumber } from './color.ts';
 import {
   formatBackground,
@@ -798,6 +798,64 @@ function parseMargin(value: string): DeclResult {
   const [t, r = t, b = t, l = r] = out as [string, string?, string?, string?];
   const text = t === b && r === l ? (t === r ? t : `${t} ${r}`) : r === l ? `${t} ${r} ${b}` : `${t} ${r} ${b} ${l}`;
   return done('margin', text, warning ? { warning } : {});
+}
+
+/** What one `<li>`'s margin declarations come to. */
+export interface ItemMarginRead {
+  /** Its top and bottom margin, when both are 0 or more px. */
+  margin?: ItemMargin;
+  /** Why the top and bottom margin can't be kept. */
+  reason?: string;
+  /** It gives itself a left or right margin, which an item can't keep. */
+  sideways: boolean;
+}
+
+const ITEM_MARGIN_SIDES: Record<string, readonly number[]> = {
+  'margin-top': [0],
+  'margin-right': [1],
+  'margin-bottom': [2],
+  'margin-left': [3],
+  'margin-block-start': [0],
+  'margin-block-end': [2],
+  'margin-inline-start': [3],
+  'margin-inline-end': [1],
+};
+
+/** True for the name of a margin declaration, shorthand or side. */
+export function isMarginProperty(name: string): boolean {
+  return /^margin(?:-(?:top|right|bottom|left|block|inline|block-start|block-end|inline-start|inline-end))?$/.test(name);
+}
+
+/** Reads one `<li>`'s margin declarations, in the order they apply, as its space above and below. */
+export function readItemMargin(declarations: Iterable<readonly [string, string]>): ItemMarginRead {
+  const sides: [string, string, string, string] = ['0', '0', '0', '0'];
+  for (const [rawName, rawValue] of declarations) {
+    const name = rawName.trim().toLowerCase();
+    if (!isMarginProperty(name)) continue;
+    const parts = splitTopLevel(rawValue.trim().toLowerCase(), 'space');
+    if (name === 'margin') {
+      const [t = '0', r = t, b = t, l = r] = parts;
+      sides.splice(0, 4, t, r, b, l);
+    } else if (name === 'margin-block' || name === 'margin-inline') {
+      const [a = '0', b = a] = parts;
+      if (name === 'margin-block') [sides[0], sides[2]] = [a, b];
+      else [sides[3], sides[1]] = [a, b];
+    } else for (const side of ITEM_MARGIN_SIDES[name] ?? []) sides[side] = parts[0] ?? '0';
+  }
+  const zero = (value: string): boolean => {
+    const len = parseLength(value);
+    return len.ok && len.value === 0;
+  };
+  const sideways = !zero(sides[1]) || !zero(sides[3]);
+  const top = parseLength(sides[0], { min: 0, max: 1920 });
+  const bottom = parseLength(sides[2], { min: 0, max: 1920 });
+  if (!top.ok || !bottom.ok) return { reason: `margin ${sides[0]} ${sides[2]} — an item takes a top and bottom margin of 0 or more px`, sideways };
+  return { margin: { top: top.value, bottom: bottom.value }, sideways };
+}
+
+/** The `margin` value of an {@link ItemMargin}: `12px 0`, or `0 0 8px` when top and bottom differ. */
+export function formatItemMargin(margin: ItemMargin): string {
+  return margin.top === margin.bottom ? `${px(margin.top)} 0` : `${px(margin.top)} 0 ${px(margin.bottom)}`;
 }
 
 function mapLen(result: ParseResult<number>): ParseResult {

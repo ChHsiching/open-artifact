@@ -135,6 +135,45 @@ export interface TextBody {
   wrap?: boolean;
 }
 
+/**
+ * The body with the space above its first paragraph and below its last moved
+ * into the insets: space that sits inside the box, which PowerPoint would not
+ * keep at the edges of a text box.
+ */
+export function edgeSpaceAsInset(body: TextBody): TextBody {
+  const paragraphs = body.paragraphs.map((p) => ({ ...p }));
+  const first = paragraphs[0];
+  const last = paragraphs[paragraphs.length - 1];
+  const t = first?.spaceBefore ?? 0;
+  const b = last?.spaceAfter ?? 0;
+  if (first) first.spaceBefore = undefined;
+  if (last) last.spaceAfter = undefined;
+  return { ...body, paragraphs, inset: { ...body.inset, t: body.inset.t + t, b: body.inset.b + b } };
+}
+
+/** PowerPoint's single line spacing, as a multiple of the font size. */
+export const SINGLE_SPACING = 1.15;
+
+/**
+ * A text box of one line taller than single spacing, with that line set at
+ * single spacing and the rest of its height split evenly above and below.
+ * PowerPoint puts a tall line's extra height above the text where CSS splits
+ * it around it; the box must have room for the line and its insets.
+ */
+export function centerSingleLine(body: TextBody, height: number): TextBody {
+  const [only] = body.paragraphs;
+  if (!only || body.paragraphs.length !== 1 || !only.lineHeight || only.runs.some((run) => run.lineBreak)) return body;
+  const size = Math.max(only.endSize, ...only.runs.map((run) => run.size));
+  const single = Math.round(size * SINGLE_SPACING * 100) / 100;
+  const extra = only.lineHeight - single;
+  if (extra <= 0.5 || body.inset.t + body.inset.b + only.lineHeight > height + 1) return body;
+  return {
+    ...body,
+    paragraphs: [{ ...only, lineHeight: single }],
+    inset: { ...body.inset, t: body.inset.t + extra / 2, b: body.inset.b + extra / 2 },
+  };
+}
+
 export type Geometry =
   | { preset: 'rect' | 'ellipse' }
   | { preset: 'roundRect'; /** Corner radius in px. */ radius: number }
@@ -168,6 +207,8 @@ export interface PictureElement {
   radius?: number;
   /** Cut to an ellipse (a 50% corner radius). */
   oval?: boolean;
+  /** Cut to this closed outline instead, points in px relative to the box. */
+  outline?: readonly (readonly [number, number])[];
   line?: Line;
   shadow?: Shadow;
   /** Opacity 0–1. */
@@ -461,7 +502,7 @@ function pictureXml(picture: PictureElement, writer: SlideWriter): string {
   const src = crop
     ? `<a:srcRect l="${Math.round(crop.l * 100000)}" t="${Math.round(crop.t * 100000)}" r="${Math.round(crop.r * 100000)}" b="${Math.round(crop.b * 100000)}"/>`
     : '';
-  const geometry: Geometry = picture.oval ? { preset: 'ellipse' } : picture.radius && picture.radius > 0 ? { preset: 'roundRect', radius: picture.radius } : { preset: 'rect' };
+  const geometry: Geometry = picture.outline ? { path: picture.outline, closed: true } : picture.oval ? { preset: 'ellipse' } : picture.radius && picture.radius > 0 ? { preset: 'roundRect', radius: picture.radius } : { preset: 'rect' };
   return (
     `<p:pic><p:nvPicPr>${nvProps(id, picture.name, picture.description)}<p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr><p:nvPr/></p:nvPicPr>` +
     `<p:blipFill><a:blip r:embed="${rel}">${alpha}</a:blip>${src}<a:stretch><a:fillRect/></a:stretch></p:blipFill>` +

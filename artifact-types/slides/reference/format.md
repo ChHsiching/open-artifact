@@ -55,7 +55,7 @@ justify-self: start | center | end | stretch | auto · grid child
 flex: none | auto | N [N] [LEN | 0% | auto] · flow child (flex:1 = an equal share; an empty div + flex:1 = a spacer)
 flex-grow flex-shrink: N · flow child
 flex-basis: LEN | auto · flow child
-margin margin-top -right -bottom -left: (LEN | auto) ×1–4, −1920–1920 (clamped) · flow child, not the section, tr or cells (on a pinned element: dropped — place it with its offsets)
+margin margin-top -right -bottom -left: (LEN | auto) ×1–4, −1920–1920 (clamped) · flow child, not the section, tr or cells (on a pinned element: dropped — place it with its offsets; on an `<li>`: see Text)
 grid-template-columns grid-template-rows: (LEN | Nfr | auto | repeat(INT, …))+, ≤24 tracks — no minmax, auto-fill, names, areas · grid box
 grid-column grid-row: span INT (cells fill in source order) · grid child
 padding: LEN ×1–4, 0–1920 (no %) · box, text, table; td/th: 0–64, one value per table
@@ -138,7 +138,9 @@ hold until set on them).
   1.1/1.15/1.2/1.4; text with no `font-family` anywhere uses the system UI font). Set `font-size`
   yourself: 24px and up everywhere, labels, cells and footers too (not checked). `<h4>`–`<h6>` are
   errors: use `<h3>` or `<p>`.
-- `<ul>`/`<ol>` of plain `<li>`; style the list, not the items. An item may end with a `<ul>` or `<ol>`
+- `<ul>`/`<ol>` of plain `<li>`; style the list, not the items. The one exception is space between
+  items: `style="margin:12px 0"` (px, 0 or more, top and bottom only), the same on every `<li>` of the
+  list, nested ones too, and not in a list inside `<div data-text>`. An item may end with a `<ul>` or `<ol>`
   of sub-items one level further in, up to 9 levels; markers change by level (bullets: disc, circle,
   square; numbers: 1, a, i) and each level indents 1.25em. `list-style-type` and `list-style-position`
   on the list pick its markers; a nested `<ul>`/`<ol>` takes only those two, and they hold for its whole

@@ -37,11 +37,12 @@ import {
 import { compileSlide, misreadComments, type CompileResult, type Diagnostic } from './compile.ts';
 import { formatNumber } from './css/color.ts';
 import { compareSpecificity, matchesSelector, type MatchElement } from './css/selectors.ts';
+import { formatItemMargin, isMarginProperty, readItemMargin } from './css/properties.ts';
 import { parseDeclarationBlock, parseStylesheet, type SheetDeclaration, type Stylesheet } from './css/sheet.ts';
 import { parseBackground, splitTopLevel } from './css/values.ts';
 import type { DeckFormat, DeckIndex } from './deck.ts';
 import { DECK_SIZE_WIDTHS, SLIDE_HEIGHT, SOURCE_MARK, type DeckSize } from './limits.ts';
-import type { Slide, SlideMotion, SlideNode } from './model.ts';
+import type { ItemMargin, Slide, SlideMotion, SlideNode } from './model.ts';
 import { serializeNode, serializeSlide } from './serialize.ts';
 
 /* -------------------------------------------------------------------------- */
@@ -952,8 +953,8 @@ class SourceReader {
     return text;
   }
 
-  /** The font and colour declarations every item of a list (nested ones too) gives itself alike. */
-  private sharedItemStyle(el: HtmlElement, element: SourceElement): Array<[string, string]> {
+  /** Every item of a list, nested ones too, with its cascade worked out. */
+  private itemsOf(el: HtmlElement, element: SourceElement): SourceElement[] {
     const items: SourceElement[] = [];
     const walk = (list: HtmlElement, parent: SourceElement): void => {
       for (const child of list.children) {
@@ -972,6 +973,11 @@ class SourceReader {
       }
     };
     walk(el, element);
+    return items;
+  }
+
+  /** The font and colour declarations every item of a list (nested ones too) gives itself alike. */
+  private sharedItemStyle(items: readonly SourceElement[]): Array<[string, string]> {
     const shared: Array<[string, string]> = [];
     for (const name of ITEM_TEXT) {
       const values = new Set(items.map((item) => (item.own.has(name) ? this.resolve(name, item.own.get(name)!, item) : undefined)));
@@ -994,12 +1000,32 @@ class SourceReader {
     return undefined;
   }
 
+  /** One item's margin declarations, resolved, in the order they apply. */
+  private itemMarginOf(item: SourceElement): ReturnType<typeof readItemMargin> {
+    const declarations: Array<[string, string]> = [];
+    for (const [name, value] of item.own) {
+      if (!isMarginProperty(name)) continue;
+      declarations.push([name, this.resolve(name, value, item) ?? '0']);
+    }
+    return readItemMargin(declarations);
+  }
+
+  /** The positive px top and bottom margin every item of a list (nested ones too) gives itself alike. */
+  private sharedItemMargin(items: readonly SourceElement[]): ItemMargin | undefined {
+    const reads = items.map((item) => this.itemMarginOf(item));
+    const first = reads[0]?.margin;
+    if (!first || (first.top === 0 && first.bottom === 0)) return undefined;
+    return reads.every((read) => read.margin?.top === first.top && read.margin.bottom === first.bottom) ? first : undefined;
+  }
+
   /** A list, its items and the lists nested in them. */
-  private list(el: HtmlElement, element: SourceElement, style: Array<[string, string]>, extra: Array<[string, string | null]>, top: boolean, lifted: ReadonlySet<string> = new Set()): void {
+  private list(el: HtmlElement, element: SourceElement, style: Array<[string, string]>, extra: Array<[string, string | null]>, top: boolean, lifted: ReadonlySet<string> = new Set(), spacing?: ItemMargin): void {
     if (top) {
-      const shared = this.sharedItemStyle(el, element);
+      const items = this.itemsOf(el, element);
+      const shared = this.sharedItemStyle(items);
       lifted = new Set(shared.map(([name]) => name));
       style = [...style.filter(([name]) => !lifted.has(name)), ...shared];
+      spacing = this.sharedItemMargin(items);
     }
     this.write(this.startTag(el.tag, el, style, extra, top));
     for (const child of el.children) {
@@ -1015,17 +1041,20 @@ class SourceReader {
       const item = new SourceElement(child, 'li', element);
       item.siblings = [item];
       this.computeElement(item, attributeValue(child, 'style'));
-      const dropped = [...item.own.keys()].filter((n) => !QUIET_DROP.test(n) && !LIST_MARKER.test(n) && !lifted.has(n));
-      if (dropped.length) this.report('unsupported', `<li> ${dropped.join(', ')}: a list line takes no style of its own; style the <${el.tag}>`, child.start);
+      const margin = this.itemMarginOf(item);
+      const quietMargin = spacing !== undefined || (margin.margin?.top === 0 && margin.margin.bottom === 0 && !margin.sideways);
+      const dropped = [...item.own.keys()].filter((n) => !QUIET_DROP.test(n) && !LIST_MARKER.test(n) && !lifted.has(n) && !(isMarginProperty(n) && quietMargin));
+      if (dropped.length) this.report('unsupported', `<li> ${dropped.join(', ')}: a list line takes no style of its own, only a top and bottom margin in px that every item shares; style the <${el.tag}>`, child.start);
+      if (spacing && margin.sideways) this.report('unsupported', '<li> margin-left / margin-right: an item keeps only its top and bottom margin', child.start);
       this.pad(child.start);
       const indent = attributeValue(child, 'data-indent');
-      this.write(`<li${indent !== undefined ? ` data-indent="${escapeAttribute(indent)}"` : ''}>`);
+      this.write(`<li${indent !== undefined ? ` data-indent="${escapeAttribute(indent)}"` : ''}${spacing ? ` style="margin:${formatItemMargin(spacing)}"` : ''}>`);
       for (const node of child.children) {
         if (node.type === 'element' && (node.tag === 'ul' || node.tag === 'ol')) {
           const nested = new SourceElement(node, node.tag, item);
           nested.siblings = [nested];
           this.computeElement(nested, attributeValue(node, 'style'));
-          this.list(node, nested, this.flatStyle(nested).filter(([name]) => LIST_MARKER.test(name)), [], false, lifted);
+          this.list(node, nested, this.flatStyle(nested).filter(([name]) => LIST_MARKER.test(name)), [], false, lifted, spacing);
         } else this.inlineNode(node, item);
       }
       this.write('</li>');
@@ -1284,6 +1313,16 @@ function flatInner(node: SlideNode): HtmlNode[] {
   return el?.children ?? [];
 }
 
+/** List items written plain, for the sheet to give their margin back. */
+function withoutItemStyles(nodes: HtmlNode[]): HtmlNode[] {
+  for (const node of nodes) {
+    if (node.type !== 'element') continue;
+    if (node.tag === 'li') node.attrs = node.attrs.filter((a) => a.name.toLowerCase() !== 'style');
+    withoutItemStyles(node.children);
+  }
+  return nodes;
+}
+
 /** A node's flat element, with the classes of the element it replaces. */
 function flatElement(node: SlideNode, classOf?: HtmlElement): HtmlElement | undefined {
   const el = createdNodes(serializeNode({ ...node, origin: undefined } as SlideNode)).find((n): n is HtmlElement => n.type === 'element');
@@ -1371,7 +1410,6 @@ class Patcher {
       return true;
     }
     this.style(el, saved.style, edited.style);
-    if (this.items && edited.kind === 'list') this.itemStyle(el, saved.style, edited.style);
     const before = flatAttributes(saved);
     const after = flatAttributes(edited);
     for (const name of new Set([...before.keys(), ...after.keys()])) {
@@ -1388,7 +1426,8 @@ class Patcher {
       case 'embed': {
         const a = JSON.stringify(contentOf(saved));
         const b = JSON.stringify(contentOf(edited));
-        if (a !== b) this.replaceChildren(el, edited.kind === 'embed' ? createdNodes(edited.html) : flatInner(edited));
+        if (a !== b) this.replaceChildren(el, edited.kind === 'embed' ? createdNodes(edited.html) : edited.kind === 'list' && !this.items ? withoutItemStyles(flatInner(edited)) : flatInner(edited));
+        if (this.items && edited.kind === 'list') this.itemStyle(el, saved.style, edited.style);
         return true;
       }
       default:
@@ -1477,7 +1516,7 @@ function contentOf(node: SlideNode): unknown {
     case 'text':
       return node.runs;
     case 'list':
-      return { items: node.items, levels: node.levels };
+      return { items: node.items, levels: node.levels, itemMargin: node.itemMargin };
     case 'textbox':
       return node.blocks.map(stripNode);
     case 'table':
