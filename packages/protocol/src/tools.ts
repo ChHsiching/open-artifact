@@ -85,8 +85,8 @@ export interface ArtifactArgs {
   if_match?: Record<string, string | null>;
   /** publish with url: run the type's `check` action after writing. */
   check?: boolean;
-  /** publish without url: open the page after the first write (`after_first_write`) or right away (`now`). */
-  open?: 'after_first_write' | 'now';
+  /** publish without url: open the page after the first write (`after_first_write`, the default), right away (`now`) or not (`never`). */
+  open?: 'after_first_write' | 'now' | 'never';
   /** quickstart: list existing artifacts the recommended type can use (default true). */
   related?: boolean;
   name?: string;
@@ -242,8 +242,8 @@ const ARTIFACT_SCHEMA: ToolInputSchema = {
     check: { type: 'boolean', description: "publish with url: run the type's check action after writing; its result comes back as check." },
     open: {
       type: 'string',
-      enum: ['after_first_write', 'now'],
-      description: "publish without url: after_first_write opens the page in your app once your first write lands; now opens it at once. Where your app cannot show pages by itself the result says so: open view_url in your app's built-in browser, if you have one.",
+      enum: ['after_first_write', 'now', 'never'],
+      description: "publish without url: after_first_write (the default) opens the page in your app once your first write lands; now opens it at once; never leaves it closed. Where your app cannot show pages by itself the result says so: open view_url in your app's built-in browser, if you have one.",
     },
     related: { type: 'boolean', description: 'quickstart: list existing artifacts the recommended type can build on, such as design systems (default true).' },
     path: { type: 'string', description: 'read: one file or folder under the root (omitted: the record and the file list).' },

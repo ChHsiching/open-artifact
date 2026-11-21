@@ -124,8 +124,8 @@ that alone is no reason to refuse an artifact they asked for.
    the page as the person will, when you can look at images, `Artifact {action: "call", url, name: "snapshot"}`
    returns a screenshot's path. Never run the type's own `scripts/cli.mjs open | serve | share | wait`: the daemon
    serves the page.
-5. **Show it.** If the create result says `open: "after_first_write"`, the page opens by itself in your app once you
-   write. Otherwise, once the content is written (never while it is empty), open `view_url` in your app's built-in
+5. **Show it.** If the create result says `open: "after_first_write"` (the default when your app shows pages), the
+   page opens by itself in your app once you write. Otherwise, once the content is written (never while it is empty), open `view_url` in your app's built-in
    browser (its browser panel or tab) if you have one: that is where the person is. Only when you have none, call
    `Artifact {action: "open", url}` once, which opens it in the computer's browser (with the command line,
    `node <skill>/scripts/open-artifact.mjs open <url> --browser`). The page refreshes by itself after later changes.
