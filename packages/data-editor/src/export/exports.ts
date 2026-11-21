@@ -23,7 +23,8 @@ import {
   type DashboardExportAvailability,
   type DashboardExportFormat,
 } from './formats.ts';
-import { installDashboardPrint, printDashboard } from './print.ts';
+import { canAskAgent, sendPageRequest } from '../drafts/request.ts';
+import { installDashboardPrint, hasPagePrintLayout, printDashboard } from './print.ts';
 import { buildStaticHtmlCopy, canCopyStaticPage } from './static-html.ts';
 
 const NOT_SETTLED_REASON = 'Available once the page has finished loading.';
@@ -194,16 +195,43 @@ export function startDashboardExports(): () => void {
     schedule();
   };
   watch();
+  let hintedPrintLayout = false;
+  const onAfterPrint = (): void => {
+    if (hintedPrintLayout || !canAskAgent()) return;
+    const files = pageExportSnapshot()?.snapshot.files;
+    if (!files || files.length === 0 || hasPagePrintLayout(files)) return;
+    hintedPrintLayout = true;
+    toast.add({
+      title: 'Some parts might not print.',
+      actionProps: {
+        children: 'Add a print layout',
+        onClick: () => {
+          void sendPageRequest({
+            title: 'Add a print layout',
+            request: 'Add a print layout to this dashboard so every tab, chapter and scrolled section prints cleanly (see "Printing" in reference/design-defaults.md).',
+            selection: { label: 'Print layout', chip: { kind: 'print-layout' }, text: '' },
+          });
+        },
+      },
+    });
+  };
+  if (typeof window !== 'undefined') window.addEventListener('afterprint', onAfterPrint);
+
   const stops = [
     usePageRuntime.subscribe((state, previous) => {
-      if (state.page !== previous.page) watch();
-      else schedule();
+      if (state.page !== previous.page) {
+        hintedPrintLayout = false;
+        watch();
+      } else schedule();
     }),
     useShown.subscribe(schedule),
     onShellCommand((command) => {
       if (command.cmd === 'export_format') void runShellExport(command.request, command.format, command.variant);
     }),
     installDashboardPrint(),
+    () => {
+      if (typeof window !== 'undefined') window.removeEventListener('afterprint', onAfterPrint);
+    },
   ];
   return () => {
     stopPage();

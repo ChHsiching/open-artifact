@@ -37,3 +37,11 @@ export function linkedSlide(link: SlideLink, order: readonly string[]): string |
   if ('id' in link.target) return order.includes(link.target.id) ? link.target.id : null;
   return order[link.target.page - 1] ?? null;
 }
+
+/** True when a keyboard event triggers Copy link to slide (⌘⌥L on macOS, Ctrl+Alt+L elsewhere, never Ctrl+⌘+⌥+L). */
+export function isCopySlideLinkKey(event: { altKey: boolean; metaKey: boolean; ctrlKey: boolean; code: string; key: string }): boolean {
+  if (!event.altKey) return false;
+  if (event.metaKey && event.ctrlKey) return false;
+  if (!event.metaKey && !event.ctrlKey) return false;
+  return event.code === 'KeyL' || event.key.toLowerCase() === 'l';
+}

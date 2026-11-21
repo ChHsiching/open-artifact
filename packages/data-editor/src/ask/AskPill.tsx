@@ -15,7 +15,7 @@ import { ASK_AGENT_LABEL } from '../drafts/words.ts';
 import { intersectsVertically, type Box } from '../edit/geometry.ts';
 import { EDIT_PILL_LABEL, EDIT_PILL_TITLE, SELECTION_ACTIONS, SOURCE_INSPECT_LABEL } from '../edit/labels.ts';
 import { hasOpenOverlay } from '../edit/marks.tsx';
-import { getToolbarKeyTarget } from './keys.ts';
+import { getToolbarKeyTarget } from '@open-artifact/editor-kit';
 import { findWordsRange, getScrollContainer, getViewportRoom } from '../edit/pieces.ts';
 import {
   describeElementPoint,

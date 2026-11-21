@@ -245,6 +245,7 @@ const drawDropdown = (node: PMNode) => {
 const drawPending = (node: PMNode) => {
   const dom = document.createElement('div');
   dom.className = 'doc-pending';
+  dom.dir = 'auto';
   dom.textContent = (node.attrs.intent as string) || 'Writing…';
   if (node.attrs.bid) dom.dataset.bid = node.attrs.bid;
   return dom;

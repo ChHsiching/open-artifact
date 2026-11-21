@@ -957,9 +957,10 @@ describe(`${TYPE} in Chrome: Ask Agent as a comment on an agent chip`, { skip: s
     }
   });
 
-  it('offers no Ask Agent without an agent waiting', T, async () => {
+  it('offers no Ask Agent without an agent waiting, then shows it without a reload once an agent starts waiting', T, async () => {
     const quiet = await make('quiet', '# Quiet\n\nNobody is listening here.\n');
     const { browser, page } = await opened(quiet.root, 'Nobody is listening');
+    let w;
     try {
       await new Promise(resolve => setTimeout(resolve, 2000));
       await atMenu(page, 'Nobody', false);
@@ -967,9 +968,20 @@ describe(`${TYPE} in Chrome: Ask Agent as a comment on an agent chip`, { skip: s
       assert.ok(shown.includes('Agent'), `no plain Agent mention: ${shown}`);
       assert.ok(!shown.some(label => label.startsWith('Ask Agent')), `Ask Agent offered with no agent: ${shown}`);
       assert.ok(!(await page.waitFor(`document.querySelector('[data-testid="ask-dock"]')`, 500)));
+      await page.press('Escape');
+      await page.press('Backspace');
+      await page.press('Backspace');
+
+      w = await startWait(ctx, quiet.root, 60);
+      await atMenu(page, 'Nobody', true);
+      await page.press('Escape');
       assert.deepEqual(page.problems, []);
     } finally {
       await browser.close();
+      if (w) {
+        w.child.kill();
+        await w.exited;
+      }
     }
   });
 

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { linkedSlide, onlySuffix, readSlideLink } from '../src/lib/slide-link.ts';
+import { isCopySlideLinkKey, linkedSlide, onlySuffix, readSlideLink } from '../src/lib/slide-link.ts';
 
 describe('slide links', () => {
   const order = ['intro', '7', 'end'];
@@ -29,5 +29,12 @@ describe('slide links', () => {
     assert.equal(onlySuffix(), '.only');
     assert.equal(onlySuffix({ position: 2, count: 5 }), '.only.2.5');
     assert.deepEqual(readSlideLink('#slide-~7' + onlySuffix({ position: 2, count: 5 })), { target: { id: '7' }, only: true });
+  });
+
+  it('matches the copy-slide-link chord while ignoring Ctrl+Cmd+Alt+L', () => {
+    assert.equal(isCopySlideLinkKey({ altKey: true, metaKey: true, ctrlKey: false, code: 'KeyL', key: '¬' }), true);
+    assert.equal(isCopySlideLinkKey({ altKey: true, metaKey: false, ctrlKey: true, code: 'KeyL', key: 'l' }), true);
+    assert.equal(isCopySlideLinkKey({ altKey: true, metaKey: true, ctrlKey: true, code: 'KeyL', key: 'l' }), false);
+    assert.equal(isCopySlideLinkKey({ altKey: false, metaKey: true, ctrlKey: false, code: 'KeyL', key: 'l' }), false);
   });
 });

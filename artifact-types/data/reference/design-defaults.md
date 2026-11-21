@@ -8,6 +8,7 @@ These cover what the person didn't specify. Most follow from two facts: readers 
 - A caveat that changes how a figure reads stands beside it or in the takeaway. If you left a source out, name it on the page and say why. Show a lift with its interval, and whether that crosses zero. Draw lines point to point, since a curve suggests values the data lacks.
 - `<select class="dash-select">` has the dashboard's look. Its arrow is a background image in the right padding, so style it with `background-color`, not `background` or `padding`.
 - Each chart's code measures its margins from the widest tick and end label as drawn (`getComputedTextLength()`, which is 0 until the chart is in the page) and keeps labels from meeting (fewer ticks, end labels moved apart), since the data sets a label's width and place.
+- Avoid relying on HTML `title` attributes or SVG `<title>` elements as tooltips: they appear sluggishly and do not work on touch devices. Print key values directly so phones and screenshots still show them.
 - A table wider than the pane can scroll sideways in a wrapper with `overflow-x: auto`, or the whole page slides.
 - A screen reader gets nothing from a drawn chart, so its `svg` has `role="img"` and an `aria-label` that says what it shows.
 - Numbers and dates are formatted. A date-only string parses as UTC midnight. Without `d3.utcFormat`, a reader west of UTC sees the day before.
@@ -15,7 +16,7 @@ These cover what the person didn't specify. Most follow from two facts: readers 
 Shapes to mix or ignore. Where one contradicts a suggestion above, the shape wins:
 
 - **Visual analysis** — one finding, read top to bottom: a sentence around one number, then charts, each under a heading that says what it shows.
-- **Scroll story** — also scrollyteller, story or narrative: a finding told as the reader scrolls. Short chapters stand beside one chart that stays in view and changes with them. An `IntersectionObserver` needs `root: document` here, or its `rootMargin` is ignored.
+- **Scroll story** — also scrollyteller, story or narrative: a finding told as the reader scrolls. Short chapters stand beside one chart that stays in view and changes with them. An `IntersectionObserver` needs `root: document` here, or its `rootMargin` is ignored. Include print styles for its chapters (see "Printing").
 - **Letter** — an update written to its readers: each number inside its sentence, `[brackets]` for what only the person can say, and no tiles, headline figure or filters. Its column is `data-read`, with the `lang` of its words.
 - **Tool** — a page people work in rather than read: a tracker, a checklist, a calculator. Its controls and their entries lead, with any total they make next to them. Before the first entry it says how to make one. Rows go in the store only when a person enters them, never on their behalf.
 
@@ -41,11 +42,19 @@ The type shows readers sign-in and load errors and how to fix them, so a connect
 
 A chart's box with no `min-height` is at most a line tall until its data arrives, so the page jumps as each one does. Where the status is `"error"`, a quiet "Failed to load" drawn in the chart's place tells the reader which chart failed. `"connect"` is no failure: the dashboard offers the fix itself.
 
+### Tables
+
+Mark a data table once at the top instead of on every cell: put `data-source` and `data-row-key="<column>"` (or `"a,b"` for composite keys) on `<table>`, plus `data-field` on each column header (`<th>`). A header column populated by a calculation names that calculation in its own `data-source` and uses matching row keys. Cells are matched using the key column's displayed text or `data-key` on `<tr>` (percent-encoded and comma-joined for composite keys); mismatched columns or ambiguous keys stay unmarked without error.
+
 ### Handing over
 
-This part isn't a suggestion, since the person learns it only from you. Tell them, in a line each, what they can do next: ask you for any chart or control by name, such as a flow diagram, a date filter or a click that filters the whole page, and fields whose entries the dashboard keeps; download a source's rows as CSV from Sources; and, as an editor, edit a live query's request in Sources, test it, save it and restore one they saved earlier, or edit or replace an attached file there. Then what to know about their data: each live query runs when the dashboard is opened, refreshed or filtered, unless a recent enough answer stands, in their own page on their computer, with the access they gave that connector in their open-artifact connectors; people they share it with see attached files but not live queries' numbers. Everyone who can open the dashboard can read its attached files, whatever their own access.
+This part isn't a suggestion, since the person learns it only from you. Tell them, in a line each, what they can do next: ask you for any chart or control by name, such as a flow diagram, a date filter or a click that filters the whole page, and fields whose entries the dashboard keeps; download a source's rows as CSV from Sources; and, as an editor, edit a live query's request in Sources, test it, save it and restore one they saved earlier, or edit or replace an attached file there. Then what to know about their data: each live query runs when the dashboard is opened, refreshed or filtered, unless a recent enough answer stands, in their own page on their computer, with the access they gave that connector in their open-artifact connectors; people they share it with see attached files and shared saved rows, not live queries' numbers. Any reader with access to the dashboard can view attached files and shared saved rows regardless of their own connector access.
 
 Say once where the numbers could come from next. A file that isn't `fixed` is often an export from a system that one of their connectors reaches, and could come from it live. If no connector does, name the source that would and the MCP server they could add to their open-artifact connectors for it. Rows you wrote yourself, whether sample, estimated or recalled, go in a file whose `title` starts with "Sample" and whose `description` says how you made them. Say which numbers those are, because the person may pass them on as real.
+
+### Printing
+
+Choosing Share → Export → PDF opens the browser print dialog for `#dash-root` in light mode with your `@media print` styles active. Page scripts cannot trigger `window.print()` themselves. Vertically scrollable containers expand automatically, and a footer line underneath notes the data freshness timestamp. Use `break-before: page` when tabs or story chapters belong on separate sheets (`@page`, `break-after`, and `break-inside` are not used here). Any content hidden behind tabs, scroll steps, fade-ins, or horizontal scroll wrappers will be omitted unless your print styles lay it out visibly. Listen to `beforeprint` on `window` to prepare static views before printing (and `afterprint` to restore interactive state); either event may fire more than once.
 
 ### Links
 

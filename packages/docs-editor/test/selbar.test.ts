@@ -87,6 +87,7 @@ describe('how long a link may be', () => {
     const stored = normalizeHref(head + 'é'.repeat(1300));
     assert.ok(stored === head + '%C3%A9'.repeat(1300), 'stored percent-encoded');
     assert.equal(normalizeHref(head + 'é'.repeat(1400)), null, '1,400 é take 8,428 bytes once encoded');
+    assert.equal(webLinkParts(head + 'é'.repeat(1400)), null, 'webLinkParts enforces the 8,192-byte limit after encoding');
     assert.deepEqual(checkHref(head + 'é'.repeat(1300), true), { problem: 'too_long', limit: 2048 });
   });
   it('keeps every other link to 2,048 bytes, counting its own characters', () => {

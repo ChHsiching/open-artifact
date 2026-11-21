@@ -24,6 +24,14 @@ export const PRINT_CSS =
   PRINT_NOTE_CSS +
   '}';
 
+const PRINT_MEDIA_PATTERN = /@media\b[^{}]*\bprint\b/i;
+const BEFORE_PRINT_PATTERN = /\bbeforeprint\b/;
+
+/** Whether the dashboard's own files include `@media print` rules or a `beforeprint` hook. */
+export function hasPagePrintLayout(files: ReadonlyArray<{ text: string }>): boolean {
+  return files.some((file) => PRINT_MEDIA_PATTERN.test(file.text) || BEFORE_PRINT_PATTERN.test(file.text));
+}
+
 function markPrintPath(): void {
   for (let element = document.getElementById(DASHBOARD_ROOT_ID); element !== null; element = element.parentElement)
     element.setAttribute(PRINT_PATH_ATTRIBUTE, '');

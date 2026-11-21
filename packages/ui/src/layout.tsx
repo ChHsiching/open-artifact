@@ -163,6 +163,9 @@ function ToastList() {
       <Toast.Content className="flex min-w-0 flex-1 flex-col gap-0.5">
         <Toast.Title className="text-[13px] font-semibold" />
         <Toast.Description className="text-xs text-fg-muted" />
+        {item.actionProps ? (
+          <Toast.Action className="mt-1 self-start rounded px-2 py-0.5 text-xs font-medium text-accent hover:bg-hover" />
+        ) : null}
       </Toast.Content>
       <Toast.Close aria-label="Dismiss" onKeyDown={guardToastClose} className="rounded p-0.5 text-fg-muted hover:bg-hover">
         <X className="size-3.5" />

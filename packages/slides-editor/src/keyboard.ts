@@ -67,6 +67,7 @@ import { useFind } from './services/find.ts';
 import { playableSlides } from './services/present.ts';
 import { nudgeCrop } from './components/stage/gestures.ts';
 import { undoesScrub } from './lib/number-scrub.ts';
+import { isCopySlideLinkKey } from './lib/slide-link.ts';
 import { isComposingKey } from '@open-artifact/ui';
 
 /**
@@ -206,7 +207,7 @@ export function installKeyboard(): () => void {
         pasteStyle();
         return;
       }
-      if (event.altKey && (event.code === 'KeyL' || lower === 'l')) {
+      if (isCopySlideLinkKey(event)) {
         event.preventDefault();
         void copySlideLink();
         return;

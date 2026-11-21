@@ -38,6 +38,7 @@ import { Rail } from './components/Rail.tsx';
 import { Stage } from './components/Stage.tsx';
 import { StageChrome } from './components/StageChrome.tsx';
 import { TipGroup } from '@open-artifact/editor-kit/react';
+import { guardFileDrops } from '@open-artifact/editor-kit';
 import { CommentList } from './components/comments/CommentList.tsx';
 import { PropertiesPanel } from './components/properties/PropertiesPanel.tsx';
 import { Presenter } from './components/present/Presenter.tsx';
@@ -120,9 +121,11 @@ export function App(): ReactNode {
     }
     const keyboard = installKeyboard();
     const clipboard = installClipboard();
+    const drops = guardFileDrops(window);
     return () => {
       keyboard();
       clipboard();
+      drops();
     };
   }, []);
 

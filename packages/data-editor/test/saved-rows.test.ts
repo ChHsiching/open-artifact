@@ -6,7 +6,7 @@ import { createDataEngine, type DataEngine } from '../src/data/engine.ts';
 import { applyFetchPriority } from '../src/data/query-store.ts';
 import { createSavedRowsReader } from '../src/data/saved-rows.ts';
 import { createPageCapabilities, type PageCapabilityHost, type PageDb } from '../src/page/capabilities.ts';
-import { getToolbarKeyTarget } from '../src/ask/keys.ts';
+import { getToolbarKeyTarget } from '@open-artifact/editor-kit';
 import { groupSourcesByConnector, hasRefreshAction } from '../src/sources/grouping.ts';
 
 /* ------------------------------------------------------------------ fakes */

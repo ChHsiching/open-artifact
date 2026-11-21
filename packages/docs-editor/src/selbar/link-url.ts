@@ -135,7 +135,9 @@ export function webLinkParts(href: string): { open: string; origin: string; host
   if ((url.protocol !== 'https:' && url.protocol !== 'http:') || url.username || url.password) return null;
   const origin = `${url.protocol}//${url.host}`;
   const rest = url.pathname + url.search + url.hash;
-  return { open: origin + rest, origin, host: url.host, rest: rest === '/' ? '' : rest };
+  const open = origin + rest;
+  if (byteLength(open) > WEB_MAX_BYTES) return null;
+  return { open, origin, host: url.host, rest: rest === '/' ? '' : rest };
 }
 
 /** A link's address shortened for a one-line card. */

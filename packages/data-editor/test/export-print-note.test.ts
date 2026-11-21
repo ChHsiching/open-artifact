@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { Dataset, DatasetRun, OkRun } from '@open-artifact/data-core';
 import { MISSING_DATA_SENTENCE, PRINT_NOTE_ATTRIBUTE, dataAsOfSentence, getPrintDataNote } from '../src/export/print-note.ts';
-import { PRINT_CSS, PRINT_PATH_ATTRIBUTE } from '../src/export/print.ts';
+import { PRINT_CSS, PRINT_PATH_ATTRIBUTE, hasPagePrintLayout } from '../src/export/print.ts';
 
 const AT = Date.UTC(2026, 2, 4, 15, 30);
 const query = (id: string): Dataset => ({
@@ -38,5 +38,11 @@ describe('the printed data note', () => {
   it('is shown by the print rules only when it has words', () => {
     assert.ok(PRINT_CSS.includes(`[${PRINT_PATH_ATTRIBUTE}]>[${PRINT_NOTE_ATTRIBUTE}]:not(:empty){display:block!important`));
     assert.ok(PRINT_CSS.startsWith('@media print{'));
+  });
+
+  it('recognises when a dashboard already brings its own print rules', () => {
+    assert.equal(hasPagePrintLayout([{ text: 'body { color: black; }' }]), false);
+    assert.equal(hasPagePrintLayout([{ text: '@media print { .tabs { display: block; } }' }]), true);
+    assert.equal(hasPagePrintLayout([{ text: 'window.addEventListener("beforeprint", showAll);' }]), true);
   });
 });
