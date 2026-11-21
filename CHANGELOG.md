@@ -6,6 +6,24 @@ agent plugins. Since 0.9.0 they all share one version; before that `dsh-open-art
 Each entry is written from the commits since the previous tag (`node scripts/changelog.mjs` lists them); see
 [Releasing](README.md#releasing).
 
+## [0.12.3] - 2026-11-21
+
+Motion supports films up to 10 hours and shows rough cuts earlier.
+
+### Added
+
+- The Motion voiceover guide explains how to specify and check the pronunciation of ambiguous Chinese characters
+  while keeping captions unchanged.
+
+### Changed
+
+- Motion supports films up to 10 hours across editing, playback and audio.
+
+### Fixed
+
+- Motion shows the rough cut as soon as the first playable batch is ready, including while longer voiceovers
+  are still being recorded or uploaded.
+
 ## [0.12.2] - 2026-11-21
 
 New artifacts open after the first write, with fixes for Antigravity sessions, whiteboard undo and editor controls.
@@ -317,6 +335,7 @@ One version for every package, with Docs and Sheets in every plugin.
 - Plugins for Claude Code, Codex, Cursor, Copilot, ChatGPT and DeepSeek Harness.
 - English and Chinese READMEs, under Apache-2.0.
 
+[0.12.3]: https://github.com/JimLiu/open-artifact/compare/v0.12.2...v0.12.3
 [0.12.2]: https://github.com/JimLiu/open-artifact/compare/v0.12.1...v0.12.2
 [0.12.1]: https://github.com/JimLiu/open-artifact/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/JimLiu/open-artifact/compare/v0.11.0...v0.12.0
