@@ -6,6 +6,49 @@ agent plugins. Since 0.9.0 they all share one version; before that `dsh-open-art
 Each entry is written from the commits since the previous tag (`node scripts/changelog.mjs` lists them); see
 [Releasing](README.md#releasing).
 
+## [0.11.0] - 2026-11-20
+
+Open live artifacts inside MCP conversations, with steadier whiteboards and more ways to style their content.
+
+### Added
+
+- In clients that support MCP Apps, `ShowArtifact` opens an interactive artifact in the conversation. The view can
+  go full screen, open in a browser, or send comments back to the agent.
+- Whiteboard drawings have seven styles in light and dark. Table cells support fills and heat maps by row or column.
+  The drawing styles, fills and heat maps carry through to PNG exports.
+- Whiteboard text can show a placeholder and starts editing with a click or tap. Link cards let you open, copy or
+  edit a link, and F6 moves focus between the toolbars, board and panels.
+- `npm run test-artifacts` opens a browser gallery of editable test artifacts, starting with a whiteboard that
+  demonstrates all element types, styles and options.
+
+### Changed
+
+- The whiteboard skill documents drawing styles, text placeholders, table formatting and how agents coordinate
+  edits on a shared board. Validation reports unknown drawing styles, how much to trim from oversized drawings,
+  and claims that still mark an area as being worked on.
+- Clicking a side dot on a whiteboard note or shape adds an adjacent item in available space. Read-only boards show
+  a badge, and exported PNGs use the board title as the filename.
+- Number fields snap to their step when dragged unless Alt is held. Color fields explain rejected values and
+  announce hue and opacity values for screen readers.
+
+### Fixed
+
+- Whiteboard text stays visible and steady during pans and resizes. Panning survives a dropped pointer capture,
+  and the board keeps fitting as its view changes size until you interact with it.
+- Growing whiteboard text makes room below it. Resizing rotated notes or text keeps the anchored corner in place,
+  and pasted text preserves bold, italics and links.
+- Concurrent moves and resizes of a whiteboard group merge field by field. Merged table cells preserve their
+  formatting, and drawings can include dashed arcs.
+- Extra clicks on menus or dismissing a popover no longer activate controls underneath. Popovers configured to
+  keep typed input stay open until dismissed, and stepping an empty number field starts from a valid value.
+- Whiteboard crop mode can be canceled with Undo, and embedded pages receive keystrokes once you enter them.
+- Type servers start without flashing a console window on Windows.
+
+### Removed
+
+- Whiteboards now use DOM rendering exclusively. The Whiteboard WebGL renderer and its
+  `open_artifact_engine=off` URL switch are gone.
+
 ## [0.10.0] - 2026-11-20
 
 Follow other viewers from the Shell, link-aware Design and Design System editing, and copying that works in the
@@ -185,6 +228,7 @@ One version for every package, with Docs and Sheets in every plugin.
 - Plugins for Claude Code, Codex, Cursor, Copilot, ChatGPT and DeepSeek Harness.
 - English and Chinese READMEs, under Apache-2.0.
 
+[0.11.0]: https://github.com/JimLiu/open-artifact/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/JimLiu/open-artifact/compare/v0.9.2...v0.10.0
 [0.9.2]: https://github.com/JimLiu/open-artifact/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/JimLiu/open-artifact/compare/v0.9.0...v0.9.1
