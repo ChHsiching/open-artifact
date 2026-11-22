@@ -6,6 +6,24 @@ agent plugins. Since 0.9.0 they all share one version; before that `dsh-open-art
 Each entry is written from the commits since the previous tag (`node scripts/changelog.mjs` lists them); see
 [Releasing](README.md#releasing).
 
+## [0.12.5] - 2026-11-22
+
+Design snapshots and exports preserve artboard web fonts, and zooming keeps artboards ready to use.
+
+### Added
+
+- Design embeds the artboard's loaded web fonts in snapshots, image and PDF exports, and Copy as PNG.
+
+### Changed
+
+- Large CJK TrueType fonts are embedded as smaller subsets to speed up snapshots.
+- Design retains recently viewed artboard frames across zoom changes, avoiding reloads when zooming back in.
+
+### Fixed
+
+- Design snapshots and exports use the correct web fonts instead of fallback fonts, preventing shifted or clipped text.
+- Zoomed-out artboard snapshots stay sharp and wait for fonts before capture. A snapshot missing a font no longer replaces its live frame.
+
 ## [0.12.4] - 2026-11-22
 
 Artifacts open faster, with more responsive comments and clearer controls in high-contrast mode.
@@ -354,6 +372,7 @@ One version for every package, with Docs and Sheets in every plugin.
 - Plugins for Claude Code, Codex, Cursor, Copilot, ChatGPT and DeepSeek Harness.
 - English and Chinese READMEs, under Apache-2.0.
 
+[0.12.5]: https://github.com/JimLiu/open-artifact/compare/v0.12.4...v0.12.5
 [0.12.4]: https://github.com/JimLiu/open-artifact/compare/v0.12.3...v0.12.4
 [0.12.3]: https://github.com/JimLiu/open-artifact/compare/v0.12.2...v0.12.3
 [0.12.2]: https://github.com/JimLiu/open-artifact/compare/v0.12.1...v0.12.2
