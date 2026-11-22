@@ -396,6 +396,7 @@ describe('whiteboard', { skip: skipFor('whiteboard') }, () => {
         await p.click(420, 320);
         const layer = "document.querySelector('[data-comment-layer]')?.shadowRoot";
         assert.ok(await p.waitFor(layer + "?.querySelector('textarea')"));
+        assert.ok(await p.waitFor("(t => Boolean(t) && getComputedStyle(t).maxHeight.endsWith('px'))(" + layer + "?.querySelector('textarea'))"), 'a long draft scrolls in its box');
         await p.type('Review this spot');
         await p.press('Enter');
         assert.ok(await until(() => fs.existsSync(path.join(shellRoot, 'comments.json')) && fs.readFileSync(path.join(shellRoot, 'comments.json'), 'utf8').includes('Review this spot')));
@@ -405,6 +406,29 @@ describe('whiteboard', { skip: skipFor('whiteboard') }, () => {
         assert.match(await p.evaluate(list + '.textContent'), /1/);
         await p.evaluate(list + '.click()');
         assert.ok(await p.waitFor("document.querySelector('[data-comments-panel-layer]')?.shadowRoot?.textContent.includes('Review this spot')"));
+        assert.deepEqual(p.problems, []);
+      } finally { await p.close(); }
+    });
+
+    it('resolves a new thread from its card, which closes', async () => {
+      const p = await browser.load(shellUrl, { ready });
+      try {
+        const toggle = "document.querySelector('button[aria-label=Comments]')";
+        assert.ok(await p.waitFor(toggle));
+        await p.evaluate(toggle + '.click()');
+        assert.ok(await p.waitFor("document.querySelector('.wb-surface.wb-commenting')"));
+        await p.click(520, 380);
+        const layer = "document.querySelector('[data-comment-layer]')?.shadowRoot";
+        assert.ok(await p.waitFor(layer + "?.querySelector('textarea')"));
+        await p.type('Resolve me');
+        await p.press('Enter');
+        const resolve = layer + "?.querySelector('[data-comment-card] button[aria-label=Resolve]')";
+        assert.ok(await p.waitFor(resolve));
+        // The comments layer is in the board's frame.
+        assert.ok((await p.evaluateAll(`(b => Boolean(b) && (b.click(), true))(${resolve})`)).includes(true));
+        assert.ok(await p.waitFor(`${layer} && !${layer}.querySelector('[data-comment-card]')`), 'the card closes on Resolve');
+        const saved = () => JSON.parse(fs.readFileSync(path.join(shellRoot, 'comments.json'), 'utf8')).threads.find(t => t.messages[0]?.text === 'Resolve me');
+        assert.ok(await until(() => saved()?.status === 'resolved'));
         assert.deepEqual(p.problems, []);
       } finally { await p.close(); }
     });

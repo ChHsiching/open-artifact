@@ -164,6 +164,13 @@
   --cds-fade-size: calc(var(--spacing) * 4);
 }
 
+/* A text box that has reached its height cap: it scrolls, with a thin bar, and does not scroll the card behind it. */
+@utility scroll-thin {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
 /* ---------- tokens ---------- */
 
 @layer base {
