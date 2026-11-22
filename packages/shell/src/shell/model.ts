@@ -6,6 +6,7 @@
 import { INLINE_VIEW_FRAGMENT, SLIDE_FRAGMENT } from '@open-artifact/protocol';
 import {
   CHROME_PEER_KEY,
+  FRAME_DENIED_REASONS,
   MAX_CHROME_PEERS,
   SHELL_PARAMS,
   type ArtifactView,
@@ -15,6 +16,7 @@ import {
   type ChromeReport,
   type ChromeSaved,
   type ChromeWhy,
+  type FrameDeniedReason,
   type HostCaps,
   type ShareGuest,
   type ShareRole,
@@ -250,6 +252,61 @@ export function parseSent(raw: string | null): SentMessage[] {
     return [];
   }
 }
+
+// ---- the boot and the page's frame ---------------------------------------------------------------------------------
+
+/**
+ * The finished boot `artifacts.boot` answered for the pending boot `pending`: the same artifact, not pending. Throws
+ * when the answer is not one.
+ */
+export function finishedBoot(value: unknown, pending: Pick<ShellBoot, 'id'>): ShellBoot {
+  const boot = value as Partial<ShellBoot> | null;
+  if (!boot || typeof boot !== 'object' || boot.id !== pending.id || typeof boot.title !== 'string' || typeof boot.type !== 'string') {
+    throw new Error(`No boot for ${pending.id}.`);
+  }
+  const { pending: _pending, ...rest } = boot as ShellBoot;
+  return rest;
+}
+
+/** The boot while its page is being opened (again): what the bar needs stays, the page goes. */
+export function pendingBoot(boot: ShellBoot): ShellBoot {
+  return { ...boot, page: null, pageUrl: null, pageKind: null, problem: null, pending: true };
+}
+
+/** The boot that shows `problem` instead of the page. */
+export function problemBoot(boot: ShellBoot, problem: string): ShellBoot {
+  const { pending: _pending, ...rest } = boot;
+  return { ...rest, page: null, pageUrl: null, pageKind: null, problem };
+}
+
+/**
+ * Why a page server refused the frame (`frame_denied`), or `null` when the message is not one. An unknown reason
+ * reads as `not_open`: the address is asked for again either way.
+ */
+export function frameDeniedReason(message: unknown): FrameDeniedReason | null {
+  const m = message as { openArtifact?: unknown; reason?: unknown } | null;
+  if (!m || typeof m !== 'object' || m.openArtifact !== 'frame_denied') return null;
+  return (FRAME_DENIED_REASONS as readonly unknown[]).includes(m.reason) ? (m.reason as FrameDeniedReason) : 'not_open';
+}
+
+/** What a `frame_denied` does: ask for the page's address again (once), or show the problem. */
+export function afterFrameDenied(boot: Pick<ShellBoot, 'typeServer'>, retried: boolean): 'reopen' | 'problem' {
+  // A type server's own Shell has no Library API to ask: its page is the one it served.
+  return retried || boot.typeServer ? 'problem' : 'reopen';
+}
+
+/**
+ * The frame's page shows once it says so (its first `chrome_report`). A page that is not a type server's may never
+ * speak the chrome protocol: it shows on `load`.
+ */
+export function readyOnLoad(pageKind: ShellBoot['pageKind']): boolean {
+  return pageKind !== 'server';
+}
+
+/** The longest the cover stays after the frame's `load` when its page has not said it is ready. */
+export const FRAME_READY_FALLBACK_MS = 1_500;
+/** How long the cover takes to fade. */
+export const COVER_FADE_MS = 150;
 
 /**
  * A boot for development, when the daemon did not inject one: built from

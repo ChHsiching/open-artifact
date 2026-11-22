@@ -328,6 +328,7 @@ test('GET /a/<id> injects the boot object into the Shell', async () => {
   assert.equal(boot.id, id);
   assert.equal(boot.type, 'design');
   assert.equal(boot.empty, true, 'no project/canvas.json yet');
+  assert.equal(boot.pending, undefined, 'an empty artifact has no page to wait for (shell-boot.test.ts has the pending boot)');
   assert.equal(boot.page, null);
   assert.match(String(boot.prompt), new RegExp(`^Take over artifact open-artifact://artifact/${id} \\(Design \\(canvas\\) "`));
   assert.match(String(boot.prompt), /call Artifact \{action: "adopt", url: "open-artifact:\/\/artifact\//);

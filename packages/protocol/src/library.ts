@@ -173,6 +173,8 @@ export const LIBRARY_ROUTES = {
   thumbnail: 'artifacts.thumbnail',
   restore: 'artifacts.restore',
   open: 'artifacts.open',
+  /** `GET ?id=`: the finished {@link ShellBoot} of an artifact (waits for its page to open; never `pending`). */
+  boot: 'artifacts.boot',
   preview: 'artifacts.preview',
   create: 'artifacts.create',
   update: 'artifacts.update',
@@ -201,6 +203,11 @@ export interface ShellBoot {
   /** The page without the Shell. */
   pageUrl: string | null;
   pageKind: ResolvedEntry['kind'] | null;
+  /**
+   * The page is still being opened (its type server may be starting): `page`, `pageUrl`, `pageKind` and `problem`
+   * are not known yet. The Shell draws itself at once and asks {@link LIBRARY_ROUTES.boot} for the finished boot.
+   */
+  pending?: boolean;
   /** Why the page could not be opened. */
   problem: string | null;
   /** Made but nothing written yet (none of the type's `detect` files exist). */

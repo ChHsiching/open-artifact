@@ -84,6 +84,12 @@ export interface OpenRequest {
   lang?: string;
   /** Origin of the Shell that will frame the page. */
   shell?: string;
+  /**
+   * The Shell's own address for this artifact (absolute, on the `shell` origin), e.g. `http://127.0.0.1:4800/a/art_1`.
+   * A visit to the framed page as a top-level document (`Sec-Fetch-Dest: document`) is sent there instead of
+   * showing the page without its Shell.
+   */
+  viewer?: string;
 }
 
 /** `POST /__open-artifact/open` answer. */

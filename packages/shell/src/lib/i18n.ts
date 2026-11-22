@@ -222,6 +222,10 @@ const EN = {
   askToLook: 'Ask {agent} to look',
   problemAsk: 'The artifact page could not open: {problem}',
   noBoot: 'No artifact to show. Open one from the home page.',
+  tryAgain: 'Try again',
+  bootFailed: 'The page did not open: {error}',
+  frameNotOpen: 'The page is not open any more (its server may have restarted), and opening it again did not work.',
+  frameNotGranted: 'This page is not open to you here any more.',
 
   // ---- the home page
   homeTitle: 'Open Artifact',
@@ -458,6 +462,10 @@ const ZH: Partial<Record<MessageKey, string>> = {
   askToLook: '让 {agent} 看看',
   problemAsk: '作品页打不开：{problem}',
   noBoot: '没有要显示的作品。从主页打开一个。',
+  tryAgain: '重试',
+  bootFailed: '页面没有打开：{error}',
+  frameNotOpen: '页面已经不在打开状态（它的服务可能重启过），重新打开也没成功。',
+  frameNotGranted: '这个页面在这里已经不对你开放了。',
   homeTitle: 'Open Artifact',
   homeSub: '本机所有 Agent 共用的作品和类型。',
   artifacts: '作品',

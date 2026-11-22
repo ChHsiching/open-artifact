@@ -36,7 +36,7 @@ import type { Role, Viewer } from '@open-artifact/runtime/capabilities';
 import { API } from '@open-artifact/runtime/http-api';
 import { SHEET_API } from '@open-artifact/runtime/sheet-api';
 import { LanNetwork, SHARING_FILE, isTailnet, lanAddresses } from '@open-artifact/server-sdk/lan';
-import { HttpError, readBody, send } from './http.ts';
+import { HttpError, isFramedNavigation, readBody, send, sendFrameDenied } from './http.ts';
 
 export { SHARING_FILE };
 
@@ -608,10 +608,14 @@ export class LanSharing {
       .end();
   }
 
-  /** A request nobody may make: a page for a browser's navigation, JSON for anything else. */
-  denied(req: IncomingMessage, res: ServerResponse): void {
+  /**
+   * A request nobody may make: a page for a browser's navigation, JSON for anything else. An artifact's page
+   * (`page`) loading in a frame tells the Shell framing it instead (`frame_denied`), which a static page cannot.
+   */
+  denied(req: IncomingMessage, res: ServerResponse, page = false): void {
     req.resume();
     const w = words(req);
+    if (page && isFramedNavigation(req)) return sendFrameDenied(res, 403, 'not_granted', w.noAccessTitle, w.noAccess);
     const navigation = (req.method === 'GET' || req.method === 'HEAD') && /\btext\/html\b/.test(String(req.headers.accept ?? ''));
     if (!navigation) throw new HttpError(403, 'not_granted', 'This artifact is not shared with you.');
     sendPage(res, 403, w.noAccessTitle, `<h1>${esc(w.noAccessTitle)}</h1><p>${esc(w.noAccess)}</p>`);

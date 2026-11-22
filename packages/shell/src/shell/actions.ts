@@ -3,12 +3,24 @@
  * their results written to the store and failures shown as toasts.
  */
 
-import { DOC_FRAGMENT, SLIDE_FRAGMENT, artifactIdOf, type ShareView, type ShareRequest, type ShellBoot } from '@open-artifact/protocol';
+import { DOC_FRAGMENT, SLIDE_FRAGMENT, artifactIdOf, type FrameDeniedReason, type ShareView, type ShareRequest, type ShellBoot } from '@open-artifact/protocol';
 import { toast } from '@open-artifact/ui';
-import { ApiError, api, errorText, subscribeLibraryEvents } from '../lib/api.ts';
+import { ApiError, answerOf, api, errorText, subscribeLibraryEvents } from '../lib/api.ts';
 import { copyText, fileNameOf } from '../lib/format.ts';
 import { t } from '../lib/i18n.ts';
-import { appendSent, deliveryOf, designPageFragment, sheetPageFragment, devBoot, parseSent } from './model.ts';
+import {
+  afterFrameDenied,
+  appendSent,
+  deliveryOf,
+  designPageFragment,
+  devBoot,
+  finishedBoot,
+  parseSent,
+  pendingBoot,
+  problemBoot,
+  sheetPageFragment,
+} from './model.ts';
+import { installVitals, mark, takePrefetch, type Phase } from './preboot.ts';
 import { filesChanged, toHost } from './bridge.ts';
 import { useShell } from './store.ts';
 
@@ -36,14 +48,26 @@ export function shellLink(fragment = location.hash): string {
   return base + shareFragment(boot, fragment);
 }
 
+/** Records a load phase (`window.__OPEN_ARTIFACT_VITALS__`). */
+export function markPhase(phase: Phase): void {
+  installVitals(window);
+  mark(window, phase);
+}
+
 /**
  * The boot: the one the daemon injected, or, in development (no daemon
- * page), one built from `?id=` through the Library API.
+ * page), one built from `?id=` through the Library API. An injected
+ * `pending` boot draws the Shell at once; its finished boot follows.
  */
 export async function loadBoot(): Promise<void> {
   const injected = (window as { __OPEN_ARTIFACT_BOOT__?: ShellBoot | null }).__OPEN_ARTIFACT_BOOT__;
   const store = useShell.getState();
-  if (injected) return store.setBoot(injected);
+  if (injected) {
+    store.setBoot(injected);
+    if (injected.pending) await finishBoot(injected, false);
+    else markPhase('oa:boot');
+    return;
+  }
   const id = artifactIdOf(new URLSearchParams(location.search).get('id'));
   if (!id) return store.setBoot(null, t('noBoot'));
   try {
@@ -56,9 +80,69 @@ export async function loadBoot(): Promise<void> {
       problem = errorText(error);
     }
     store.setBoot(devBoot(detail, page, problem));
+    markPhase('oa:boot');
   } catch (error) {
     store.setBoot(null, errorText(error));
   }
+}
+
+/** Asks for the finished boot: the request the page's inline script started, else (or when it failed) a new one. */
+async function bootFor(pending: ShellBoot, fresh: boolean): Promise<ShellBoot> {
+  const prefetch = fresh ? null : takePrefetch(window, pending.id);
+  if (prefetch) {
+    let response: Response | null = null;
+    try {
+      response = await prefetch.res;
+    } catch {
+      // It did not reach the daemon (or timed out): ask again below.
+    }
+    if (response) return finishedBoot(await answerOf<unknown>(response), pending);
+  }
+  return finishedBoot(await api.boot(pending.id, { fresh }), pending);
+}
+
+/** Replaces a pending boot with the finished one, or with the problem and a way to try again. */
+async function finishBoot(pending: ShellBoot, fresh: boolean): Promise<void> {
+  try {
+    useShell.getState().setBoot(await bootFor(pending, fresh));
+    markPhase('oa:boot');
+  } catch (error) {
+    useShell.getState().setBoot(problemBoot(pending, t('bootFailed', { error: errorText(error) })), null, true);
+  }
+}
+
+/** The problem state's Try again: the page's address asked for anew (a type server's own Shell loads again). */
+export async function retryBoot(): Promise<void> {
+  const boot = useShell.getState().boot;
+  if (!boot) return;
+  if (boot.typeServer) return location.reload();
+  const pending = pendingBoot(boot);
+  useShell.getState().setBoot(pending);
+  await finishBoot(pending, true);
+}
+
+/** The frame was refused once already and has not shown its page since. */
+let deniedAgain = false;
+
+/**
+ * The page's server refused the frame (`frame_denied`): its address is stale (the server restarted) or no longer
+ * this visitor's. Asks for the address again once; refused again, the problem shows.
+ */
+export function frameDenied(reason: FrameDeniedReason): void {
+  const boot = useShell.getState().boot;
+  if (!boot || boot.pending) return;
+  if (afterFrameDenied(boot, deniedAgain) === 'problem') {
+    useShell.getState().setBoot(problemBoot(boot, t(reason === 'not_granted' ? 'frameNotGranted' : 'frameNotOpen')), null, true);
+    return;
+  }
+  deniedAgain = true;
+  void retryBoot();
+}
+
+/** The frame's page showed: a later refusal asks for its address again. */
+export function frameShown(): void {
+  deniedAgain = false;
+  markPhase('oa:frame-ready');
 }
 
 /** Reloads the artifact's library record. */

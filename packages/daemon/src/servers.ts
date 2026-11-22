@@ -23,6 +23,7 @@ import {
   OpenArtifactError,
   READY_TIMEOUT_MS,
   TYPE_SERVER_ROUTES,
+  shellPath,
   type OpenRequest,
   type OpenResult,
   type ReadyLine,
@@ -199,7 +200,8 @@ export class TypeServers {
       const url = fillTemplate(entry.url!, { id: record.id, lang: context.lang, root: record.root });
       return { url, page_url: url };
     }
-    const request: OpenRequest = { id: record.id, root: record.root, title: record.title, lang: context.lang || 'en', shell: context.shell };
+    // The Shell's own address on the same origin: a top-level visit to the framed page goes there.
+    const request: OpenRequest = { id: record.id, root: record.root, title: record.title, lang: context.lang || 'en', shell: context.shell, viewer: context.shell + shellPath(record.id) };
     const out = await this.call<Partial<OpenResult>>(type, 'POST', TYPE_SERVER_ROUTES.open, request);
     if (!out || typeof out.url !== 'string') throw new OpenArtifactError('server_failed', `${type.id}: ${TYPE_SERVER_ROUTES.open} returned no url.`);
     const url = new URL(out.url, base).href;

@@ -200,10 +200,12 @@ export async function launch({ chrome = findChrome(), width = 1440, height = 900
   /**
    * Open `url` in a new tab. `ready`: an expression, true in the page or one of its frames once it is up.
    * `ignore`: regexps for problems that are expected. `userAgent`: the tab's user agent, in its requests and
-   * `navigator.userAgent` (a host browser that is not Chrome). Returns {problems, evaluate, evaluateAll,
-   * crashed, click, close}.
+   * `navigator.userAgent` (a host browser that is not Chrome). `cache: false`: the tab and its frames and workers
+   * take nothing from the HTTP cache, so it fetches every file as a browser that never loaded the page would (built
+   * files are kept for good, and an earlier tab of this browser may hold them). Returns {problems, evaluate,
+   * evaluateAll, crashed, click, close}.
    */
-  async function load(url, { ready = 'true', timeout = 30000, settle = 1000, ignore = [], userAgent } = {}) {
+  async function load(url, { ready = 'true', timeout = 30000, settle = 1000, ignore = [], userAgent, cache = true } = {}) {
     const { targetId } = await send('Target.createTarget', { url: 'about:blank' });
     const { sessionId: top } = await send('Target.attachToTarget', { targetId, flatten: true });
     const sessions = new Set([top]);
@@ -243,6 +245,7 @@ export async function launch({ chrome = findChrome(), width = 1440, height = 900
       send('Log.enable', {}, session),
       send('Network.enable', {}, session),
       send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: false, flatten: true }, session),
+      ...(cache ? [] : [send('Network.setCacheDisabled', { cacheDisabled: true }, session).catch(() => {})]),
     ]).catch(() => {});
     const onEvent = msg => {
       const session = msg.sessionId;

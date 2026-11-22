@@ -25,6 +25,11 @@
  * named.
  */
 
+/** Path of the daemon's Shell page for an artifact: `/a/<id>`. */
+export function shellPath(id: string): string {
+  return `/a/${encodeURIComponent(id)}`;
+}
+
 /** Name of the iframe the Shell puts the artifact page in. */
 export const SHELL_FRAME_NAME = 'open-artifact-shell';
 
@@ -55,6 +60,13 @@ export const INLINE_VIEW_FRAGMENT = '#view-inline';
 
 /** A Docs tab, optionally followed by a block id or heading slug in that tab. */
 export const DOC_FRAGMENT = /^#[0-9a-f]{8}-[0-9a-f]{4}(?:\.[^\s#]{1,500})?$/;
+
+/**
+ * Why a page server could not show a framed page: the artifact is `not_open` there any more (its address is stale,
+ * e.g. the server restarted), or this visitor is `not_granted` it.
+ */
+export const FRAME_DENIED_REASONS = ['not_open', 'not_granted'] as const;
+export type FrameDeniedReason = (typeof FRAME_DENIED_REASONS)[number];
 
 /** Version of the chrome protocol. */
 export const CHROME_PROTOCOL = 1;
@@ -327,6 +339,12 @@ export type PageToShell =
   | { openArtifact: 'chrome_export'; request: string; state: ChromeExportState; reason?: string }
   /** The page applied `files_changed` itself; the Shell does not reload it. */
   | { openArtifact: 'files_changed_ok' }
+  /**
+   * Sent to `*` by the small document a page server answers a framed navigation with when it cannot show the page
+   * ({@link FRAME_DENIED_REASONS}). It carries no secret. The Shell takes it only from its own frame, asks for the
+   * page's address again once, and shows the problem when that fails too.
+   */
+  | { openArtifact: 'frame_denied'; reason: FrameDeniedReason }
   /**
    * Write these formats ({@link CLIPBOARD_TYPES}) to the clipboard. Sent at
    * once on the person's press, while the Shell may still write; the content

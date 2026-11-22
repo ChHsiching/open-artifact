@@ -10,6 +10,8 @@
  *   `files_changed` (the frame reloads unless the page answers
  *   `files_changed_ok` within a second), and `clipboard_write` /
  *   `clipboard_data` / `clipboard_done` (`clipboard.ts`);
+ * - `frame_denied` from the page's server, when it refused the frame: the
+ *   Shell asks for the page's address again once (`actions.ts`);
  * - **capability broker**, also with the page: `cap_want`/`cap` from the
  *   page's `window.openartifact`, run by `broker.ts` against the page's
  *   backend and answered with `cap_grant`/`cap_r`/`cap_ack`/`cap_ev`;
@@ -19,7 +21,7 @@
  *   origin; the host may send `goto` with a place.
  */
 
-import { copyShellLink } from './actions.ts';
+import { copyShellLink, frameDenied } from './actions.ts';
 import { DOC_FRAGMENT, SLIDE_FRAGMENT } from '@open-artifact/protocol';
 import type { ChromeCommand, ChromeExportItem, ChromeExportState, PageToShell, ShellToHost, ShellToPage } from '@open-artifact/protocol';
 import { CHROME_DRAWS, isShellMessage } from '@open-artifact/protocol';
@@ -27,7 +29,7 @@ import { toast } from '@open-artifact/ui';
 import { t } from '../lib/i18n.ts';
 import { call as brokerCall, want as brokerWant, type PagePost } from './broker.ts';
 import { browserClipboard, createClipboardRelay } from './clipboard.ts';
-import { actionOf, exportRequestId, showsComments, normalizeReport, type ExportEntry, sheetPageFragment, inlineView } from './model.ts';
+import { actionOf, exportRequestId, frameDeniedReason, showsComments, normalizeReport, type ExportEntry, sheetPageFragment, inlineView } from './model.ts';
 import { gotoCommand, placeOf } from './place.ts';
 import { useShell } from './store.ts';
 
@@ -243,8 +245,16 @@ function onPageMessage(message: PageToShell, event: MessageEvent): void {
       if (filesTimer) clearTimeout(filesTimer);
       filesTimer = null;
       break;
+    case 'frame_denied': {
+      // From the frame's own window and origin only (checked in onMessage): the refusal page of its server.
+      const reason = frameDeniedReason(message);
+      if (reason) frameDenied(reason);
+      break;
+    }
     case 'chrome_report':
       if (message.report && typeof message.report === 'object') {
+        // The page draws itself: the cover over the frame goes.
+        if (!store.pageReady) store.setPageReady(true);
         store.setReport(normalizeReport(message.report));
         if (helloOnFirstReport) {
           helloOnFirstReport = false;

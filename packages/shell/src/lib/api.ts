@@ -14,9 +14,11 @@ import {
   type OpenArtifactErrorCode,
   type ShareRequest,
   type ShareView,
+  type ShellBoot,
   type TypesResponse,
   type UpdateArtifactRequest,
 } from '@open-artifact/protocol';
+import { BOOT_TIMEOUT_MS } from '../shell/preboot.ts';
 import { browserEnv, sharedStream, type SharedStreamEnv } from './shared-events.ts';
 
 /** A failed Library API call: the daemon's `{ code, message, fix? }` and the HTTP status. */
@@ -91,6 +93,11 @@ export interface LibraryApi {
   ask(request: AskRequest): Promise<AskResult>;
   /** `POST artifacts.open`: starts the page without telling a harness. */
   open(id: string): Promise<OpenResult>;
+  /**
+   * `GET artifacts.boot?id=`: the Shell's finished boot, once the page is open (which can take a while: up to
+   * {@link BOOT_TIMEOUT_MS}). `fresh` opens the page again instead of taking the open the Shell's page started.
+   */
+  boot(id: string, options?: { fresh?: boolean }): Promise<ShellBoot>;
   /** The URL of the event stream. */
   readonly eventsUrl: string;
   /** `GET artifact.archive?id=`: the artifact's folder as a .zip (`HEAD` checks it can be zipped). */
@@ -120,6 +127,17 @@ async function bodyOf(response: Response): Promise<Record<string, unknown>> {
 /** How long a read (`GET`) waits for the daemon's answer. */
 export const READ_TIMEOUT_MS = 15_000;
 
+/** A Library API answer: its JSON, or an {@link ApiError} with the daemon's `{ code, message, fix }`. */
+export async function answerOf<T>(response: Response): Promise<T> {
+  const out = await bodyOf(response);
+  if (!response.ok) {
+    const code = typeof out.code === 'string' ? out.code : 'error';
+    const message = typeof out.message === 'string' ? out.message : `HTTP ${response.status}`;
+    throw new ApiError(code, message, response.status, typeof out.fix === 'string' ? out.fix : undefined);
+  }
+  return out as T;
+}
+
 /** Creates the Library API helpers. */
 export function createLibraryApi(options: LibraryApiOptions = {}): LibraryApi {
   const base = (options.base ?? '').replace(/\/$/, '');
@@ -127,7 +145,7 @@ export function createLibraryApi(options: LibraryApiOptions = {}): LibraryApi {
   const url = (route: string, query?: Record<string, string>): string =>
     `${base}/api/open-artifact.${route}${query ? `?${new URLSearchParams(query)}` : ''}`;
 
-  async function call<T>(route: string, request: { query?: Record<string, string>; body?: unknown } = {}): Promise<T> {
+  async function call<T>(route: string, request: { query?: Record<string, string>; body?: unknown; timeoutMs?: number } = {}): Promise<T> {
     const init: RequestInit =
       request.body === undefined
         ? { cache: 'no-store' }
@@ -135,20 +153,14 @@ export function createLibraryApi(options: LibraryApiOptions = {}): LibraryApi {
     // A read that never answers (the browser's connections to the daemon all taken, a daemon stuck) fails
     // after a while instead of leaving its caller waiting forever.
     if (request.body === undefined && typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function')
-      init.signal = AbortSignal.timeout(READ_TIMEOUT_MS);
+      init.signal = AbortSignal.timeout(request.timeoutMs ?? READ_TIMEOUT_MS);
     let response: Response;
     try {
       response = await doFetch(url(route, request.query), init);
     } catch (error) {
       throw new ApiError('connect_failed', error instanceof Error ? error.message : String(error), 0);
     }
-    const out = await bodyOf(response);
-    if (!response.ok) {
-      const code = typeof out.code === 'string' ? out.code : 'error';
-      const message = typeof out.message === 'string' ? out.message : `HTTP ${response.status}`;
-      throw new ApiError(code, message, response.status, typeof out.fix === 'string' ? out.fix : undefined);
-    }
-    return out as T;
+    return answerOf<T>(response);
   }
 
   return {
@@ -170,6 +182,7 @@ export function createLibraryApi(options: LibraryApiOptions = {}): LibraryApi {
     restore: (id) => call<ArtifactView>(LIBRARY_ROUTES.restore, { body: { id } }),
     ask: (request) => call<AskResult>(LIBRARY_ROUTES.ask, { body: request }),
     open: (id) => call<OpenResult>(LIBRARY_ROUTES.open, { body: { id, host: false } }),
+    boot: (id, options) => call<ShellBoot>(LIBRARY_ROUTES.boot, { query: options?.fresh ? { id, fresh: '1' } : { id }, timeoutMs: BOOT_TIMEOUT_MS }),
     eventsUrl: url(LIBRARY_ROUTES.events),
     archiveUrl: (id) => url(LIBRARY_ROUTES.archive, { id }),
     typeIconUrl: (id) => url('type.icon', { id }),

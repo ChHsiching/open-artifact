@@ -28,6 +28,7 @@ import {
   artifactIdOf,
   artifactUrl,
   errorBody,
+  shellPath,
   taskMessage,
   type ArtifactDetail,
   type ArtifactRecord,
@@ -102,6 +103,11 @@ const ACTING_GRACE_MS = Number(process.env.OPEN_ARTIFACT_ACTING_GRACE_MS ?? 3_00
 const OPEN_POLL_MS = 1_000;
 const OPEN_SETTLE_MS = 1_500;
 const OPEN_GIVE_UP_MS = 30 * 60_000;
+/**
+ * The Shell's page (`GET /a/<id>`) starts opening the artifact's page and answers at once; its boot request
+ * (`artifacts.boot`) takes that open's result when it settled no longer than this ago.
+ */
+const BOOT_REUSE_MS = 10_000;
 
 /** A long action the agent started: its end goes to the caller. */
 interface StartedTask {
@@ -370,6 +376,20 @@ interface OpenPage {
   lastUsed: number;
 }
 
+/** What opening an artifact's page for the Shell came to. */
+interface ShellOpen {
+  page: Omit<OpenPage, 'lastUsed'> | null;
+  /** Why it could not open. */
+  problem: string | null;
+}
+
+/** An open for the Shell: in flight, or settled at `at`; `taken` once a boot request has had it. */
+interface ShellOpening {
+  done: Promise<ShellOpen>;
+  at: number | null;
+  taken: boolean;
+}
+
 interface TypeEventClient {
   res: ServerResponse;
   typeId: string;
@@ -403,6 +423,8 @@ export class Daemon extends EventEmitter<{ exit: [] }> {
   private readonly typeTokens = new Map<string, string>();
   private readonly tokenTypes = new Map<string, string>();
   private readonly pages = new Map<string, OpenPage>();
+  /** Opens for the Shell by artifact id: one in flight per artifact, kept {@link BOOT_REUSE_MS} once settled. */
+  private readonly shellOpens = new Map<string, ShellOpening>();
   private readonly watchers = new Map<string, { watcher: FSWatcher; stop: () => void }>();
   private readonly contentStamps = new Map<string, { at: number; value: string }>();
   /** Long actions the agent started, by `<type>:<task>`. */
@@ -897,20 +919,11 @@ ${rows ? `<ul>\n${rows}\n</ul>` : '<p>No artifacts yet. Ask an agent to make one
     );
   }
 
-  /** The boot object of the Shell for one artifact. */
-  async shellBoot(record: ArtifactRecord, req?: IncomingMessage): Promise<ShellBoot> {
-    let page: Omit<OpenPage, 'lastUsed'> | null = null;
-    let problem: string | null = null;
+  /** What the Shell's boot says before the page is opened: everything but `page`, `pageUrl`, `pageKind` and `problem`. */
+  private bootOf(record: ArtifactRecord): ShellBoot {
     const type = this.typeOf(record);
     // Made but not written yet: none of the type's marker files is there.
     const empty = !!type?.detect.length && !type.detect.some((rel) => existsSync(join(record.root, rel)));
-    if (!empty) {
-      try {
-        page = await this.openPage(record, { lang: langOf(req), ...(req?.headers.host ? { shell: `http://${req.headers.host}` } : {}) });
-      } catch (error) {
-        problem = (error as Error)?.message ?? String(error);
-      }
-    }
     const typeTitle = type?.title ?? record.type;
     return {
       id: record.id,
@@ -919,10 +932,10 @@ ${rows ? `<ul>\n${rows}\n</ul>` : '<p>No artifacts yet. Ask an agent to make one
       type: record.type,
       typeTitle,
       root: record.root,
-      page: page?.page ?? null,
-      pageUrl: page?.page_url ?? null,
-      pageKind: page?.kind ?? null,
-      problem,
+      page: null,
+      pageUrl: null,
+      pageKind: null,
+      problem: null,
       empty,
       prompt: empty ? takeOverPrompt(record, typeTitle) : null,
       owner: record.owner ? { harness: record.owner.harness, key: sessionKeyOf(record.owner) } : null,
@@ -932,7 +945,59 @@ ${rows ? `<ul>\n${rows}\n</ul>` : '<p>No artifacts yet. Ask an agent to make one
     };
   }
 
-  /** `GET /a/<id>`: the Shell's `index.html` with the boot object in place. */
+  /**
+   * Opens the artifact's page for the Shell, as the browser at `req` reaches the daemon. An open in flight is joined,
+   * never started twice. With `reuse`, one that settled less than {@link BOOT_REUSE_MS} ago is taken too, once: the
+   * boot request that follows the page that started it (so a failure is not kept past that pair, and a reload retries).
+   */
+  private openForShell(record: ArtifactRecord, req: IncomingMessage | undefined, reuse: boolean): Promise<ShellOpen> {
+    const have = this.shellOpens.get(record.id);
+    if (have && have.at === null) {
+      if (reuse) have.taken = true;
+      return have.done;
+    }
+    if (have && reuse && !have.taken && Date.now() - have.at! < BOOT_REUSE_MS) {
+      this.shellOpens.delete(record.id);
+      return have.done;
+    }
+    const context = { lang: langOf(req), ...(req?.headers.host ? { shell: `http://${req.headers.host}` } : {}) };
+    const opening: ShellOpening = {
+      at: null,
+      taken: false,
+      done: this.openPage(record, context).then(
+        (page): ShellOpen => ({ page, problem: null }),
+        (error: unknown): ShellOpen => ({ page: null, problem: (error as Error)?.message ?? String(error) }),
+      ),
+    };
+    this.shellOpens.set(record.id, opening);
+    void opening.done.then(() => {
+      opening.at = Date.now();
+      const forget = (): void => {
+        if (this.shellOpens.get(record.id) === opening) this.shellOpens.delete(record.id);
+      };
+      // A boot request already had it; else it waits a moment for the one that follows its page.
+      if (opening.taken) forget();
+      else setTimeout(forget, BOOT_REUSE_MS).unref();
+    });
+    return opening.done;
+  }
+
+  /**
+   * The finished boot object of the Shell for one artifact (never `pending`): waits for its page to open.
+   * With `reuse`, takes the open the Shell's page started a moment ago ({@link openForShell}).
+   */
+  async shellBoot(record: ArtifactRecord, req?: IncomingMessage, options: { reuse?: boolean } = {}): Promise<ShellBoot> {
+    const boot = this.bootOf(record);
+    if (boot.empty) return boot;
+    const opened = await this.openForShell(record, req, options.reuse ?? false);
+    return { ...boot, page: opened.page?.page ?? null, pageUrl: opened.page?.page_url ?? null, pageKind: opened.page?.kind ?? null, problem: opened.problem };
+  }
+
+  /**
+   * `GET /a/<id>`: the Shell's `index.html` with the boot object in place, at once. The page starts opening here
+   * (a type server may take a while to start) and the boot says `pending`: the Shell asks `artifacts.boot` for the
+   * finished one. An empty artifact has nothing to open; the fallback page (no built Shell) waits for the page.
+   */
   private async shellPage(req: IncomingMessage, res: ServerResponse, id: string): Promise<void> {
     req.resume();
     const found = this.store.get(id);
@@ -941,14 +1006,22 @@ ${rows ? `<ul>\n${rows}\n</ul>` : '<p>No artifacts yet. Ask an agent to make one
       return;
     }
     const record = this.touchOpened(found);
-    const boot = await this.shellBoot(record, req);
-    let template: string;
+    let template: string | null = null;
     try {
       template = readFileSync(join(this.shellDir, 'index.html'), 'utf8');
     } catch {
-      template = FALLBACK_SHELL;
+      /* not built: the fallback */
     }
-    sendHtml(res, template.replace(BOOT_PLACEHOLDER, () => scriptJson(boot)));
+    let boot: ShellBoot;
+    if (template === null) boot = await this.shellBoot(record, req);
+    else {
+      boot = this.bootOf(record);
+      if (!boot.empty) {
+        void this.openForShell(record, req, false);
+        boot = { ...boot, pending: true };
+      }
+    }
+    sendHtml(res, (template ?? FALLBACK_SHELL).replace(BOOT_PLACEHOLDER, () => scriptJson(boot)));
   }
 
   // ---- library helpers ---------------------------------------------------------------------------------------------
@@ -1178,6 +1251,12 @@ ${rows ? `<ul>\n${rows}\n</ul>` : '<p>No artifacts yet. Ask an agent to make one
     const record = this.store.get(id);
     const type = record ? this.typeOf(record) : null;
     if (!record || type?.entry?.kind !== 'static') return this.notFound(req, res);
+    // The Shell's frame address visited as a page of its own (copied, opened from history): the Shell shows it. The
+    // bare address (`page_url`, "Open in new tab") stays the page without the Shell.
+    if (req.method === 'GET' && req.headers['sec-fetch-dest'] === 'document' && url.searchParams.has(SHELL_PARAMS.shell)) {
+      res.writeHead(302, { Location: this.origin + shellPath(id), 'Cache-Control': 'no-store' }).end();
+      return;
+    }
     const page = this.pages.get(id);
     if (page) page.lastUsed = Date.now();
     let rel: string;
@@ -1439,6 +1518,12 @@ ${rows ? `<ul>\n${rows}\n</ul>` : '<p>No artifacts yet. Ask an agent to make one
         const record = this.store.require(url.searchParams.get('id'));
         const detail: ArtifactDetail = { ...this.artifactView(record), bytes: this.folderBytes(record.root) };
         return sendJson(res, 200, detail);
+      }
+      case R.boot: {
+        // The Shell's finished boot: joins the open its page started; `fresh=1` (the frame was refused) opens again.
+        if (!get) throw new OpenArtifactError('invalid_argument', `${R.boot} is a read (GET).`);
+        const record = this.store.require(url.searchParams.get('id'));
+        return sendJson(res, 200, await this.shellBoot(record, req, { reuse: url.searchParams.get('fresh') !== '1' }));
       }
       case R.types: {
         const workspace = url.searchParams.get('workspace') || undefined;

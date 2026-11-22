@@ -11,6 +11,7 @@ import { AskPane } from './components/AskPane.tsx';
 import { Stage } from './components/Stage.tsx';
 import { TopBar } from './components/TopBar.tsx';
 import { addressWithout, inlineView, panelOf } from './model.ts';
+import { takeOver } from './preboot.ts';
 import { useShell } from './store.ts';
 
 /** The Shell once its boot is known: starts the protocols, the event stream and the first loads. */
@@ -51,10 +52,11 @@ function Shell() {
   );
 }
 
-/** The Shell page. */
+/** The Shell page. Once mounted, it replaces the page's static skeleton (`index.html`, `preboot.ts`). */
 export function App() {
   const boot = useShell((state) => state.boot);
   const bootError = useShell((state) => state.bootError);
+  useEffect(() => takeOver(window), []);
   if (boot) return <Shell />;
   if (bootError) return <EmptyState icon={<TriangleAlert className="size-6" />} title={t('problemTitle')}>{bootError}</EmptyState>;
   return <EmptyState icon={<LoaderCircle className="size-6 animate-spin" />} title={t('loading')} />;

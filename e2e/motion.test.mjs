@@ -318,6 +318,8 @@ describe(TYPE, { skip: skip() }, () => {
     const scripts = fs.readdirSync(editorAssets).filter((name) => name.endsWith('.js'));
     const held = tmpDir('motion-editor-scripts');
     const moved = [];
+    // Built files are kept for good: without this the browser could answer for the files a rebuild took away.
+    await page.cdp('Network.setCacheDisabled', { cacheDisabled: true });
     try {
       for (const name of scripts) {
         fs.renameSync(path.join(editorAssets, name), path.join(held, name));
@@ -343,6 +345,7 @@ describe(TYPE, { skip: skip() }, () => {
       }
     } finally {
       for (const name of moved) fs.renameSync(path.join(held, name), path.join(editorAssets, name));
+      await page.cdp('Network.setCacheDisabled', { cacheDisabled: false });
     }
   });
 
@@ -358,7 +361,9 @@ describe(TYPE, { skip: skip() }, () => {
         fs.renameSync(path.join(editorAssets, name), path.join(held, name));
         moved.push(name);
       }
+      // A page that never loaded the painter: not one whose browser holds it from an earlier tab (built files are kept for good).
       fresh = await browser.load(url, {
+        cache: false,
         ready: `document.querySelector('[data-video-transport] button[aria-label="Play"], [data-video-transport] button[aria-label="Pause"]')`,
         ignore: [/raster-frame/, /dynamically imported module/i],
       });

@@ -4,38 +4,96 @@
  */
 
 import { SHELL_FRAME_NAME } from '@open-artifact/protocol';
-import { Copy, MessageSquare, Play, TriangleAlert } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
-import { Button } from '@open-artifact/ui';
+import { Copy, LoaderCircle, MessageSquare, Play, RotateCw, TriangleAlert } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Button, cn } from '@open-artifact/ui';
 import { copyText } from '../../lib/format.ts';
 import { t } from '../../lib/i18n.ts';
 import { attachFrame, embedded, frameLoaded } from '../bridge.ts';
-import { ask, newSession } from '../actions.ts';
+import { ask, frameShown, markPhase, newSession, retryBoot } from '../actions.ts';
 import { useAgentName } from '../hooks.ts';
-import { addressWithoutThread, pageAddress, pageOriginOf } from '../model.ts';
+import { COVER_FADE_MS, FRAME_READY_FALLBACK_MS, addressWithoutThread, pageAddress, pageOriginOf, readyOnLoad } from '../model.ts';
+import { alignSpin } from '../preboot.ts';
 import { useBoot, useShell } from '../store.ts';
 
-/** The artifact page, in the frame named `open-artifact-shell` with `open_artifact_shell` and `open_artifact_id` on its address. */
+/**
+ * The page is on its way: the spinner of the page's skeleton (`index.html`), on the same clock, so one spinner turns
+ * from the first paint until the page shows.
+ */
+export function PageLoading({ hiding = false }: { hiding?: boolean }) {
+  return (
+    <div
+      role="status"
+      aria-label={t('loading')}
+      aria-hidden={hiding || undefined}
+      className={cn(
+        'absolute inset-0 flex items-center justify-center bg-canvas transition-opacity motion-reduce:transition-none',
+        hiding && 'pointer-events-none opacity-0',
+      )}
+      style={{ transitionDuration: `${COVER_FADE_MS}ms` }}
+    >
+      <LoaderCircle ref={alignSpin} className="size-6 animate-spin text-fg-subtle motion-reduce:animate-none" />
+    </div>
+  );
+}
+
+const reducedMotion = (): boolean => {
+  try {
+    return matchMedia('(prefers-reduced-motion: reduce)').matches;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * The artifact page, in the frame named `open-artifact-shell` with `open_artifact_shell` and `open_artifact_id` on its
+ * address. The frame loads at once under a cover that fades once the page is ready ({@link readyOnLoad}).
+ */
 export function PageFrame() {
   const boot = useBoot();
+  const ready = useShell((state) => state.pageReady);
+  const [covered, setCovered] = useState(true);
+  const fallback = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Computed once: the `comment` thread moves from the Shell's address to the page's.
   const src = useMemo(() => pageAddress(boot, location.href, embedded), [boot]);
   useEffect(() => {
     const rest = addressWithoutThread(location.href);
     if (rest) history.replaceState(history.state, '', rest);
+    return () => {
+      if (fallback.current) clearTimeout(fallback.current);
+    };
   }, []);
-  const ref = (element: HTMLIFrameElement | null): void => attachFrame(element, pageOriginOf(boot.page, location.href));
+  useEffect(() => {
+    if (!ready) return;
+    frameShown();
+    const timer = setTimeout(() => setCovered(false), reducedMotion() ? 0 : COVER_FADE_MS);
+    return () => clearTimeout(timer);
+  }, [ready]);
+  const ref = (element: HTMLIFrameElement | null): void => {
+    attachFrame(element, pageOriginOf(boot.page, location.href));
+    if (element) markPhase('oa:frame-src');
+  };
+  const onLoad = (): void => {
+    frameLoaded();
+    markPhase('oa:frame-load');
+    if (useShell.getState().pageReady) return;
+    if (readyOnLoad(boot.pageKind)) useShell.getState().setPageReady(true);
+    else fallback.current ??= setTimeout(() => useShell.getState().setPageReady(true), FRAME_READY_FALLBACK_MS);
+  };
   if (!src) return null;
   return (
-    <iframe
-      ref={ref}
-      name={SHELL_FRAME_NAME}
-      src={src}
-      title={boot.title}
-      allow="clipboard-read; clipboard-write; fullscreen"
-      onLoad={frameLoaded}
-      className="absolute inset-0 size-full border-0 bg-surface"
-    />
+    <>
+      <iframe
+        ref={ref}
+        name={SHELL_FRAME_NAME}
+        src={src}
+        title={boot.title}
+        allow="clipboard-read; clipboard-write; fullscreen"
+        onLoad={onLoad}
+        className="absolute inset-0 size-full border-0 bg-surface"
+      />
+      {covered ? <PageLoading hiding={ready} /> : null}
+    </>
   );
 }
 
@@ -93,6 +151,7 @@ export function ProblemState() {
   const boot = useBoot();
   const agent = useAgentName();
   const status = useShell((state) => state.askStatus);
+  const canRetry = useShell((state) => state.canRetry);
   const problem = boot.problem || t('noPage');
   return (
     <div className="max-w-2xl px-8 py-10">
@@ -102,9 +161,16 @@ export function ProblemState() {
       </h2>
       <pre className="whitespace-pre-wrap break-words font-mono text-xs text-fg-muted">{problem}</pre>
       <p className="text-xs text-fg-muted">{t('folder', { root: boot.root })}</p>
-      <Button size="lg" icon={<MessageSquare className="size-3.5" />} onClick={() => void ask(t('problemAsk', { problem }), agent)}>
-        {t('askToLook', { agent })}
-      </Button>
+      <div className="flex flex-wrap gap-2">
+        {canRetry ? (
+          <Button size="lg" variant="primary" icon={<RotateCw className="size-3.5" />} onClick={() => void retryBoot()}>
+            {t('tryAgain')}
+          </Button>
+        ) : null}
+        <Button size="lg" icon={<MessageSquare className="size-3.5" />} onClick={() => void ask(t('problemAsk', { problem }), agent)}>
+          {t('askToLook', { agent })}
+        </Button>
+      </div>
       <p role="status" className="mt-2 text-xs text-fg-muted">
         {status}
       </p>
@@ -112,9 +178,18 @@ export function ProblemState() {
   );
 }
 
-/** The page, or the empty or problem state. */
+/** The page (or the spinner while it is being opened), or the empty or problem state. */
 export function Stage() {
   const boot = useBoot();
-  const content = boot.empty ? <EmptyArtifact /> : boot.problem || !boot.page ? <ProblemState /> : <PageFrame />;
+  const gen = useShell((state) => state.bootGen);
+  const content = boot.pending ? (
+    <PageLoading />
+  ) : boot.empty ? (
+    <EmptyArtifact />
+  ) : boot.problem || !boot.page ? (
+    <ProblemState />
+  ) : (
+    <PageFrame key={gen} />
+  );
   return <main className="relative min-w-0 flex-1 overflow-auto">{content}</main>;
 }

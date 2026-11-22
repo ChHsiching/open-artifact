@@ -24,7 +24,7 @@
  * their role (`sharing.ts`).
  */
 
-import type { ShellBoot } from '@open-artifact/protocol';
+import { ARTIFACT_ID, SHELL_PARAMS, shellPath, type ShellBoot } from '@open-artifact/protocol';
 import { groupUploadRecord, prepareSystemUpload, systemUploadLimit } from './design-system-upload.ts';
 import type { StoredBlob } from './store.ts';
 import { syncSystems } from './ds-sync.ts';
@@ -59,7 +59,7 @@ import type { TypeApi } from '@open-artifact/server-sdk';
 import { acceptWebSocket } from '@open-artifact/server-sdk/ws';
 import { reportTouch } from './daemon.ts';
 import { downloadName, saveDownload } from './downloads.ts';
-import { HttpError, isLocalHost, mimeOf, readBody, readJson, send, sendBytes, sendError, sendJson } from './http.ts';
+import { HttpError, IMMUTABLE, isFramedNavigation, isHashedName, isLocalHost, mimeOf, readBody, readJson, send, sendBytes, sendError, sendFrameDenied, sendJson } from './http.ts';
 import { ArtifactStore, MAX_BATCH_FILES, PROJECT_DIR, sha256, writeAtomic } from './store.ts';
 import { TYPES, contentDirOf, historyTracksOf, isTypeName, type TypeName } from './types.ts';
 import { DbHost, threadRequestText, toHttpError } from './db-host.ts';
@@ -197,6 +197,8 @@ export interface OpenRequest {
   title?: string;
   /** Origin of an Open Artifact Shell framing the page. */
   shell?: string;
+  /** The Shell's own address for this artifact, on the `shell` origin (`/a/<id>` of the daemon). */
+  viewer?: string;
 }
 
 /** The answer to an open. */
@@ -222,6 +224,38 @@ interface Client {
 
 const FRAME_SHARE_PATH = '_api/frame/share';
 
+/** Types whose public page address is this server's own Shell framing the editor (`/<type>/<token>/`). */
+const OWN_SHELL_TYPES: ReadonlySet<TypeName> = new Set(['docs', 'slides', 'design', 'sheets']);
+
+/** Where an editor's built files are served for every artifact: no token, so a browser keeps them. */
+const editorAssetsPath = (type: TypeName): string => `/_open-artifact/editors/${type}/assets/`;
+
+/** The editor page with its built files (`./assets/…`) at {@link editorAssetsPath}. */
+const withStableAssets = (html: string, type: TypeName): string => html.replace(/(\s(?:src|href)=["'])\.\/assets\//g, (_, attribute: string) => attribute + editorAssetsPath(type));
+
+/** Headers of a built file: kept for good when its name carries its hash, else asked for again each time. */
+const assetHeaders = (file: string): Record<string, string> => (isHashedName(file) ? { 'cache-control': IMMUTABLE } : {});
+
+/** A Shell origin a stale page address may send its visitor back to: plain http on this computer, any port. */
+const LOOPBACK_ORIGIN = /^http:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?::[1-9][0-9]{0,4})?$/;
+
+/**
+ * The daemon's Shell of a page address whose artifact is no longer open here: `<open_artifact_shell>/a/<id>`, when the
+ * Shell is a loopback origin (never anywhere else, so this is no open redirect) and the id an artifact id; else `null`.
+ */
+function reopenAddress(url: URL): string | null {
+  const shell = url.searchParams.get(SHELL_PARAMS.shell);
+  const id = url.searchParams.get(SHELL_PARAMS.id);
+  if (!shell || !id || !ARTIFACT_ID.test(id) || !LOOPBACK_ORIGIN.test(shell) || !URL.canParse(shell) || new URL(shell).origin !== shell) return null;
+  return shell + shellPath(id);
+}
+
+/** A `302` that no cache keeps. */
+function redirect(res: ServerResponse, location: string): void {
+  res.writeHead(302, { location, 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' });
+  res.end();
+}
+
 /** What a viewer hears of the agent: only the owner's page can send to it. */
 const agentFor = (viewer: Viewer, status: AgentStatus): AgentStatus => (viewer.role === 'owner' ? status : { ...status, available: false });
 
@@ -236,9 +270,11 @@ class OpenArtifact {
    * Origins of Open Artifact Shells that framed the page (named by the
    * daemon in `/__open-artifact/open`). The Shell brokers the page's capability calls
    * (`cap_*` messages), so it may call `_api/*` and open the event stream
-   * from its own origin.
+   * from its own origin. Each maps to the Shell's own address for this
+   * artifact (`viewer` of the open), where a visit to the framed page as a
+   * top-level document is sent; `null` when the Shell gave none.
    */
-  readonly shells = new Set<string>();
+  readonly shells = new Map<string, string | null>();
   /** Last listing pushed to pages; the base of change detection. */
   listing: FileListing = {};
   /** When the agent (or anyone outside the page) last changed a file. */
@@ -622,6 +658,14 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
     return url.toString();
   };
 
+  /** The Shell's address `viewer` without query or fragment, when it is an http(s) URL on `shell`; else `null`. */
+  const viewerAddress = (viewer: unknown, shell: string): string | null => {
+    if (typeof viewer !== 'string' || !URL.canParse(viewer)) return null;
+    const at = new URL(viewer);
+    if ((at.protocol !== 'http:' && at.protocol !== 'https:') || at.username || at.password || at.origin !== shell) return null;
+    return at.origin + at.pathname;
+  };
+
   const open = async (request: OpenRequest): Promise<OpenResult> => {
     if (!request || typeof request.root !== 'string' || !request.root) throw new HttpError(400, 'invalid', 'root is required.');
     const root = resolve(request.root);
@@ -666,7 +710,8 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
     } else {
       artifact.title = title;
     }
-    if (shell) artifact.shells.add(shell);
+    // A later open without an address (the CLI's `--shell`) keeps the one the Shell gave.
+    if (shell) artifact.shells.set(shell, viewerAddress(request.viewer, shell) ?? artifact.shells.get(shell) ?? null);
     // Shared before (`.sharing.json`): back on the network, so the links handed out work again.
     await sharing.attach(artifact).catch((error: unknown) => log(`sharing ${id}: ${error instanceof Error ? error.message : String(error)}`));
     return { id, type, url: pageUrl(artifact, shell), pageUrl: pageUrl(artifact) };
@@ -1344,6 +1389,36 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
   /* Dispatch                                                               */
   /* ---------------------------------------------------------------------- */
 
+  /**
+   * A page address whose token is not open here: the server restarted under an open Shell, or the artifact closed. A
+   * top-level visit from this computer goes back to the daemon's Shell named in the address, which opens the artifact
+   * again and frames its new address; the page in a frame tells its Shell (`frame_denied`); anything else gets the error.
+   */
+  const notOpen = (req: IncomingMessage, res: ServerResponse, url: URL, page: boolean): void => {
+    const message = 'This artifact is not open here. Open it again.';
+    if (page && req.headers['sec-fetch-dest'] === 'document' && sharing.isLocal(req)) {
+      const to = reopenAddress(url);
+      if (to) return redirect(res, to);
+    }
+    if (page && isFramedNavigation(req)) return sendFrameDenied(res, 404, 'not_open', 'Not open', message);
+    throw new HttpError(404, 'not_found', message);
+  };
+
+  /**
+   * Where a top-level visit (`Sec-Fetch-Dest: document`) to a framed page address goes, so nobody lands on the page
+   * without its Shell: the owner to the Shell that framed it (its `viewer` address of the open), anyone to this
+   * server's own Shell when the address is that Shell's frame. `null` serves the address as asked: the public address,
+   * a page the CLI opened with `--shell`, or a Shell this server was not told the address of.
+   */
+  const topLevelAddress = (artifact: OpenArtifact, rel: string, url: URL, req: IncomingMessage, who: Viewer): string | null => {
+    const shell = url.searchParams.get(SHELL_PARAMS.shell);
+    if (!shell) return null;
+    const viewerAt = artifact.shells.get(shell);
+    if (viewerAt && who.role === 'owner' && sharing.isLocal(req)) return viewerAt;
+    if (rel === 'index.html' && OWN_SHELL_TYPES.has(artifact.type) && shell === 'http://' + req.headers.host) return `/${artifact.type}/${artifact.token}/`;
+    return null;
+  };
+
   const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     lastActivity = Date.now();
     if (!isLocalHost(req.headers.host) && !sharing.hostAllowed(req.headers.host)) throw new HttpError(403, 'not_granted', 'Unknown Host.');
@@ -1351,7 +1426,16 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
     const segments = url.pathname.split('/').slice(1).map((s) => decodeURIComponent(s));
 
     if (url.pathname.startsWith('/_open-artifact/shell/assets/')) {
-      return serveFile(res, inside(resolve(options.assetsDir, 'shell/assets'), segments.slice(3).join('/')));
+      const file = segments.slice(3).join('/');
+      return serveFile(res, inside(resolve(options.assetsDir, 'shell/assets'), file), assetHeaders(file));
+    }
+    // An editor's built files: public code, the same for every artifact (its page links them here, `withStableAssets`).
+    if (segments[0] === '_open-artifact' && segments[1] === 'editors' && segments[3] === 'assets') {
+      const type = segments[2];
+      if (!isTypeName(type) || !hosted.has(type)) throw new HttpError(404, 'not_found', 'Not found.');
+      if (req.method !== 'GET' && req.method !== 'HEAD') throw new HttpError(405, 'invalid', 'GET required.');
+      const file = segments.slice(4).join('/');
+      return serveFile(res, inside(resolve(editorDir(type), 'assets'), file), assetHeaders(file));
     }
     if (segments[0] === '__open-artifact') return handleOpenArtifact(segments.slice(1).join('/'), req, res);
 
@@ -1393,18 +1477,25 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
     }
 
     const [type, token, ...rest] = segments;
+    const rel = rest.join('/');
+    /** A load of the page itself (`/<type>/<token>/` or its `index.html`), not of a file or a call of it. */
+    const pageDocument = (req.method === 'GET' || req.method === 'HEAD') && (rel === '' || rel === 'index.html');
     const artifact = token ? byToken.get(token) : undefined;
-    if (!isTypeName(type) || !artifact || artifact.type !== type) throw new HttpError(404, 'not_found', 'This artifact is not open here. Open it again.');
+    if (!isTypeName(type) || !artifact || artifact.type !== type) return notOpen(req, res, url, isTypeName(type) && pageDocument);
     // The owner over loopback, a guest by their share cookie, or nobody.
     const who = snapshotTokens.has(token!) ? viewer : sharing.viewerOf(artifact, req, viewer);
-    if (!who) return sharing.denied(req, res);
+    if (!who) return sharing.denied(req, res, pageDocument);
     if (rest.length === 0) {
       // `/design/<token>` → `/design/<token>/` so relative URLs resolve.
       res.writeHead(308, { location: `${url.pathname}/${url.search}` });
       res.end();
       return;
     }
-    const rel = rest.join('/');
+    // The framed page opened as a page of its own goes to its Shell (`topLevelAddress`).
+    if (pageDocument && req.headers['sec-fetch-dest'] === 'document' && !snapshotTokens.has(token!)) {
+      const to = topLevelAddress(artifact, rel, url, req, who);
+      if (to) return redirect(res, to);
+    }
 
     // A page loaded for a snapshot must not change anything (its view context is not the person's).
     if (rel.startsWith('_api/') && snapshotTokens.has(token!) && req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'OPTIONS') {
@@ -1467,7 +1558,7 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
 
     // The public canvas or deck URL and LAN invites land in the same frame Shell as /a/<id>.
     // Daemon frames, explicit editor pages and internal snapshots load the editor directly.
-    if ((artifact.type === 'docs' || artifact.type === 'slides' || artifact.type === 'design' || artifact.type === 'sheets') && !rel && !url.searchParams.has('open_artifact_shell') && !snapshotTokens.has(token!)) {
+    if (OWN_SHELL_TYPES.has(artifact.type) && !rel && !url.searchParams.has(SHELL_PARAMS.shell) && !snapshotTokens.has(token!)) {
       const template = await readFile(resolve(options.assetsDir, 'shell/index.html'), 'utf8');
       const page = new URL('./index.html', 'http://' + req.headers.host + url.pathname).href;
       const roleLink = who.role === 'owner' ? undefined : sharing.view(artifact.id).links[who.role]?.url;
@@ -1483,14 +1574,17 @@ export function createTypeServer(options: TypeServerOptions): TypeServer {
     }
     const file = rel === '' || rel === 'index.html' ? 'index.html' : rel;
     const dir = editorDir(artifact.type);
-    const pageHeaders: Record<string, string> = file === 'index.html' ? { 'content-security-policy': "frame-ancestors *; object-src 'none'" } : {};
-    // A guest's page is plain http at a LAN address: not a secure context (see `withShim`).
-    if (file === 'index.html' && who.role !== 'owner') {
+    if (file === 'index.html') {
       const html = await readFile(inside(dir, file), 'utf8').catch(() => null);
       if (html === null) throw new HttpError(404, 'not_found', 'Not found.');
-      return send(res, 200, withShim(html), mimeOf(file), { ...pageHeaders, 'cache-control': 'private, no-store', vary: 'Cookie' });
+      const page = withStableAssets(html, artifact.type);
+      const pageHeaders: Record<string, string> = { 'content-security-policy': "frame-ancestors *; object-src 'none'" };
+      // A guest's page is plain http at a LAN address: not a secure context (see `withShim`).
+      if (who.role !== 'owner') return send(res, 200, withShim(page), mimeOf(file), { ...pageHeaders, 'cache-control': 'private, no-store', vary: 'Cookie' });
+      return send(res, 200, page, mimeOf(file), pageHeaders);
     }
-    return serveFile(res, inside(dir, file), pageHeaders);
+    // The page of an earlier load (or one kept elsewhere) still asks for its files here.
+    return serveFile(res, inside(dir, file), rest[0] === 'assets' ? assetHeaders(file) : {});
   };
 
   const onRequest = (req: IncomingMessage, res: ServerResponse): void => {

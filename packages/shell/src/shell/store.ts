@@ -31,6 +31,12 @@ export interface ShellState {
   boot: ShellBoot | null;
   /** Set when no boot could be had. */
   bootError: string | null;
+  /** Counts boots set: a new one is a new frame, even at the same address. */
+  bootGen: number;
+  /** The problem state offers to try again (the boot request failed, or the frame was refused). */
+  canRetry: boolean;
+  /** The page in the frame said it is ready (or its `load` stands for that): the cover over it goes. */
+  pageReady: boolean;
   /** The artifact as the library has it (owner status, pinned, size). */
   artifact: ArtifactDetail | null;
   /** What the page reports (chrome protocol). */
@@ -66,7 +72,9 @@ export interface ShellState {
 
 /** Changes to the Shell's state. */
 export interface ShellActions {
-  setBoot(boot: ShellBoot | null, error?: string | null): void;
+  /** Sets the boot (a new frame); `canRetry` offers to try again from its problem state. */
+  setBoot(boot: ShellBoot | null, error?: string | null, canRetry?: boolean): void;
+  setPageReady(ready: boolean): void;
   setArtifact(artifact: ArtifactDetail | null): void;
   /** Merges a library answer (e.g. after `artifacts.update`) into the artifact. */
   mergeArtifact(patch: Partial<ArtifactDetail>): void;
@@ -100,6 +108,9 @@ const EMPTY_SHARE: ShareState = { view: null, unsupported: false, error: '', exp
 export const useShell = create<ShellState & ShellActions>()((set, get) => ({
   boot: null,
   bootError: null,
+  bootGen: 0,
+  canRetry: false,
+  pageReady: false,
   artifact: null,
   report: {},
   host: null,
@@ -116,7 +127,8 @@ export const useShell = create<ShellState & ShellActions>()((set, get) => ({
   renaming: false,
   confirmingDelete: false,
 
-  setBoot: (boot, error = null) => set({ boot, bootError: error }),
+  setBoot: (boot, error = null, canRetry = false) => set((state) => ({ boot, bootError: error, canRetry, bootGen: state.bootGen + 1, pageReady: false })),
+  setPageReady: (pageReady) => set({ pageReady }),
   setArtifact: (artifact) => set({ artifact }),
   mergeArtifact: (patch) => {
     const current = get().artifact;
