@@ -269,7 +269,7 @@ export function Button({
     >
       <span
         aria-hidden
-        className={`absolute -z-[1] rounded-[inherit] ${solid ? 'inset-[0.5px]' : 'inset-0'} cds-btn-squish`}
+        className={`absolute -z-[1] rounded-[inherit] ${solid ? 'inset-[0.5px] forced-colors:inset-0' : 'inset-0'} btn-squish`}
       >
         <span
           data-cds-part="paint"

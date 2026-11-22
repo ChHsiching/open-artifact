@@ -366,10 +366,10 @@
   }
 
   /* Buttons give a little under a press. */
-  .cds-root .cds-btn-squish {
+  .btn-squish {
     transition: transform var(--cds-dur-slow) var(--cds-ease-out);
   }
-  .cds-root .group\/btn:not([disabled]):is(:active, :has(:active)) .cds-btn-squish {
+  .group\/btn:not([disabled]):is(:active, :has(:active)) .btn-squish {
     transform: scale(0.97);
     transition-duration: var(--cds-dur-fast);
   }
@@ -433,8 +433,8 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .cds-root .cds-btn-squish,
-    .cds-root .group\/btn:not([disabled]):is(:active, :has(:active)) .cds-btn-squish {
+    .btn-squish,
+    .group\/btn:not([disabled]):is(:active, :has(:active)) .btn-squish {
       transition: none;
     }
     .cds-root .cds-working-dot-halo,
