@@ -6,6 +6,25 @@ agent plugins. Since 0.9.0 they all share one version; before that `dsh-open-art
 Each entry is written from the commits since the previous tag (`node scripts/changelog.mjs` lists them); see
 [Releasing](README.md#releasing).
 
+## [0.12.4] - 2026-11-22
+
+Artifacts open faster, with more responsive comments and clearer controls in high-contrast mode.
+
+### Added
+
+- Artifact pages show a loading skeleton while their editor starts.
+
+### Changed
+
+- The Shell opens immediately while the artifact loads, and browsers cache editor assets across artifact visits.
+- Opening an editor's framed-page address directly returns you to its Shell, including when the editor needs to reopen.
+
+### Fixed
+
+- Resolving or reopening a comment updates it immediately and allows one status change at a time.
+- Long comments and drafts scroll inside their boxes so their controls stay within reach.
+- Comment fields and solid buttons remain clearly visible in high-contrast mode, with button fills covering their full area.
+
 ## [0.12.3] - 2026-11-21
 
 Motion supports films up to 10 hours and shows rough cuts earlier.
@@ -335,6 +354,7 @@ One version for every package, with Docs and Sheets in every plugin.
 - Plugins for Claude Code, Codex, Cursor, Copilot, ChatGPT and DeepSeek Harness.
 - English and Chinese READMEs, under Apache-2.0.
 
+[0.12.4]: https://github.com/JimLiu/open-artifact/compare/v0.12.3...v0.12.4
 [0.12.3]: https://github.com/JimLiu/open-artifact/compare/v0.12.2...v0.12.3
 [0.12.2]: https://github.com/JimLiu/open-artifact/compare/v0.12.1...v0.12.2
 [0.12.1]: https://github.com/JimLiu/open-artifact/compare/v0.12.0...v0.12.1
