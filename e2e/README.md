@@ -81,6 +81,9 @@ Each test file runs its own server, with its own `OPEN_ARTIFACT_TYPE_SERVER_HOME
   - Send to agent: the composer's request reaches `wait`;
   - a board that throws shows its error, and "Ask agent to fix" sends it (`wait` receives the title and the error);
   - a pasted image is uploaded and becomes an image note in `canvas.json`;
+  - PNG and PDF exports draw an artboard in the web font its own `@font-face` loads, a Flow artboard's paper pages too;
+  - zoomed out below 30 %, an artboard shows a snapshot at its own size and in its web font, and zooming back in shows the same frame without booting it again;
+  - a snapshot of an artboard set in a big CJK web font carries a subset of the font that still draws the artboard's ideographs;
   - Pages → Add page writes the page to `canvas.json`;
   - an unreadable `canvas.json` shows the banner, and the file is left unchanged.
 

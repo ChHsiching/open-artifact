@@ -12,6 +12,7 @@ import { it } from 'node:test';
 import { pathToFileURL } from 'node:url';
 import { createTypeServer } from '../packages/type-server/src/server.ts';
 import { buttonNamed, clickOn, editorSuite, startWait, textIn, typeInto } from './lib/editor.mjs';
+import { blockFont } from './lib/font.mjs';
 import { png, until } from './lib/http.mjs';
 import { copyFixture, fixtures, repoRoot, tmpDir } from './lib/target.mjs';
 
@@ -40,6 +41,51 @@ async function withDesignShell(ctx, root, ready, check) {
       await check(page);
     } finally { await page.close(); }
   } finally { await run('daemon', 'stop'); }
+}
+
+// An artboard whose first line, "....", is set in the block font (lib/font.mjs) from the project's own files, through an
+// inline @font-face: a solid bar from (20, 20) to (180, 60) in INK. In a fallback font the dots sit at the foot of the
+// line and the top of it stays PAPER. With `han`, the font also draws 2000 ideographs and the bar is "丂丂丂丂" (U+4E02,
+// which no list counter makes), so a picture of it carries a subset of the font.
+const INK = [200, 20, 50];
+const PAPER = [255, 247, 214];
+function webFontBoard(root, entry = {}, { han = false } = {}) {
+  copyFixture('design', root);
+  fs.mkdirSync(path.join(root, 'project/fonts'));
+  fs.writeFileSync(path.join(root, 'project/fonts/Block.ttf'), blockFont('Block', { han }));
+  const index = canvasOf(root);
+  Object.assign(index.boards['Main.dc.html'], { title: 'Web font', ...entry });
+  fs.writeFileSync(path.join(root, 'project/canvas.json'), JSON.stringify(index));
+  const template = `<x-dc><helmet><style>
+    @font-face{font-family:"Block";src:url("fonts/Block.ttf") format("truetype")}
+    body{margin:0}
+  </style></helmet><div style="width:880px;height:560px;background:rgb(${PAPER});position:relative">
+    <p id="block" style="position:absolute;left:20px;top:20px;margin:0;font:40px/40px Block,monospace;color:rgb(${INK})">${han ? '丂丂丂丂' : '....'}</p>
+    <p style="position:absolute;left:20px;top:100px;margin:0;font:16px sans-serif">Set in a web font</p></div></x-dc>`;
+  const file = path.join(root, BOARD);
+  fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace(/<x-dc>[\s\S]*?<\/x-dc>/, template));
+}
+// The artboard's frame loaded the block font (so a picture without it lost it on the way).
+const WEB_FONT_LOADED = `[...(document.querySelector('iframe[data-board="Main.dc.html"]')?.contentDocument?.fonts ?? [])].some(face => face.family.replace(/["']/g, '') === 'Block' && face.status === 'loaded')`;
+// Whether a pixel is nearly a colour (JPEG moves it a little).
+const near = (pixel, colour) => pixel.every((value, i) => Math.abs(value - colour[i]) <= 24);
+// Pixels of a picture (a `source` expression for an image: a URL in quotes, or an element), at points given at 1×.
+const pixelsOf = (page, source, points, scale = 1) => page.evaluate(`(async () => {
+  let image = ${source};
+  if (typeof image === 'string') { const url = image; image = new Image(); image.src = url; }
+  await image.decode();
+  const canvas = document.createElement('canvas'); canvas.width = image.naturalWidth; canvas.height = image.naturalHeight;
+  const g = canvas.getContext('2d'); g.drawImage(image, 0, 0);
+  return { width: canvas.width, height: canvas.height, pixels: ${JSON.stringify(points)}.map(([x, y]) => [...g.getImageData(x * ${scale}, y * ${scale}, 1, 1).data].slice(0, 3)) };
+})()`);
+// The first page of an exported PDF: its picture is stored as the JPEG it was drawn as.
+function pdfPagePicture(file) {
+  const pdf = fs.readFileSync(file);
+  const at = pdf.indexOf('/DCTDecode');
+  assert.ok(at > 0, 'the PDF holds no JPEG page');
+  const length = Number(/\/Length (\d+)/.exec(pdf.subarray(at, at + 200).toString('latin1'))?.[1]);
+  const start = pdf.indexOf('stream\n', at) + 'stream\n'.length;
+  return `'data:image/jpeg;base64,${pdf.subarray(start, start + length).toString('base64')}'`;
 }
 
 async function shellExport(page, label) {
@@ -411,6 +457,106 @@ editorSuite({
       });
     });
     
+    it('PNG and PDF exports draw an artboard in its web font', T, async () => {
+      const browser = await ctx.browser();
+      fs.mkdirSync(ctx.downloads, { recursive: true });
+      await browser.downloadsTo(ctx.downloads);
+      const menuItem = text => `[...document.querySelectorAll('[role=menuitem]')].find(item => item.textContent.trim().endsWith(${JSON.stringify(text)}) && item.getAttribute('aria-disabled') !== 'true')`;
+      // Inside the bar at both ends, and the paper under it.
+      const points = [[30, 26], [170, 26], [30, 80]];
+      const exported = async (page, item, name) => {
+        const file = path.join(ctx.downloads, name);
+        fs.rmSync(file, { force: true });
+        await clickOn(page, buttonNamed('Export'));
+        assert.ok(await page.waitFor(menuItem(item)), `the Export menu lists ${item}`);
+        await clickOn(page, menuItem(item), item);
+        assert.ok(await until(() => fs.existsSync(file) && fs.statSync(file).size > 0, 30000), `${name} was not saved: ${fs.readdirSync(ctx.downloads)}`);
+        return file;
+      };
+      const focus = async url => {
+        const page = await browser.load(new URL('index.html', url).href, { ready: `document.querySelector('[data-board-title="Main.dc.html"]')`, settle: 800 });
+        assert.ok(await page.waitFor(WEB_FONT_LOADED, 20000), 'the artboard loaded its web font');
+        await clickOn(page, `document.querySelector('[data-board-title="Main.dc.html"] button[aria-label="Focus"], [data-board-title="Main.dc.html"] button[aria-label="Play full screen"]')`, 'Focus');
+        assert.ok(await page.waitFor(buttonNamed('Back to canvas')), 'the focused view opened');
+        return page;
+      };
+
+      const { url } = await ctx.openNew('web-font-export', (_ctx, root) => webFontBoard(root));
+      const page = await focus(url);
+      try {
+        const png = await exported(page, 'Selected artboard, 1×', 'Web font.png');
+        const image = await pixelsOf(page, `'data:image/png;base64,${fs.readFileSync(png).toString('base64')}'`, points);
+        assert.deepEqual(image, { width: 880, height: 560, pixels: [INK, INK, PAPER] }, 'the PNG lost the web font');
+        // A PDF page is the artboard at 2×.
+        const pdf = await pixelsOf(page, pdfPagePicture(await exported(page, 'Selected artboard', 'Web font.pdf')), points, 2);
+        assert.equal(pdf.width, 1760);
+        assert.ok(near(pdf.pixels[0], INK) && near(pdf.pixels[1], INK) && near(pdf.pixels[2], PAPER), `the PDF lost the web font: ${JSON.stringify(pdf.pixels)}`);
+        assert.deepEqual(page.problems, []);
+      } finally { await page.close(); }
+
+      // A Flow artboard is cut into paper pages, each rebuilt as SVG shapes: those carry the font too.
+      const flow = await ctx.openNew('web-font-flow', (_ctx, root) => webFontBoard(root, { print: 'flow', paper: 'letter' }));
+      const paged = await focus(flow.url);
+      try {
+        const pdf = await pixelsOf(paged, pdfPagePicture(await exported(paged, 'Selected artboard', 'Web font.pdf')), points, 2);
+        assert.ok(near(pdf.pixels[0], INK) && near(pdf.pixels[1], INK) && near(pdf.pixels[2], PAPER), `the paged PDF lost the web font: ${JSON.stringify(pdf.pixels)}`);
+        assert.deepEqual(paged.problems, []);
+      } finally { await paged.close(); }
+    });
+
+    it('zoomed out, an artboard shows a sharp snapshot in its web font, and keeps its frame for zooming back in', T, async () => {
+      const { url } = await ctx.openNew('web-font-snapshot', (_ctx, root) => webFontBoard(root));
+      // The DOM canvas shows a snapshot as an image the test can read (the engine draws it into its own canvas).
+      const page = await (await ctx.browser()).load(new URL('index.html?open_artifact_engine=off', url).href, { ready: 'window.__openArtifactLive', settle: 0 });
+      const live = expression => `(live => ${expression})(window.__openArtifactLive())`;
+      const frame = `document.querySelector('iframe[data-board="Main.dc.html"]')`;
+      const snapshot = `document.querySelector('[data-board="Main.dc.html"] img[data-board-snapshot]')`;
+      const zoomUntil = async (deltaY, done) => {
+        for (let i = 0; i < 120 && !(await page.evaluate(live(done))); i++) await page.cdp('Input.dispatchMouseEvent', { type: 'mouseWheel', x: 720, y: 450, deltaX: 0, deltaY, modifiers: 2 });
+        assert.ok(await page.evaluate(live(done)), `the canvas did not zoom: ${JSON.stringify(await page.evaluate(live('live.camera')))}`);
+      };
+      try {
+        assert.ok(await page.waitFor(WEB_FONT_LOADED, 20000), 'the artboard loaded its web font');
+        assert.ok(await page.waitFor(live('live.snapshots === 1 && live.live.length === 1 && live.resting.length === 0'), 20000), 'the live artboard got its snapshot');
+        const booted = await page.evaluate(`${frame}.contentWindow.performance.timeOrigin`);
+
+        // Below 30 % the snapshot stands for the artboard; its frame rests behind it.
+        await zoomUntil(12, 'live.camera.zoom < 0.25');
+        assert.ok(await page.waitFor(`${live('live.resting.length === 1')} && ${snapshot}?.complete`, 10000), 'the artboard did not go to its snapshot');
+        assert.equal(await page.evaluate(`getComputedStyle(${frame}).visibility`), 'hidden', 'the resting frame is hidden');
+        // At the artboard's own size (880 × 560 is small enough), in the web font.
+        assert.deepEqual((await pixelsOf(page, snapshot, [[30, 26], [170, 26], [30, 80]])).width, 880);
+        const { pixels } = await pixelsOf(page, snapshot, [[30, 26], [170, 26], [30, 80]]);
+        assert.ok(near(pixels[0], INK) && near(pixels[1], INK) && near(pixels[2], PAPER), `the snapshot lost the web font: ${JSON.stringify(pixels)}`);
+
+        // Back in: the same frame shows again, nothing loaded a second time.
+        await zoomUntil(-12, 'live.camera.zoom > 0.4');
+        assert.ok(await page.waitFor(`${live('live.resting.length === 0 && live.live.length === 1')} && !${snapshot}`, 10000), 'the frame did not take over again');
+        assert.equal(await page.evaluate(`getComputedStyle(${frame}).visibility`), 'visible');
+        assert.equal(await page.evaluate(`${frame}.contentWindow.performance.timeOrigin`), booted, 'the artboard booted again');
+        assert.deepEqual(page.problems, []);
+      } finally { await page.close(); }
+    });
+
+    it('zoomed out, an artboard set in a big CJK web font shows its snapshot in a subset of the font', T, async () => {
+      const { url } = await ctx.openNew('web-font-subset', (_ctx, root) => webFontBoard(root, {}, { han: true }));
+      const page = await (await ctx.browser()).load(new URL('index.html?open_artifact_engine=off', url).href, { ready: 'window.__openArtifactLive', settle: 0 });
+      const live = expression => `(live => ${expression})(window.__openArtifactLive())`;
+      const snapshot = `document.querySelector('[data-board="Main.dc.html"] img[data-board-snapshot]')`;
+      try {
+        assert.ok(await page.waitFor(WEB_FONT_LOADED, 20000), 'the artboard loaded its web font');
+        assert.ok(await page.waitFor(live('live.snapshots === 1'), 20000), 'the artboard got its snapshot');
+        for (let i = 0; i < 120 && !(await page.evaluate(live('live.camera.zoom < 0.25'))); i++) await page.cdp('Input.dispatchMouseEvent', { type: 'mouseWheel', x: 720, y: 450, deltaX: 0, deltaY: 12, modifiers: 2 });
+        assert.ok(await page.waitFor(`${live('live.resting.length === 1')} && ${snapshot}?.complete`, 10000), 'the artboard did not go to its snapshot');
+        // The ideographs of the bar are in the subset: a solid bar, as on the page.
+        const { pixels } = await pixelsOf(page, snapshot, [[30, 26], [170, 26], [30, 80]]);
+        assert.ok(near(pixels[0], INK) && near(pixels[1], INK) && near(pixels[2], PAPER), `the snapshot lost the web font: ${JSON.stringify(pixels)}`);
+        const fonts = await page.evaluate(live('live.fonts'));
+        assert.ok(fonts.subsets >= 1, `the font was not inlined as a subset: ${JSON.stringify(fonts)}`);
+        assert.deepEqual(page.problems, []);
+      } finally { await page.close(); }
+    });
+
     it('pastes foreign artboards with their display names and connected imports', T, async () => {
       const { root, url } = await ctx.openNew('paste-artboards');
       const original = fs.readFileSync(path.join(root, BOARD), 'utf8');

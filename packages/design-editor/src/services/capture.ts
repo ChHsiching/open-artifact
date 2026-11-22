@@ -5,9 +5,14 @@
  * shapes, no `<foreignObject>`), so it pastes into design tools. PNG captures
  * at 2×, using browser paint for CSS masks and SVG symbols. HTML copies the element
  * with its computed styles inlined (trimmed against browser defaults).
+ *
+ * {@link pageImage} draws a whole artboard (exports, and the canvas's
+ * snapshots). Every picture carries the web fonts its document uses, inlined
+ * (`embeddedFontCss`): a picture is drawn apart from the page and cannot
+ * load them itself.
  */
 
-import { cssUrls, blobToDataUrl, elementSvg, foreignObjectSvg, loadSvgImage, maxCaptureScale, SVG_NS, type CaptureLimits } from '@open-artifact/export-kit';
+import { cssUrls, blobToDataUrl, elementSvg, embeddedFontCss, foreignObjectSvg, loadSvgImage, maxCaptureScale, SVG_NS, type CaptureLimits, type EmbeddedFonts } from '@open-artifact/export-kit';
 import { canWriteClipboard, writeClipboard } from '@open-artifact/editor-kit';
 import { toast } from '@open-artifact/ui';
 import { useView, type ElementSelection } from '../state/view.ts';
@@ -21,6 +26,11 @@ const PNG_SCALE = 2;
 /** How large a capture may be: 12000 px a side, 120 megapixels. */
 export const CAPTURE_LIMITS: CaptureLimits = { maxSide: 12000, maxPixels: 120_000_000 };
 const MAX_HTML = 8 * 1024 * 1024;
+/** Web fonts inlined into one picture unless the caller sets its own limit, characters of `data:` URL. */
+const FONT_BYTES = 64 * 1024 * 1024;
+
+/** The web fonts a document's pictures carry; none when they cannot be read (the picture is still drawn, in fallback fonts). */
+const documentFonts = (doc: Document, maxBytes = FONT_BYTES): Promise<EmbeddedFonts> => embeddedFontCss(doc, { maxBytes }).catch(() => ({ css: '', skipped: [] }));
 
 /** True when exactly one element or one artboard is selected. */
 export function canCaptureSelection(): boolean {
@@ -137,11 +147,11 @@ function portableSymbolPaints(source: Element, copy: SVGElement): void {
   }
 }
 
-/** The element as SVG markup and its size. */
-async function captureSvg(element: Element): Promise<{ svg: string; width: number; height: number }> {
+/** The element as SVG markup and its size; with `fontCss`, carrying those fonts (a drawing that is rasterized). */
+async function captureSvg(element: Element, fontCss?: string): Promise<{ svg: string; width: number; height: number }> {
   return withoutTransform(element, async () => {
     const rect = element.getBoundingClientRect();
-    const doc = await elementSvg(element, rect);
+    const doc = await elementSvg(element, rect, fontCss === undefined ? {} : { fontCss });
     const root = doc.documentElement;
     cleanSvg(root);
     root.setAttribute('width', String(Math.round(rect.width * 100) / 100));
@@ -193,8 +203,15 @@ function needsBrowserPaint(element: Element): boolean {
   });
 }
 
-/** Paint the computed HTML, with embedded images, so masks and ::before survive. */
-async function browserDrawing(element: Element, width: number, height: number, top = 0): Promise<string> {
+/**
+ * False once this browser refused to read a canvas a `<foreignObject>` was
+ * drawn on (Safari): browser paint is then tried only where nothing else
+ * can draw the page.
+ */
+let paintReadable = true;
+
+/** Paint the computed HTML, with embedded images and the fonts of `fontCss`, so shadows, masks and ::before survive. */
+async function browserDrawing(element: Element, width: number, height: number, top = 0, fontCss = ''): Promise<string> {
   const holder = document.createElement('div');
   holder.innerHTML = await captureHtml(element, 'raster');
   const root = holder.firstElementChild as HTMLElement | SVGElement | null;
@@ -202,19 +219,20 @@ async function browserDrawing(element: Element, width: number, height: number, t
     Object.assign(root.style, { position: 'relative', inset: 'auto', margin: '0' });
   }
   holder.style.marginTop = `-${top}px`;
-  return foreignObjectSvg(new XMLSerializer().serializeToString(holder), '', { width, height });
+  return foreignObjectSvg(new XMLSerializer().serializeToString(holder), fontCss, { width, height });
 }
 
 async function selectionPng(element: Element): Promise<Blob> {
+  const fonts = await documentFonts(element.ownerDocument);
   if (needsBrowserPaint(element)) {
     try {
       return await withoutTransform(element, async () => {
         const { width, height } = element.getBoundingClientRect();
-        return rasterize(await browserDrawing(element, width, height), width, height);
+        return rasterize(await browserDrawing(element, width, height, 0, fonts.css), width, height);
       });
     } catch { /* Fall back to native SVG shapes when foreignObject is unavailable. */ }
   }
-  const { svg, width, height } = await captureSvg(element);
+  const { svg, width, height } = await captureSvg(element, fonts.css);
   if (width < 1 || height < 1) throw new Error('The element has no size.');
   return rasterize(svg, width, height);
 }
@@ -222,6 +240,12 @@ async function selectionPng(element: Element): Promise<Blob> {
 /**
  * A frame's page as an image: its viewport (`width` × `height` CSS pixels
  * from the top left) drawn at `scale`, on white.
+ *
+ * The browser paints it (the page's computed HTML through a
+ * `<foreignObject>`), which keeps what only it can draw: shadows, filters,
+ * blending, masks. Where the canvas cannot be read back afterwards, and for
+ * a `slice` of a long page, dom-to-svg rebuilds the page as SVG shapes
+ * instead. Both carry the page's web fonts; call this once they loaded.
  */
 export async function pageImage(
   doc: Document,
@@ -236,15 +260,32 @@ export async function pageImage(
     background?: string;
     /** Rows of the image that keep the drawing; the rest shows `background` (a PDF page's break margins). */
     keep?: { from: number; to: number };
+    /**
+     * One of many images of the same long page (a PDF's paper pages).
+     * Browser paint lays the whole page out again for each one, pictures
+     * and all, so a slice is rebuilt by dom-to-svg (which only visits what
+     * the slice shows) unless the page has something only the browser draws.
+     */
+    slice?: boolean;
+    /** Most web font data to inline, characters of `data:` URL (default 64 MB). */
+    fontBytes?: number;
+    /** Called with the font families left out: over `fontBytes`, or their files could not be read. */
+    onSkippedFonts?: (families: string[]) => void;
   },
 ): Promise<Blob> {
   const rasterOptions = { ...options, background: options.background ?? '#ffffff' };
-  if (needsBrowserPaint(doc.body)) {
-    const svg = await browserDrawing(doc.body, width, height, options.top ?? 0);
-    try { return await rasterize(svg, width, height, rasterOptions); }
-    catch { /* Some browsers disallow reading a foreignObject canvas. */ }
+  const fonts = await documentFonts(doc, options.fontBytes);
+  if (fonts.skipped.length) options.onSkippedFonts?.(fonts.skipped);
+  if (needsBrowserPaint(doc.body) || (paintReadable && !options.slice)) {
+    try {
+      const svg = await browserDrawing(doc.body, width, height, options.top ?? 0, fonts.css);
+      return await rasterize(svg, width, height, rasterOptions);
+    } catch (error) {
+      // Some browsers disallow reading a foreignObject canvas; a drawing that will not load is rebuilt as shapes too.
+      if (error instanceof DOMException && error.name === 'SecurityError') paintReadable = false;
+    }
   }
-  const svgDoc = await elementSvg(doc.documentElement, { x: 0, y: options.top ?? 0, width, height });
+  const svgDoc = await elementSvg(doc.documentElement, { x: 0, y: options.top ?? 0, width, height }, { fontCss: fonts.css });
   const root = svgDoc.documentElement;
   cleanSvg(root);
   root.setAttribute('width', String(width));
